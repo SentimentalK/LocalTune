@@ -5,7 +5,7 @@
  */
 
 import { openDb, putTracks, deleteTracksById, getAllTracks, setMeta } from './db.js';
-import { FsaSource } from './source.js';
+import { createSource } from './source.js';
 import { readMetadata } from './metadata/index.js';
 import { diffScan } from './scan.js';
 import {
@@ -73,7 +73,7 @@ export class Store extends EventTarget {
   constructor(db) {
     super();
     this.db = db;
-    this.source = new FsaSource(db);
+    this.source = createSource(db);
     this.audio = typeof Audio === 'function' ? new Audio() : null;
     this.player = this.audio ? new AudioPlayer(this.audio) : null;
     this.queue = createQueue([]);
@@ -91,7 +91,7 @@ export class Store extends EventTarget {
       queue: { tracks: [], index: -1, shuffle: false, repeat: 'off' },
       current: { track: null, playing: false, position: 0, duration: 0, volume: 1 },
       source: {
-        kind: 'fsa',
+        kind: this.source.kind,
         connected: false,
         permission: 'none',
         name: '',
@@ -175,6 +175,7 @@ export class Store extends EventTarget {
     this._state.settings = { ...settings };
     this._state.source = {
       ...this._state.source,
+      kind: this.source.kind,
       connected: permission !== 'none',
       permission,
       name: this.source.name ?? '',
@@ -254,6 +255,19 @@ export class Store extends EventTarget {
       };
       this._emit();
     }
+  }
+
+  async requestSourcePermission() {
+    const granted = await this.source.ensurePermission().catch(() => false);
+    this._state.source = {
+      ...this._state.source,
+      connected: this.source.permission() !== 'none',
+      permission: this.source.permission(),
+      error: null,
+    };
+    this._emit();
+    if (granted) await this.rescan();
+    return granted;
   }
 
   async rescan() {

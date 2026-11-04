@@ -21,6 +21,22 @@ const REPEAT_LABEL = { off: '循环：关闭', all: '循环：列表', one: '循
 const REPEAT_BADGE = { off: '', all: '∞', one: '1' };
 const SEEK_STEP = 5;
 
+// Installability is only observable through the event; the app never prompts.
+let installPromptSeen = false;
+
+function isInstalled() {
+  if (typeof window === 'undefined') return false;
+  if (typeof window.matchMedia === 'function') {
+    if (window.matchMedia('(display-mode: standalone)').matches) return true;
+    if (window.matchMedia('(display-mode: fullscreen)').matches) return true;
+  }
+  return window.navigator?.standalone === true;
+}
+
+function installHint() {
+  return installPromptSeen && !isInstalled() ? '安装为应用后，授权会自动记住。' : '';
+}
+
 function run(result) {
   if (result && typeof result.catch === 'function') result.catch(() => {});
 }
@@ -38,12 +54,16 @@ function artNode(cover, className = 'art') {
   return node;
 }
 
-function emptyState({ title, text, actionLabel, onAction }) {
+function emptyState({ title, text, actionLabel, onAction, note }) {
   const children = [el('h2', { text: title }), el('p', { text })];
   if (actionLabel) {
     children.push(
       el('button', { class: 'btn-pill', type: 'button', text: actionLabel, onclick: onAction }),
     );
+  }
+  const notes = Array.isArray(note) ? note : note ? [note] : [];
+  for (const line of notes) {
+    if (line) children.push(el('p', { text: line }));
   }
   return el('section', { class: 'card empty' }, children);
 }
@@ -158,7 +178,10 @@ function createShell(store) {
     class: 'btn-pill ghost',
     type: 'button',
     text: '选择音乐文件夹',
-    onclick: () => run(store.connectSource()),
+    onclick: () => {
+      const permission = store.state.source.permission;
+      run(permission === 'prompt' ? store.requestSourcePermission() : store.connectSource());
+    },
   });
   const deniedHint = el('p', {
     class: 'alert',
@@ -360,6 +383,8 @@ export function mountUi(root, store) {
     queueTracks: null,
     queueIndex: -1,
     cover: undefined,
+    permission: null,
+    installable: false,
   };
 
   function renderHeader(state) {
@@ -384,7 +409,14 @@ export function mountUi(root, store) {
             : '未连接',
     );
     setHidden(ui.authButton, permission === 'granted');
-    setText(ui.authButton, permission === 'none' ? '选择音乐文件夹' : '重新授权');
+    setText(
+      ui.authButton,
+      permission === 'none'
+        ? '选择音乐文件夹'
+        : permission === 'prompt'
+          ? `继续使用 ${source.name || '音乐文件夹'}`
+          : '重新授权',
+    );
     setHidden(ui.deniedHint, permission !== 'denied');
 
     setHidden(ui.scan, !source.scanning);
@@ -462,6 +494,7 @@ export function mountUi(root, store) {
 
   function renderEmpty(state) {
     const permission = state.source.permission;
+    const name = state.source.name || '音乐文件夹';
     if (permission !== 'granted') {
       if (permission === 'denied') {
         return emptyState({
@@ -471,10 +504,22 @@ export function mountUi(root, store) {
           onAction: () => run(store.connectSource()),
         });
       }
+      if (permission === 'prompt') {
+        return emptyState({
+          title: '需要再次确认文件夹权限',
+          text: '上次的授权只对本次会话有效。',
+          actionLabel: `继续使用 ${name}`,
+          onAction: () => run(store.requestSourcePermission()),
+          note: [
+            '安装为应用并在权限弹窗中选择「每次访问时允许」，之后无需再点。',
+            installHint(),
+          ],
+        });
+      }
       return emptyState({
         title: '先选择你的音乐文件夹',
         text: 'LocalTune 只在本机读取你授权的文件夹，不上传、不联网。支持 mp3、m4a、flac、ogg、wav、webm。',
-        actionLabel: permission === 'none' ? '选择音乐文件夹' : '重新授权',
+        actionLabel: '选择音乐文件夹',
         onAction: () => run(store.connectSource()),
       });
     }
@@ -492,6 +537,8 @@ export function mountUi(root, store) {
     const rebuild =
       state.view !== last.view ||
       state.tracks !== last.tracks ||
+      state.source.permission !== last.permission ||
+      installPromptSeen !== last.installable ||
       currentId !== last.currentId ||
       (queueView &&
         (state.queue.tracks !== last.queueTracks || state.queue.index !== last.queueIndex));
@@ -500,6 +547,8 @@ export function mountUi(root, store) {
 
     last.view = state.view;
     last.tracks = state.tracks;
+    last.permission = state.source.permission;
+    last.installable = installPromptSeen;
     last.currentId = currentId;
     last.queueTracks = state.queue.tracks;
     last.queueIndex = state.queue.index;
@@ -645,6 +694,12 @@ export function mountUi(root, store) {
 
   root.replaceChildren(ui.app);
   render(store.state);
+
+  // Fires after the first render in practice, so re-render with the hint.
+  window.addEventListener('beforeinstallprompt', () => {
+    installPromptSeen = true;
+    render(store.state);
+  });
 
   let frame = 0;
   store.addEventListener('change', () => {

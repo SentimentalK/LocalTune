@@ -1,13 +1,16 @@
 import { getMeta, setMeta } from './db.js';
 
 /**
- * File source adapter for v1: File System Access.
+ * File source adapters: File System Access (Chrome 132+ on Android, all
+ * desktop Chromium) and a `<input webkitdirectory>` fallback for browsers
+ * without `showDirectoryPicker`.
  * No DOM access at module scope; the picker is read from `globalThis` when used.
  */
 
 export const AUDIO_EXTENSIONS = new Set(['mp3', 'm4a', 'flac', 'ogg', 'oga', 'wav', 'webm']);
 
 const DIR_HANDLE_KEY = 'dirHandle';
+const FILE_LIST_KEY = 'fileList';
 
 function extensionOf(name) {
   const dot = name.lastIndexOf('.');
@@ -55,7 +58,19 @@ export class FsaSource {
     if (typeof handle.queryPermission === 'function') {
       state = await handle.queryPermission({ mode: 'read' });
     }
-    if (state !== 'granted' && typeof handle.requestPermission === 'function') {
+    // The picker's grant is not necessarily recorded as persistent. Ask once
+    // inside the same click gesture; ignore SecurityError if activation was lost.
+    let requested = false;
+    if (typeof handle.requestPermission === 'function') {
+      requested = true;
+      try {
+        const persistent = await handle.requestPermission({ mode: 'read' });
+        if (persistent === 'granted') state = 'granted';
+      } catch {
+        // Keep the picker grant; the next launch's "继续使用" button will retry.
+      }
+    }
+    if (!requested && state !== 'granted' && typeof handle.requestPermission === 'function') {
       state = await handle.requestPermission({ mode: 'read' });
     }
     this.#permission = state;
@@ -159,4 +174,132 @@ export class FsaSource {
     const fileHandle = await dir.getFileHandle(segments[segments.length - 1]);
     return fileHandle.getFile();
   }
+}
+
+/**
+ * Fallback adapter for browsers without `showDirectoryPicker` (Android Chrome
+ * < 132, non-Chromium): `<input type="file" webkitdirectory>` plus IndexedDB.
+ * The selected `File` objects are structured-cloneable; cross-restart
+ * readability depends on the browser and is verified by e2e/file-persistence.
+ */
+export class FileListSource {
+  kind = 'files';
+  name = '';
+
+  #db = null;
+  #files = new Map();
+  #permission = 'none';
+
+  constructor(db = null) {
+    this.#db = db;
+  }
+
+  /** @param {IDBDatabase|null} db */
+  set db(db) {
+    this.#db = db;
+  }
+
+  get db() {
+    return this.#db;
+  }
+
+  async connect() {
+    if (typeof document === 'undefined') {
+      throw new Error('浏览器不支持文件选择');
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.webkitdirectory = true;
+    input.multiple = true;
+    input.hidden = true;
+    document.body.append(input);
+
+    const files = await new Promise((resolve, reject) => {
+      const finish = (fn, value) => {
+        input.removeEventListener('change', onChange);
+        input.removeEventListener('cancel', onCancel);
+        input.remove();
+        fn(value);
+      };
+      function onChange() {
+        finish(resolve, Array.from(input.files ?? []));
+      }
+      function onCancel() {
+        const error = new Error('已取消选择文件夹');
+        error.name = 'AbortError';
+        finish(reject, error);
+      }
+      input.addEventListener('change', onChange);
+      input.addEventListener('cancel', onCancel);
+      input.click();
+    });
+
+    const audio = files.filter((file) => isAudioFile(file.name));
+    if (!audio.length) {
+      const error = new Error('所选文件夹里没有音频文件');
+      error.name = 'AbortError';
+      throw error;
+    }
+
+    const rows = audio.map((file) => ({
+      path: file.webkitRelativePath || file.name,
+      file,
+    }));
+    this.#files = new Map(rows.map((row) => [row.path, row.file]));
+    this.name = String(rows[0].path).split('/')[0];
+    this.#permission = 'granted';
+    if (this.#db) await setMeta(this.#db, FILE_LIST_KEY, rows);
+    return this.#files;
+  }
+
+  async restore() {
+    this.#files = new Map();
+    this.#permission = 'none';
+    this.name = '';
+    if (!this.#db) return 'none';
+    let rows = null;
+    try {
+      rows = await getMeta(this.#db, FILE_LIST_KEY);
+    } catch {
+      rows = null;
+    }
+    if (!Array.isArray(rows)) return 'none';
+    for (const row of rows) {
+      if (!row || typeof row.path !== 'string' || !row.file) continue;
+      this.#files.set(row.path, row.file);
+    }
+    if (!this.#files.size) return 'none';
+    this.name = String(this.#files.keys().next().value).split('/')[0];
+    this.#permission = 'granted';
+    return this.#permission;
+  }
+
+  permission() {
+    return this.#files.size ? 'granted' : 'none';
+  }
+
+  async ensurePermission() {
+    return this.permission() === 'granted';
+  }
+
+  /** @returns {AsyncGenerator<{path:string,file:File,mtime:number,size:number}>} */
+  async *scan() {
+    for (const [path, file] of this.#files) {
+      yield { path, file, mtime: file.lastModified, size: file.size };
+    }
+  }
+
+  async getFile(path) {
+    const file = this.#files.get(path);
+    if (!file) throw new Error(`文件不存在: ${path}`);
+    return file;
+  }
+}
+
+export function hasDirectoryPicker() {
+  return typeof globalThis.showDirectoryPicker === 'function';
+}
+
+export function createSource(db) {
+  return hasDirectoryPicker() ? new FsaSource(db) : new FileListSource(db);
 }
