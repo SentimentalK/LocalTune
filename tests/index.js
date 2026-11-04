@@ -14,3 +14,5 @@ import './garbled.test.js';
 import './migrate.test.js';
 import './i18n.test.js';
 import './storage.test.js';
+import './onedrive-auth.test.js';
+import './onedrive-graph.test.js';
