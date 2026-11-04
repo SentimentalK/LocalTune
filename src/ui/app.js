@@ -222,7 +222,19 @@ function queueRow(track, index, { now, onActivate, onRemove, onMore }) {
   return row;
 }
 
-function folderRow(group, { onPlay, onEnqueue }) {
+const PIN_PATH =
+  'M16 9V4h1V2H7v2h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z';
+
+// The shared icon set lives in `dom.js`; the pin glyph is drawn here so the
+// folder view owns the only icon it needs beyond the common set.
+function pinIcon() {
+  const svg = icon('pin');
+  const path = svg.querySelector('path');
+  if (path) path.setAttribute('d', PIN_PATH);
+  return svg;
+}
+
+function folderRow(group, { onPlay, onEnqueue, onPin, pinned = false, pin = null }) {
   const label = group.dir || t('common.rootFolder');
   const hit = el(
     'button',
@@ -247,7 +259,46 @@ function folderRow(group, { onPlay, onEnqueue }) {
     'aria-label': t('aria.enqueueFolder', { name: label }),
     onclick: onEnqueue,
   });
-  return el('li', { class: 'row' }, [hit, add]);
+
+  const pinState = pin ?? {};
+  const pinStatus = el('span', { class: 'row-pin-status' });
+  if (pinState.running) {
+    setText(
+      pinStatus,
+      t('settings.storage.pinning', {
+        done: pinState.done ?? 0,
+        total: pinState.total ?? 0,
+      }),
+    );
+  } else if (pinState.error) {
+    setText(pinStatus, pinState.error);
+  } else if (pinned) {
+    setText(pinStatus, t('settings.storage.pinned'));
+  } else {
+    setHidden(pinStatus, true);
+  }
+
+  const pinButton = el(
+    'button',
+    {
+      class: pinned ? 'row-pin is-on' : 'row-pin',
+      type: 'button',
+      'data-testid': `pin-${group.dir || 'root'}`,
+      'aria-pressed': String(pinned),
+      'aria-label': pinned ? t('settings.storage.unpin') : t('settings.storage.pin'),
+      'title': pinned ? t('settings.storage.unpin') : t('settings.storage.pin'),
+      disabled: Boolean(pinState.running),
+      onclick: onPin,
+    },
+    [pinIcon()],
+  );
+
+  return el('li', { class: pinned ? 'row is-pinned' : 'row' }, [
+    hit,
+    pinStatus,
+    add,
+    pinButton,
+  ]);
 }
 
 function listSection(headerLabel, countLabel, rows) {
@@ -488,6 +539,7 @@ export function mountUi(root, store, sw) {
     cover: undefined,
     permissions: null,
     installable: false,
+    pins: null,
   };
 
   // A rebuilt shell has an empty panel, so the view cache must forget
@@ -501,6 +553,7 @@ export function mountUi(root, store, sw) {
     last.cover = undefined;
     last.permissions = null;
     last.installable = false;
+    last.pins = null;
   }
 
   function showToast(text) {
@@ -752,6 +805,7 @@ export function mountUi(root, store, sw) {
       permissions !== last.permissions ||
       installPromptSeen !== last.installable ||
       currentId !== last.currentId ||
+      state.pins !== last.pins ||
       (queueView &&
         (state.queue.tracks !== last.queueTracks || state.queue.index !== last.queueIndex));
 
@@ -762,6 +816,7 @@ export function mountUi(root, store, sw) {
     last.permissions = permissions;
     last.installable = installPromptSeen;
     last.currentId = currentId;
+    last.pins = state.pins;
     last.queueTracks = state.queue.tracks;
     last.queueIndex = state.queue.index;
 
@@ -830,9 +885,42 @@ export function mountUi(root, store, sw) {
       const byId = new Map(state.tracks.map((track) => [track.id, track]));
       const rows = groups.map((group) => {
         const list = group.trackIds.map((id) => byId.get(id)).filter(Boolean);
+        const sources = [...new Set(list.map((track) => track.source))];
+        const pinned =
+          sources.length > 0 && sources.every((source) => store.isPinned(source, group.dir));
+        const pins = sources
+          .map((source) => (state.pins ?? []).find((pin) => pin.id === `${source}:${group.dir}`))
+          .filter(Boolean);
+        const running = pins.some((pin) => pin.running);
+        const pin = running
+          ? {
+              running: true,
+              done: pins.reduce((sum, item) => sum + (item.done ?? 0), 0),
+              total: pins.reduce((sum, item) => sum + (item.total ?? 0), 0),
+            }
+          : { error: pins.find((item) => item.error)?.error ?? null };
         return folderRow(group, {
           onPlay: () => run(store.playQueue(list, list[0]?.id)),
           onEnqueue: () => store.appendQueue(list),
+          pinned,
+          pin,
+          onPin: () => {
+            for (const source of sources) {
+              if (pinned) {
+                run(store.unpinFolder(`${source}:${group.dir}`));
+              } else {
+                run(
+                  store.pinFolder({
+                    source,
+                    dir: group.dir,
+                    trackIds: list
+                      .filter((track) => track.source === source)
+                      .map((track) => track.id),
+                  }),
+                );
+              }
+            }
+          },
         });
       });
       ui.panel.replaceChildren(

@@ -6,6 +6,7 @@
 
 import { BUILD_VERSION } from '../core/version.js';
 import { formatBytes } from '../core/storage.js';
+import { CACHE_LIMIT_VALUES } from '../core/persist.js';
 import { t } from '../i18n/index.js';
 import { el, icon, setHidden, setText } from './dom.js';
 
@@ -304,8 +305,44 @@ export function createSettingsView(store, sw) {
   const indexRow = storageRow('storage-index', t('settings.storage.index'));
   const coverRow = storageRow('storage-cover', t('settings.storage.cover'));
   const audioRow = storageRow('storage-audio', t('settings.storage.audio'));
+  const pinnedLabel = el('span', { text: t('settings.storage.pinnedCount', { count: 0 }) });
+  const pinnedRow = el('div', { class: 'storage-row', 'data-testid': 'storage-pins' }, [
+    pinnedLabel,
+  ]);
   const usageLine = el('p', { class: 'storage-usage muted' });
   setHidden(usageLine, true);
+
+  const CACHE_LIMIT_LABELS = [
+    'settings.storage.limit05',
+    'settings.storage.limit1',
+    'settings.storage.limit2',
+    'settings.storage.limit5',
+    'settings.storage.limitUnlimited',
+  ];
+  const cacheLimitButtons = CACHE_LIMIT_VALUES.map((value, index) => {
+    const button = el('button', {
+      type: 'button',
+      class: 'segment',
+      'data-testid': `cache-limit-${index}`,
+      'aria-pressed': 'false',
+      text: t(CACHE_LIMIT_LABELS[index] ?? 'settings.storage.limit'),
+      onclick: () => run(store.setSetting('cacheLimitBytes', value)),
+    });
+    return { value, button };
+  });
+  const limitRow = el('div', { class: 'storage-limit' }, [
+    el('span', { text: t('settings.storage.limit') }),
+    el(
+      'div',
+      {
+        class: 'segmented',
+        role: 'group',
+        'aria-label': t('settings.storage.limit'),
+        'data-testid': 'cache-limit',
+      },
+      cacheLimitButtons.map(({ button }) => button),
+    ),
+  ]);
 
   const clearCacheButton = el(
     'button',
@@ -328,7 +365,13 @@ export function createSettingsView(store, sw) {
     { class: 'card settings-card', 'data-testid': 'settings-section-storage' },
     [
       el('h3', { text: t('settings.storage.title') }),
-      el('div', { class: 'storage-rows' }, [indexRow.row, coverRow.row, audioRow.row]),
+      limitRow,
+      el('div', { class: 'storage-rows' }, [
+        indexRow.row,
+        coverRow.row,
+        audioRow.row,
+        pinnedRow,
+      ]),
       usageLine,
       el('div', { class: 'settings-actions' }, [clearCacheButton, clearLibraryButton]),
     ],
@@ -478,6 +521,7 @@ export function createSettingsView(store, sw) {
 
   clearCacheButton.addEventListener('click', async () => {
     if (clearingCache) return;
+    if (!confirmed(t('settings.storage.clearConfirmCache'))) return;
     clearingCache = true;
     clearCacheButton.disabled = true;
     try {
@@ -597,6 +641,17 @@ export function createSettingsView(store, sw) {
       button.setAttribute('aria-pressed', String(active));
       button.classList.toggle('is-active', active);
     }
+
+    for (const { value, button } of cacheLimitButtons) {
+      const active = settings.cacheLimitBytes === value;
+      button.setAttribute('aria-pressed', String(active));
+      button.classList.toggle('is-active', active);
+    }
+
+    setText(
+      pinnedLabel,
+      t('settings.storage.pinnedCount', { count: (state.pins ?? []).length }),
+    );
 
     setHidden(applyButton, !state.updateReady);
     setText(

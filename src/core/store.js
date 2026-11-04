@@ -31,7 +31,14 @@ import {
   removeAt as removeAtState,
 } from './queue.js';
 import { AudioPlayer } from './player.js';
-import { loadPlayback, savePlayback, loadSettings, saveSettings } from './persist.js';
+import {
+  loadPlayback,
+  savePlayback,
+  loadSettings,
+  saveSettings,
+  CACHE_LIMIT_VALUES,
+  DEFAULT_CACHE_LIMIT_BYTES,
+} from './persist.js';
 import { installMediaSession, syncMediaSession } from './mediaSession.js';
 import { t } from '../i18n/index.js';
 
@@ -115,9 +122,10 @@ export class Store extends EventTarget {
     super();
     this.db = db;
     this.local = createSource(db);
+    this.pinStore = createPinStore(db);
     this.cache = new AudioCache({
       index: createCacheIndex(db),
-      pins: createPinStore(db),
+      pins: this.pinStore,
     });
     this.onedrive = new OneDriveSource({
       meta: {
@@ -148,7 +156,8 @@ export class Store extends EventTarget {
       current: { track: null, playing: false, position: 0, duration: 0, volume: 1 },
       sources: SOURCE_KINDS.map((kind) => emptyRow(kind, this.sources[kind])),
       onedrivePicker: { open: false, path: '', items: [], loading: false, current: null },
-      settings: { language: 'auto' },
+      settings: { language: 'auto', cacheLimitBytes: DEFAULT_CACHE_LIMIT_BYTES },
+      pins: [],
       updateReady: false,
       migration: { running: false, done: 0, total: 0, error: null },
     };
@@ -249,10 +258,24 @@ export class Store extends EventTarget {
     const playback = await loadPlayback(this.db).catch(() => null);
     const settings = await loadSettings(this.db).catch(() => ({
       language: 'auto',
+      cacheLimitBytes: DEFAULT_CACHE_LIMIT_BYTES,
     }));
+    const pins = await this.pinStore.all().catch(() => []);
 
+    this.cache.limit = settings.cacheLimitBytes;
     this._state.tracks = tracks;
     this._state.settings = { language: 'auto', ...settings };
+    this._state.pins = Array.from(pins ?? [])
+      .filter((pin) => pin && typeof pin.id === 'string')
+      .map((pin) => ({
+        id: pin.id,
+        source: pin.source,
+        dir: pin.dir ?? '',
+        running: false,
+        done: 0,
+        total: 0,
+        error: null,
+      }));
     this._state.sources = SOURCE_KINDS.map((kind) => ({
       ...emptyRow(kind, this.sources[kind]),
       trackCount: this._countTracks(kind),
@@ -741,12 +764,93 @@ export class Store extends EventTarget {
     } catch {
       // Quota is optional; the two library figures still render.
     }
-    return { indexBytes, coverBytes, audioBytes, usage, quota };
+    return {
+      indexBytes,
+      coverBytes,
+      audioBytes,
+      usage,
+      quota,
+      limitBytes: this.cache.limit,
+      pinnedCount: this._state.pins.length,
+    };
   }
 
-  /** Drop cached audio responses; returns the bytes released. */
+  /** Drop cached audio responses and the pins that protected them. */
   async clearAudioCache() {
-    return this.cache.clear();
+    const released = await this.cache.clear();
+    const pins = this._state.pins;
+    this._state.pins = [];
+    for (const pin of pins) await this.pinStore.delete(pin.id).catch(() => {});
+    this._emit();
+    return released;
+  }
+
+  /** Whether a source's `dir` (or its whole root) is kept for offline use. */
+  isPinned(source, dir) {
+    return this._state.pins.some(
+      (pin) => pin.source === source && (pin.dir === dir || pin.dir === ''),
+    );
+  }
+
+  /**
+   * Keep one source's directory offline: record the pin, then fetch every
+   * track once so the cache holds it. Sequential on purpose — a folder pin
+   * must not flood the network or the settings view.
+   */
+  async pinFolder({ source, dir = '', trackIds = [] } = {}) {
+    const id = `${source}:${dir}`;
+    if (this._state.pins.some((pin) => pin.id === id)) return;
+
+    const ids = Array.from(trackIds ?? []);
+    const byId = new Map(this._state.tracks.map((track) => [track.id, track]));
+    try {
+      await this.pinStore.put({ id, source, dir, at: Date.now() });
+    } catch {
+      return;
+    }
+
+    this._state.pins = [
+      ...this._state.pins,
+      { id, source, dir, running: true, done: 0, total: ids.length, error: null },
+    ];
+    this._emit();
+
+    let failures = 0;
+    let done = 0;
+    for (const trackId of ids) {
+      const track = byId.get(trackId);
+      if (track) {
+        try {
+          await this._adapterForTrack(track).getFile(track.path);
+        } catch {
+          failures += 1;
+        }
+      } else {
+        failures += 1;
+      }
+      done += 1;
+      this._patchPin(id, { done });
+      this._emit();
+    }
+
+    this._patchPin(id, {
+      running: false,
+      error: ids.length > 0 && failures === ids.length ? t('settings.storage.pinFailed') : null,
+    });
+    this._emit();
+  }
+
+  /** Forget a pin. Cached blobs stay until the limit or a manual clear. */
+  async unpinFolder(id) {
+    await this.pinStore.delete(id).catch(() => {});
+    this._state.pins = this._state.pins.filter((pin) => pin.id !== id);
+    this._emit();
+  }
+
+  _patchPin(id, patch) {
+    this._state.pins = this._state.pins.map((pin) =>
+      pin.id === id ? { ...pin, ...patch } : pin,
+    );
   }
 
   /** Multi-line tag report for one track; errors are left for the dialog. */
@@ -872,7 +976,17 @@ export class Store extends EventTarget {
     this._syncMediaSession(true);
   }
 
-  setSetting(key, value) {
+  async setSetting(key, value) {
+    if (key === 'cacheLimitBytes') {
+      if (!Number.isFinite(value) || !CACHE_LIMIT_VALUES.includes(value)) return;
+      const settings = { ...this._state.settings, cacheLimitBytes: value };
+      await saveSettings(this.db, settings).catch(() => {});
+      this.cache.limit = value;
+      this._state.settings = settings;
+      this._emit();
+      await this.cache.enforceLimit();
+      return;
+    }
     if (!(key in this._state.settings)) return;
     this._state.settings = { ...this._state.settings, [key]: value };
     void saveSettings(this.db, this._state.settings).catch(() => {});

@@ -1276,6 +1276,61 @@ time {
   }
 }
 
+/* Folder rows: pin a directory for offline playback. */
+.row-pin {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  margin-right: 4px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+}
+
+.row-pin svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.row-pin:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  color: var(--fg);
+}
+
+.row-pin.is-on {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.row-pin:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.row-pin-status {
+  flex: none;
+  margin-right: 8px;
+  color: var(--muted);
+  font: 12px/1 var(--font-num);
+}
+
+/* Storage card: cache limit chooser sits above the byte rows. */
+.storage-limit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.storage-limit .segmented {
+  grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
+}
+
 /* Folder rows: play the directory, or append it to the current queue. */
 .row-add {
   flex: none;
