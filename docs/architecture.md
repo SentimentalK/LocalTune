@@ -516,6 +516,21 @@ export function groupByFolder(tracks)  // [{dir, count, trackIds}]：每个直�
                                        // 结果按 dir 升序；根目录直接放歌时 dir = ''
 ```
 
+### `src/core/playlist/*` — 播放列表解析与匹配
+
+```js
+// src/core/playlist/match.js
+export async function ensureNormalizer()     // 首次调用 import('./t2s-table.js') 填表；幂等，并发共享同一个 import
+export function isNormalizerLoaded()         // T2S.size > 0
+export async function matchItem(item, tracks, options = {})
+export async function matchPlaylist(items, tracks, options = {})  // 保序，长度同 items
+
+// 同步（签名不变）：normalizeText / normalizeTitle / splitArtists / normalizeArtist /
+// artistMatches / similarity
+```
+
+繁简表（约 21 KB gzip）通过 `import()` 懒加载为独立 chunk，不进入首屏包。`matchItem` / `matchPlaylist` 为 async：调用前自动 `await ensureNormalizer()`，失败时清掉缓存以便重试并向上抛。同步规范化函数在表未加载时按 identity 处理（繁中字符原样保留），不得抛错。
+
 ### UI（`src/ui/`）
 
 ```js
@@ -560,9 +575,9 @@ UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.
 
 ## 构建与 SW
 
-- `scripts/build.mjs`：清输出目录（默认 `dist/`，`--out <dir>` 可指定，所有产物路径都基于它，e2e 用它生成 v1/v2 两份构建）；esbuild 打包 `src/main.js`（ESM、minify、target es2022）与 `src/styles.css`，输出 `<out>/assets/<name>-<hash>.js|css`；读 `src/index.html` 用 `__CSS__`/`__JS__` 替换；复制 `src/manifest.webmanifest`、`src/icons/*`、`src/.well-known/*`；用 `src/sw.template.js` 生成 `<out>/sw.js`（`__VERSION__` = 构建版本，`__PRECACHE__` = 全部产物相对 URL 的 JSON 数组）。
+- `scripts/build.mjs`：清输出目录（默认 `dist/`，`--out <dir>` 可指定，所有产物路径都基于它，e2e 用它生成 v1/v2 两份构建）；esbuild 打包 `src/main.js`（ESM、minify、target es2022）与 `src/styles.css`，输出 `<out>/assets/<name>-<hash>.js|css`；JS 构建开 `splitting: true`（`charset: 'utf8'`），入口为 `main` 与 `t2s-table`，`match.js` 的繁简表通过 `import()` 懒加载为独立 chunk，不进首屏包；读 `src/index.html` 用 `__CSS__`/`__JS__` 替换；复制 `src/manifest.webmanifest`、`src/icons/*`、`src/.well-known/*`；用 `src/sw.template.js` 生成 `<out>/sw.js`（`__VERSION__` = 构建版本，`__PRECACHE__` = 全部产物相对 URL 的 JSON 数组，含 chunk）。
 - 构建版本：`sha256`（`src/` 下所有文件按相对路径排序后逐个 update 路径与内容，再 update `process.env.BUILD_LABEL ?? ''`）取前 10 位 hex。只改一个 src 里的字符串版本就变；同一份源码 + 同一标签结果确定。该值同时注入 esbuild 的 `define: { __BUILD_VERSION__ }`（JS/CSS 两次构建都传，供源码引用）与 `sw.js` 的 `__VERSION__`（SW 在运行时即持有构建号，并用于缓存名）。
-- `scripts/size.mjs`：gzip（`zlib.gzipSync`，level 9）每个 `dist/assets/*.js` 与总计；上限 `LIMIT = 102400`（100 KB gzip，APP-001-H：i18n 表 + 设置项把首屏预算从 80 KB 提高），超出退出码 1。
+- `scripts/size.mjs`：只统计 `dist/index.html` 里实际引用的 `<script src>`（首屏入口；其静态 import 链已被 esbuild 内联），gzip（`zlib.gzipSync`，level 9）后与总计；未被 HTML 引用的 `dist/assets/*.js`（懒加载 chunk）单独打印 `chunk:` 行，不计入 total。上限 `LIMIT = 102400`（100 KB gzip，APP-001-H：i18n 表 + 设置项把首屏预算从 80 KB 提高），超出退出码 1。
 - SW 策略：install 预缓存壳；activate 清旧版本缓存并 `clients.claim()`；导航请求 network-first → 失败回退缓存 `index.html`；`sw.js` 自身 network-first；`/assets/` cache-first；`manifest.webmanifest` network-first 回退缓存。`sw.js` 的 message 处理器只认 `SKIP_WAITING` → `self.skipWaiting()`。
 - 更新流程（`src/pwa.js`，状态机 `createUpdateFlow` 无 DOM，可单测）：新 worker 装好后仍是 waiting，页面收到 `update-ready`（或 `updatefound` → `installed`）显示 banner；点「更新」调 `applyUpdate()`，它把 `SKIP_WAITING` 发给 `registration.waiting` 并在 `sessionStorage` 写入 `localtune:reloading`；waiting worker 激活触发 `controllerchange`，只有存在该标记时才删除标记并 `location.reload()` 一次。没有 waiting worker 时 `applyUpdate()` 返回 false、不 reload，因此不会退回「刷新 → 又是旧 SW → 再刷新」的死循环。
 - 注册 URL 固定 `./sw.js`，不带查询串（`controller.scriptURL` 的 `search` 为空）。
