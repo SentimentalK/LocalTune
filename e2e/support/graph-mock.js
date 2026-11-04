@@ -46,13 +46,14 @@ function driveItem(file) {
  * @param {{ files?: Array<{ id: string, name: string }> }} [options]
  */
 export async function installGraphMock(page, { files = DEFAULT_FILES } = {}) {
-  const state = { wholeRequests: [], authorizeRequests: [] };
+  const state = { wholeRequests: [], authorizeRequests: [], tokenRequests: [] };
 
   await page.route('https://login.microsoftonline.com/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
 
     if (url.pathname.endsWith('/token')) {
+      state.tokenRequests.push(request.url());
       return route.fulfill({
         status: 200,
         headers: { ...CORS, 'content-type': 'application/json' },
