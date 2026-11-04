@@ -865,3 +865,16 @@ time {
     transition: none;
   }
 }
+
+/* Folder rows: play the directory, or append it to the current queue. */
+.row-add {
+  flex: none;
+  margin-right: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: var(--shadow-raised);
+}
