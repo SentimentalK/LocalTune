@@ -7,6 +7,9 @@
 
 import { groupByAlbum, groupByArtist, formatTime } from '../core/selectors.js';
 import { groupByFolder } from '../core/folders.js';
+import { runSearch } from '../core/search.js';
+import { recentlyAdded, mostPlayed, neverPlayed } from '../core/stats.js';
+import { activeLineIndex } from '../core/lyrics/lrc.js';
 import { el, icon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
 import { createSettingsView } from './settings.js';
 import { createImportDialog, createPlaylistView } from './playlist.js';
@@ -29,6 +32,26 @@ const REPEAT_LABEL_KEY = {
 };
 const REPEAT_BADGE = { off: '', all: '∞', one: '1' };
 const SEEK_STEP = 5;
+
+/** Auto lists in display order; ids double as `autoList.<id>` keys. */
+const AUTO_LISTS = ['all', 'recent', 'most', 'never'];
+
+const AUTO_LIST_TESTID = {
+  all: 'auto-list-all',
+  recent: 'auto-list-recent',
+  most: 'auto-list-most',
+  never: 'auto-list-never',
+};
+
+/** Search groups in priority order; ids double as `search.group*` keys. */
+const SEARCH_GROUPS = [
+  { id: 'title', labelKey: 'search.groupTitle' },
+  { id: 'artist', labelKey: 'search.groupArtist' },
+  { id: 'album', labelKey: 'search.groupAlbum' },
+  { id: 'fileName', labelKey: 'search.groupFileName' },
+];
+
+const SEARCH_DEBOUNCE_MS = 150;
 
 // Installability is only observable through the event; the app never prompts.
 let installPromptSeen = false;
@@ -431,12 +454,24 @@ function createShell(store, sw) {
     { class: 'btn', type: 'button', 'aria-label': t('player.repeatOff'), onclick: () => store.cycleRepeat() },
     [icon('repeat'), repeatBadge],
   );
+  const lyricsButton = el('button', {
+    class: 'btn-pill ghost lyrics-btn',
+    type: 'button',
+    'data-testid': 'lyrics-open',
+    text: t('lyrics.open'),
+    onclick: () => {
+      const trackId = store.state.current.track?.id ?? null;
+      store.setView('lyrics');
+      if (trackId) void store.loadLyrics(trackId);
+    },
+  });
   const controls = el('div', { class: 'controls' }, [
     shuffleButton,
     prevButton,
     playButton,
     nextButton,
     repeatButton,
+    lyricsButton,
   ]);
 
   const player = el('section', { class: 'card player', 'aria-label': t('aria.nowPlaying') }, [
@@ -478,6 +513,7 @@ function createShell(store, sw) {
   // ---- settings view ----
   const settingsView = createSettingsView(store, sw);
   const settingsHost = el('div', { class: 'settings-host' }, settingsView.node);
+  const lyricsHost = el('div', { class: 'lyrics-host', hidden: true });
   const defaultView = el('div', { class: 'default-view' }, [
     el('div', { class: 'player-col' }, [player]),
     library,
@@ -501,7 +537,7 @@ function createShell(store, sw) {
     errorBox,
     scan,
     deniedHint,
-    el('main', { class: 'layout' }, [defaultView, settingsHost]),
+    el('main', { class: 'layout' }, [defaultView, settingsHost, lyricsHost]),
     updateBanner,
     toast,
     importDialog.node,
@@ -531,9 +567,11 @@ function createShell(store, sw) {
     shuffleButton,
     repeatButton,
     repeatBadge,
+    lyricsButton,
     settingsButton,
     settingsView,
     settingsHost,
+    lyricsHost,
     playlistView,
     importDialog,
     defaultView,
@@ -552,9 +590,20 @@ export function mountUi(root, store, sw) {
   let renderedView = null;
   let ui = createShell(store, sw);
 
+  // Search and auto lists live only in this UI closure, so a language switch
+  // (which rebuilds the shell) starts from a clean tracks view.
+  let searchQuery = '';
+  let activeList = 'all';
+  let searchResult = null;
+  let searchTimer = 0;
+  let searchToken = 0;
+  let tracksView = null;
+  let lyricsView = null;
+
   const last = {
     view: null,
     tracks: null,
+    stats: null,
     currentId: null,
     queueTracks: null,
     queueIndex: -1,
@@ -563,6 +612,11 @@ export function mountUi(root, store, sw) {
     installable: false,
     pins: null,
     playlists: null,
+    query: '',
+    list: 'all',
+    searchResult: null,
+    lyricsSource: null,
+    lyricsLines: null,
   };
 
   // A rebuilt shell has an empty panel, so the view cache must forget
@@ -570,6 +624,7 @@ export function mountUi(root, store, sw) {
   function resetCache() {
     last.view = null;
     last.tracks = null;
+    last.stats = null;
     last.currentId = null;
     last.queueTracks = null;
     last.queueIndex = -1;
@@ -578,6 +633,19 @@ export function mountUi(root, store, sw) {
     last.installable = false;
     last.pins = null;
     last.playlists = null;
+    last.query = '';
+    last.list = 'all';
+    last.searchResult = null;
+    last.lyricsSource = null;
+    last.lyricsLines = null;
+    clearTimeout(searchTimer);
+    searchTimer = 0;
+    searchToken += 1;
+    searchQuery = '';
+    activeList = 'all';
+    searchResult = null;
+    tracksView = null;
+    lyricsView = null;
   }
 
   function showToast(text) {
@@ -758,6 +826,7 @@ export function mountUi(root, store, sw) {
     setHidden(ui.playIcon, playing);
     setHidden(ui.pauseIcon, !playing);
     ui.playButton.disabled = !track || sourcePermission(state, track) !== 'granted';
+    ui.lyricsButton.disabled = !track;
 
     ui.shuffleButton.classList.toggle('is-on', queue.shuffle);
     ui.shuffleButton.setAttribute('aria-pressed', String(queue.shuffle));
@@ -771,7 +840,7 @@ export function mountUi(root, store, sw) {
   }
 
   function renderTabs(state) {
-    const selectedView = state.view === 'settings' ? null : state.view;
+    const selectedView = TABS.some((tab) => tab.id === state.view) ? state.view : null;
     ui.tabButtons.forEach((button, index) => {
       const selected = TABS[index].id === selectedView;
       button.setAttribute('aria-selected', String(selected));
@@ -824,19 +893,297 @@ export function mountUi(root, store, sw) {
     });
   }
 
+  // ---- tracks view: search + auto lists ----
+  function listTracks(state) {
+    const tracks = state.tracks ?? [];
+    if (activeList === 'recent') return recentlyAdded(tracks, state.stats, 50);
+    if (activeList === 'most') return mostPlayed(tracks, state.stats, 50);
+    if (activeList === 'never') return neverPlayed(tracks, state.stats);
+    return tracks;
+  }
+
+  function rerunQuery() {
+    searchToken += 1;
+    const token = searchToken;
+    searchResult = null;
+    const query = searchQuery.trim() ? searchQuery : '';
+    if (!query) {
+      render(store.state);
+      return;
+    }
+    const listId = activeList;
+    run(
+      runSearch(listTracks(store.state), query).then((result) => {
+        if (token !== searchToken) return;
+        searchResult = { query, listId, items: result.items, total: result.total };
+        render(store.state);
+      }),
+    );
+    render(store.state);
+  }
+
+  function setQuery(value) {
+    searchQuery = value;
+    rerunQuery();
+  }
+
+  function selectList(id) {
+    if (activeList === id) return;
+    activeList = id;
+    rerunQuery();
+  }
+
+  function ensureTracksView() {
+    if (tracksView) return tracksView;
+
+    const input = el('input', {
+      class: 'search-input',
+      type: 'search',
+      'data-testid': 'search-input',
+      'aria-label': t('search.label'),
+      placeholder: t('search.placeholder'),
+    });
+    const clearButton = el('button', {
+      class: 'search-clear',
+      type: 'button',
+      'data-testid': 'search-clear',
+      'aria-label': t('search.clear'),
+      text: '×',
+      hidden: true,
+      onclick: () => {
+        input.value = '';
+        setQuery('');
+      },
+    });
+    const chipButtons = AUTO_LISTS.map((id) => ({
+      id,
+      button: el('button', {
+        class: 'segment',
+        type: 'button',
+        'data-testid': AUTO_LIST_TESTID[id],
+        'aria-pressed': 'false',
+        text: t(`autoList.${id}`),
+        onclick: () => selectList(id),
+      }),
+    }));
+    const countLine = el('p', { class: 'search-count', 'data-testid': 'search-count' });
+    const listBox = el('div', { class: 'search-results' });
+    const root = el('div', { class: 'tracks-view' }, [
+      el('div', { class: 'search-bar' }, [input, clearButton]),
+      el(
+        'div',
+        { class: 'chips', 'data-testid': 'auto-lists', role: 'group', 'aria-label': t('search.label') },
+        chipButtons.map(({ button }) => button),
+      ),
+      countLine,
+      listBox,
+    ]);
+
+    input.addEventListener('input', () => {
+      const value = input.value;
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        searchTimer = 0;
+        setQuery(value);
+      }, SEARCH_DEBOUNCE_MS);
+    });
+    input.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      input.value = '';
+      clearTimeout(searchTimer);
+      searchTimer = 0;
+      setQuery('');
+    });
+
+    tracksView = { root, input, clearButton, chipButtons, countLine, listBox };
+    return tracksView;
+  }
+
+  function renderTracksView(state) {
+    const view = ensureTracksView();
+    if (ui.panel.firstElementChild !== view.root) ui.panel.replaceChildren(view.root);
+
+    setHidden(view.clearButton, !searchQuery);
+    for (const { id, button } of view.chipButtons) {
+      const active = id === activeList;
+      button.setAttribute('aria-pressed', String(active));
+      button.classList.toggle('is-active', active);
+    }
+
+    const currentId = state.current.track?.id ?? null;
+    const rowFor = (track) =>
+      trackRow(track, {
+        now: track.id === currentId,
+        onActivate: () => run(store.playTrack(track.id)),
+        onMore: openTrackMenu,
+      });
+
+    const base = listTracks(state);
+    if (!base.length) {
+      setHidden(view.countLine, true);
+      view.listBox.replaceChildren(
+        el('p', { class: 'muted', 'data-testid': 'auto-list-empty', text: t('autoList.empty') }),
+      );
+      return;
+    }
+
+    const query = searchQuery.trim() ? searchQuery : '';
+    if (!query) {
+      setHidden(view.countLine, true);
+      view.listBox.replaceChildren(
+        listSection(
+          t(`autoList.${activeList}`),
+          t('common.trackCount', { count: base.length }),
+          base.map(rowFor),
+        ),
+      );
+      return;
+    }
+
+    const result = searchResult;
+    const valid = result && result.query === query && result.listId === activeList;
+    if (!valid) {
+      // The debounced search has not resolved yet; keep the previous frame's
+      // rows out of the DOM so a stale list never answers a new query.
+      setHidden(view.countLine, true);
+      view.listBox.replaceChildren();
+      return;
+    }
+
+    setHidden(view.countLine, false);
+    setText(view.countLine, t('search.results', { count: result.total }));
+    if (result.total === 0) {
+      view.listBox.replaceChildren(
+        el('p', { class: 'muted', 'data-testid': 'search-empty', text: t('search.empty') }),
+      );
+      return;
+    }
+
+    const sections = [];
+    for (const group of SEARCH_GROUPS) {
+      const hits = result.items.filter((item) => item.group === group.id);
+      if (!hits.length) continue;
+      sections.push(
+        el('section', { class: 'list' }, [
+          el('h3', { 'data-testid': `search-group-${group.id}`, text: t(group.labelKey) }),
+          el('ul', { class: 'rows' }, hits.map((item) => rowFor(item.track))),
+        ]),
+      );
+    }
+    view.listBox.replaceChildren(...sections);
+  }
+
+  // ---- lyrics view ----
+  function buildLyricsView() {
+    const backButton = el(
+      'button',
+      {
+        class: 'icon-btn',
+        type: 'button',
+        'data-testid': 'lyrics-back',
+        'aria-label': t('lyrics.back'),
+        onclick: () => store.setView('tracks'),
+      },
+      [el('span', { class: 'back-arrow', 'aria-hidden': 'true', text: '←' })],
+    );
+    const headText = el('div', { class: 'lyrics-head-text' }, [
+      el('h2', { text: t('lyrics.title') }),
+      el('p', { class: 'lyrics-track' }),
+    ]);
+    const linesBox = el('div', { class: 'lyrics', 'data-testid': 'lyrics-lines' });
+    const root = el('section', { class: 'settings-view lyrics-view', 'data-testid': 'lyrics-view' }, [
+      el('div', { class: 'settings-head lyrics-head' }, [backButton, headText]),
+      linesBox,
+    ]);
+    return { root, trackLine: headText.lastElementChild, linesBox, rows: [], active: -1, key: null, linesRef: null, plain: null };
+  }
+
+  function ensureLyricsView() {
+    if (!lyricsView) lyricsView = buildLyricsView();
+    if (ui.lyricsHost.firstElementChild !== lyricsView.root) {
+      ui.lyricsHost.replaceChildren(lyricsView.root);
+    }
+    return lyricsView;
+  }
+
+  function renderLyrics(state) {
+    if (state.view !== 'lyrics') return;
+    const view = ensureLyricsView();
+    const track = state.current.track;
+    setText(view.trackLine, track ? `${track.title} · ${subtitleOf(track)}` : t('player.noTrack'));
+
+    const lyrics = state.lyrics ?? {};
+    const lines = Array.isArray(lyrics.lines) ? lyrics.lines : [];
+    const key = `${lyrics.trackId ?? ''}|${lyrics.source ?? 'none'}|${lyrics.loading ? 1 : 0}`;
+    if (view.key !== key || view.linesRef !== lines || view.plain !== lyrics.plain) {
+      view.key = key;
+      view.linesRef = lines;
+      view.plain = lyrics.plain;
+      view.active = -1;
+      view.rows = [];
+      view.linesBox.replaceChildren();
+      if (lyrics.loading) {
+        view.linesBox.append(el('p', { class: 'muted', text: t('lyrics.loading') }));
+      } else if (lines.length) {
+        for (const line of lines) {
+          const node = el('p', {
+            class: 'lyric-line',
+            'data-testid': 'lyric-line',
+            'data-time': String(line.time),
+            text: line.text,
+          });
+          view.rows.push(node);
+          view.linesBox.append(node);
+        }
+      } else if (lyrics.plain) {
+        view.linesBox.append(el('pre', { 'data-testid': 'lyrics-plain', text: lyrics.plain }));
+      } else {
+        view.linesBox.append(
+          el('p', { class: 'muted', 'data-testid': 'lyrics-empty', text: t('lyrics.empty') }),
+        );
+      }
+    }
+
+    const index = lines.length ? activeLineIndex(lines, state.current.position) : -1;
+    if (index === view.active) return;
+    const previous = view.rows[view.active];
+    if (previous) {
+      previous.classList.remove('is-active');
+      previous.removeAttribute('aria-current');
+    }
+    const next = view.rows[index];
+    if (next) {
+      next.classList.add('is-active');
+      next.setAttribute('aria-current', 'true');
+      if (next.isConnected) next.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+    view.active = index;
+  }
+
   function renderView(state) {
     if (state.view === 'settings') return;
+    if (state.view === 'lyrics') {
+      ensureLyricsView();
+      return;
+    }
     const currentId = state.current.track?.id ?? null;
     const queueView = state.view === 'queue';
     const permissions = (state.sources ?? []).map((row) => row.permission).join(',');
     const rebuild =
       state.view !== last.view ||
       state.tracks !== last.tracks ||
+      state.stats !== last.stats ||
       permissions !== last.permissions ||
       installPromptSeen !== last.installable ||
       currentId !== last.currentId ||
       state.pins !== last.pins ||
       state.playlists !== last.playlists ||
+      searchQuery !== last.query ||
+      activeList !== last.list ||
+      searchResult !== last.searchResult ||
+      state.lyrics.source !== last.lyricsSource ||
+      state.lyrics.lines !== last.lyricsLines ||
       (queueView &&
         (state.queue.tracks !== last.queueTracks || state.queue.index !== last.queueIndex));
 
@@ -844,11 +1191,17 @@ export function mountUi(root, store, sw) {
 
     last.view = state.view;
     last.tracks = state.tracks;
+    last.stats = state.stats;
     last.permissions = permissions;
     last.installable = installPromptSeen;
     last.currentId = currentId;
     last.pins = state.pins;
     last.playlists = state.playlists;
+    last.query = searchQuery;
+    last.list = activeList;
+    last.searchResult = searchResult;
+    last.lyricsSource = state.lyrics.source;
+    last.lyricsLines = state.lyrics.lines;
     last.queueTracks = state.queue.tracks;
     last.queueIndex = state.queue.index;
 
@@ -1002,20 +1355,7 @@ export function mountUi(root, store, sw) {
       return;
     }
 
-    const rows = state.tracks.map((track) =>
-      trackRow(track, {
-        now: track.id === currentId,
-        onActivate: () => run(store.playTrack(track.id)),
-        onMore: openTrackMenu,
-      }),
-    );
-    ui.panel.replaceChildren(
-      listSection(
-        t('common.allTracks'),
-        t('common.trackCount', { count: state.tracks.length }),
-        rows,
-      ),
-    );
+    renderTracksView(state);
   }
 
   function render(state) {
@@ -1035,9 +1375,19 @@ export function mountUi(root, store, sw) {
     renderTabs(state);
     renderView(state);
     ui.settingsView.render(state);
+    if (state.view === 'lyrics') {
+      // A track change inside the lyrics view resolves once; the store sets
+      // `lyrics.trackId` synchronously, so the 4 Hz position updates do not
+      // issue another request.
+      const trackId = state.current.track?.id ?? null;
+      if (trackId && state.lyrics?.trackId !== trackId) void store.loadLyrics(trackId);
+      renderLyrics(state);
+    }
     const settings = state.view === 'settings';
-    setHidden(ui.defaultView, settings);
+    const lyrics = state.view === 'lyrics';
+    setHidden(ui.defaultView, settings || lyrics);
     setHidden(ui.settingsHost, !settings);
+    setHidden(ui.lyricsHost, !lyrics);
     setHidden(ui.settingsButton, settings);
     setHidden(ui.updateBanner, !state.updateReady);
 

@@ -6,9 +6,14 @@ test('settings view covers library, storage, language and about', async ({ page 
 
   await page.locator('[data-testid="settings-open"]').click();
 
-  for (const section of ['library', 'storage', 'language', 'about']) {
+  for (const section of ['library', 'storage', 'playback', 'language', 'about']) {
     await expect(page.locator(`[data-testid="settings-section-${section}"]`)).toBeVisible();
   }
+
+  // Playback card: sleep timer plus the leveling and gapless toggles.
+  await expect(page.locator('[data-testid="setting-leveling"]')).toBeVisible();
+  await expect(page.locator('[data-testid="setting-gapless"]')).toBeVisible();
+  await expect(page.locator('[data-testid="sleep-end"]')).toBeVisible();
 
   // The old inline settings card (and its spin toggle) is gone.
   await expect(page.locator('#vinyl-spin')).toHaveCount(0);
