@@ -170,7 +170,7 @@ function cardItem({ title, meta, cover, label, onPlay }) {
   ]);
 }
 
-function createShell(store) {
+function createShell(store, sw) {
   const status = el('span', { class: 'status', id: 'status', text: '准备就绪' });
   const count = el('span', { class: 'count', text: '0 首' });
   const sourceName = el('span', { class: 'source-name', text: '未连接' });
@@ -323,8 +323,9 @@ function createShell(store) {
     el('button', {
       class: 'btn-pill',
       type: 'button',
-      text: '刷新',
-      onclick: () => location.reload(),
+      text: '更新',
+      'data-testid': 'update-apply',
+      onclick: () => sw?.applyUpdate?.(),
     }),
   ]);
 
@@ -373,8 +374,8 @@ function createShell(store) {
   };
 }
 
-export function mountUi(root, store) {
-  const ui = createShell(store);
+export function mountUi(root, store, sw) {
+  const ui = createShell(store, sw);
 
   const last = {
     view: null,

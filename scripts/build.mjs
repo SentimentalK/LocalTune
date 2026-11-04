@@ -1,9 +1,12 @@
-// Build the static app into dist/.
+// Build the static app into dist/ (or --out <dir>).
 //
 // Pipeline: esbuild bundles src/main.js (ESM, minified, content-hashed) and
-// src/styles.css into dist/assets/, src/index.html becomes dist/index.html with
-// its __CSS__ / __JS__ placeholders resolved, static PWA files are copied, and
-// src/sw.template.js becomes dist/sw.js with a build version and precache list.
+// src/styles.css into <out>/assets/, src/index.html becomes <out>/index.html
+// with its __CSS__ / __JS__ placeholders resolved, static PWA files are copied,
+// and src/sw.template.js becomes <out>/sw.js with a build version and precache
+// list. The build version is derived from the sources themselves plus an
+// optional BUILD_LABEL, so a one-character source change rotates it and the
+// same sources always produce the same version.
 
 import { build } from 'esbuild';
 import { createHash } from 'node:crypto';
@@ -14,14 +17,26 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const srcDir = path.join(root, 'src');
-const distDir = path.join(root, 'dist');
 
-/** Relative URL (for the manifest/SW) of a file inside dist/. */
+const args = process.argv.slice(2);
+
+/** Value of `--name <value>` on the command line, or the fallback. */
+function option(name, fallback) {
+  const index = args.indexOf(name);
+  if (index === -1) return fallback;
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) throw new Error(`${name} needs a value`);
+  return value;
+}
+
+const distDir = path.resolve(root, option('--out', 'dist'));
+
+/** Relative URL (for the manifest/SW) of a file inside the output dir. */
 function toUrl(file) {
   return './' + path.relative(distDir, file).split(path.sep).join('/');
 }
 
-/** Output file of an esbuild build, relative to dist/. */
+/** Output file of an esbuild build, relative to the output dir. */
 function outputOf(result, extension) {
   const files = Object.keys(result.metafile.outputs).filter((file) =>
     file.endsWith(extension),
@@ -34,7 +49,7 @@ function outputOf(result, extension) {
   return toUrl(path.resolve(root, files[0]));
 }
 
-async function bundle(entry, extension, loader = 'js') {
+async function bundle(entry, extension, loader = 'js', define = {}) {
   const result = await build({
     entryPoints: { [path.basename(entry, path.extname(entry))]: path.join(srcDir, entry) },
     outdir: distDir,
@@ -45,34 +60,58 @@ async function bundle(entry, extension, loader = 'js') {
     target: 'es2022',
     legalComments: 'none',
     loader: loader === 'js' ? {} : { [`.${loader}`]: loader },
+    define,
     metafile: true,
     logLevel: 'silent',
   });
   return outputOf(result, extension);
 }
 
+/** Version of the build: hash of every source file plus the optional label. */
+async function sourceVersion() {
+  const files = [];
+  async function walk(dir) {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else files.push(full);
+    }
+  }
+  await walk(srcDir);
+
+  const relative = (file) => path.relative(srcDir, file).split(path.sep).join('/');
+  files.sort((a, b) => {
+    const left = relative(a);
+    const right = relative(b);
+    return left < right ? -1 : left > right ? 1 : 0;
+  });
+
+  const hash = createHash('sha256');
+  for (const file of files) {
+    hash.update(relative(file));
+    hash.update(await readFile(file));
+  }
+  hash.update(process.env.BUILD_LABEL ?? '');
+  return hash.digest('hex').slice(0, 10);
+}
+
 async function main() {
+  const version = await sourceVersion();
+  const define = { __BUILD_VERSION__: JSON.stringify(version) };
+
   await rm(distDir, { recursive: true, force: true });
   await mkdir(path.join(distDir, 'assets'), { recursive: true });
 
-  const jsUrl = await bundle('main.js', '.js');
-  const cssUrl = await bundle('styles.css', '.css', 'css');
+  const jsUrl = await bundle('main.js', '.js', 'js', define);
+  const cssUrl = await bundle('styles.css', '.css', 'css', define);
 
   const jsPath = path.join(distDir, jsUrl);
   const cssPath = path.join(distDir, cssUrl);
   const [jsBytes, cssBytes] = await Promise.all([readFile(jsPath), readFile(cssPath)]);
 
-  // Read templates up front: the SW source is part of the version so changing
-  // only SW logic still rotates the cache name.
+  // Templates are read up front so a broken one fails before esbuild work.
   const template = await readFile(path.join(srcDir, 'index.html'), 'utf8');
   const swTemplate = await readFile(path.join(srcDir, 'sw.template.js'), 'utf8');
-
-  const version = createHash('sha256')
-    .update(jsBytes)
-    .update(cssBytes)
-    .update(swTemplate)
-    .digest('hex')
-    .slice(0, 10);
 
   // index.html: resolve placeholders, never ship a template with leftovers.
   for (const placeholder of ['__CSS__', '__JS__']) {

@@ -5,7 +5,7 @@
 ## 约束
 
 - 纯静态产物：`dist/` 只有静态文件；运行时不访问第三方域（系统字体栈，无 CDN、无分析、无 API）。
-- 无框架运行时；首屏 JS gzip 总计 ≤ 80 KB（`npm run size` 强制）。
+- 无框架运行时；首屏 JS gzip 总计 ≤ 100 KB（`npm run size` 强制，见「构建与 SW」）。
 - 构建：esbuild 只做打包/压缩/内容哈希，Node 版本取 `node -v`（本机 v24.20.0，`engines: ">=22"`）。
 - 运行时依赖 0；devDependencies 仅 `esbuild`、`@playwright/test`。
 - 只在 Android Chrome + 桌面 Chrome 验证；iOS 兼容性靠 adapter 预留，不承诺。
@@ -263,11 +263,14 @@ export function groupByFolder(tracks)  // [{dir, count, trackIds}]：每个直�
 import { createApp } from './core/store.js';
 import { mountUi } from './ui/app.js';
 const store = await createApp();
-mountUi(document.getElementById('app'), store);
+const sw = registerServiceWorker(() => store?.setUpdateReady(true));
+mountUi(document.getElementById('app'), store, sw);
 
 // src/ui/app.js
-export function mountUi(root, store)  // 首次渲染 + store.on('change') 重渲染
+export function mountUi(root, store, sw)  // 首次渲染 + store.on('change') 重渲染
 ```
+
+`sw` 是 `registerServiceWorker()` 的返回值（`{ applyUpdate, checkForUpdate }`），UI 只通过它触发更新，不直接碰 `navigator.serviceWorker`。
 
 UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.mediaSession`；全部经 Store。
 
@@ -275,11 +278,13 @@ UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.
 
 ## 构建与 SW
 
-- `scripts/build.mjs`：清 `dist/`；esbuild 打包 `src/main.js`（ESM、minify、target es2022）与 `src/styles.css`，输出 `dist/assets/<name>-<hash>.js|css`；读 `src/index.html` 用 `__CSS__`/`__JS__` 替换；复制 `src/manifest.webmanifest`、`src/icons/*`；用 `src/sw.template.js` 生成 `dist/sw.js`（`__VERSION__` = 本次构建哈希，`__PRECACHE__` = 全部产物相对 URL 的 JSON 数组）。
-- `scripts/size.mjs`：gzip（`zlib.gzipSync`，level 9）每个 `dist/assets/*.js` 与总计；> 80 KB 退出码 1。
-- SW 策略：install 预缓存壳；activate 清旧版本缓存；导航请求 network-first → 失败回退缓存 `index.html`；`sw.js` 自身 network-first；`/assets/` cache-first；`manifest.webmanifest` network-first 回退缓存。检测到新版本时 `postMessage({type:'update-ready'})`，UI 显示“有新版本，刷新”。
-- `index.html` 引用：`./manifest.webmanifest`、`./sw.js` 由 `main.js` 注册（`navigator.serviceWorker.register('./sw.js')`）。
-- e2e 由 `scripts/serve.mjs`（Node 内置 http，静态服务 `dist/`，端口 4173）提供页面；`playwright.config.js` 的 `webServer` 指向它。
+- `scripts/build.mjs`：清输出目录（默认 `dist/`，`--out <dir>` 可指定，所有产物路径都基于它，e2e 用它生成 v1/v2 两份构建）；esbuild 打包 `src/main.js`（ESM、minify、target es2022）与 `src/styles.css`，输出 `<out>/assets/<name>-<hash>.js|css`；读 `src/index.html` 用 `__CSS__`/`__JS__` 替换；复制 `src/manifest.webmanifest`、`src/icons/*`、`src/.well-known/*`；用 `src/sw.template.js` 生成 `<out>/sw.js`（`__VERSION__` = 构建版本，`__PRECACHE__` = 全部产物相对 URL 的 JSON 数组）。
+- 构建版本：`sha256`（`src/` 下所有文件按相对路径排序后逐个 update 路径与内容，再 update `process.env.BUILD_LABEL ?? ''`）取前 10 位 hex。只改一个 src 里的字符串版本就变；同一份源码 + 同一标签结果确定。该值同时注入 esbuild 的 `define: { __BUILD_VERSION__ }`（JS/CSS 两次构建都传，供源码引用）与 `sw.js` 的 `__VERSION__`（SW 在运行时即持有构建号，并用于缓存名）。
+- `scripts/size.mjs`：gzip（`zlib.gzipSync`，level 9）每个 `dist/assets/*.js` 与总计；上限 `LIMIT = 102400`（100 KB gzip，APP-001-H：i18n 表 + 设置项把首屏预算从 80 KB 提高），超出退出码 1。
+- SW 策略：install 预缓存壳；activate 清旧版本缓存并 `clients.claim()`；导航请求 network-first → 失败回退缓存 `index.html`；`sw.js` 自身 network-first；`/assets/` cache-first；`manifest.webmanifest` network-first 回退缓存。`sw.js` 的 message 处理器只认 `SKIP_WAITING` → `self.skipWaiting()`。
+- 更新流程（`src/pwa.js`，状态机 `createUpdateFlow` 无 DOM，可单测）：新 worker 装好后仍是 waiting，页面收到 `update-ready`（或 `updatefound` → `installed`）显示 banner；点「更新」调 `applyUpdate()`，它把 `SKIP_WAITING` 发给 `registration.waiting` 并在 `sessionStorage` 写入 `localtune:reloading`；waiting worker 激活触发 `controllerchange`，只有存在该标记时才删除标记并 `location.reload()` 一次。没有 waiting worker 时 `applyUpdate()` 返回 false、不 reload，因此不会退回「刷新 → 又是旧 SW → 再刷新」的死循环。
+- 注册 URL 固定 `./sw.js`，不带查询串（`controller.scriptURL` 的 `search` 为空）。
+- e2e 由 `scripts/serve.mjs`（Node 内置 http，静态服务 `dist/`，端口 4173）提供页面；`playwright.config.js` 的 `webServer` 指向它。`e2e/update.spec.js` 自带 `e2e/support/static-server.js`（root 可运行时切换），用两份构建复现真实更新。
 
 ## 部署契约（W2）
 
