@@ -207,6 +207,8 @@ export default {
   'error.db.deleteTracksAborted': '删除曲目中止',
   'error.db.writeMeta': '写入 meta 失败',
   'error.db.writeMetaAborted': '写入 meta 中止',
+  'error.db.writePlaylist': '写入歌单失败',
+  'error.db.deletePlaylist': '删除歌单失败',
 
   'error.player.noElement': 'AudioPlayer 需要 HTMLAudioElement',
   'error.player.element': '音频元素报错',
@@ -232,6 +234,12 @@ export default {
   'error.onedrive.authRequired': '请先登录 OneDrive',
   'error.onedrive.loginFailed': 'OneDrive 登录失败',
   'error.onedrive.fetchFailed': '无法从 OneDrive 读取文件',
+
+  'error.playlist.noWritePermission': '未获得目录写入权限',
+  'error.playlist.writeUnsupported': '当前来源不支持写入（未授权或 OneDrive）',
+  'error.playlist.notFound': '歌单不存在',
+
+  'playlists.untitled': '未命名歌单',
 
   'fatal.message': '应用无法启动：{message}',
   'fatal.hint': '请重新授权音乐文件夹，或刷新页面重试。',

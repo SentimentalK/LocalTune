@@ -207,6 +207,8 @@ export default {
   'error.db.deleteTracksAborted': '刪除曲目中止',
   'error.db.writeMeta': '寫入 meta 失敗',
   'error.db.writeMetaAborted': '寫入 meta 中止',
+  'error.db.writePlaylist': '寫入歌單失敗',
+  'error.db.deletePlaylist': '刪除歌單失敗',
 
   'error.player.noElement': 'AudioPlayer 需要 HTMLAudioElement',
   'error.player.element': '音訊元素報錯',
@@ -232,6 +234,12 @@ export default {
   'error.onedrive.authRequired': '請先登入 OneDrive',
   'error.onedrive.loginFailed': 'OneDrive 登入失敗',
   'error.onedrive.fetchFailed': '無法從 OneDrive 讀取檔案',
+
+  'error.playlist.noWritePermission': '未取得目錄寫入權限',
+  'error.playlist.writeUnsupported': '目前來源不支援寫入（未授權或 OneDrive）',
+  'error.playlist.notFound': '歌單不存在',
+
+  'playlists.untitled': '未命名歌單',
 
   'fatal.message': '應用程式無法啟動：{message}',
   'fatal.hint': '請重新授權音樂資料夾，或重新整理頁面後重試。',

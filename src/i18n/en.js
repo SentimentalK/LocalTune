@@ -216,6 +216,8 @@ export default {
   'error.db.deleteTracksAborted': 'Deleting tracks aborted',
   'error.db.writeMeta': 'Writing meta failed',
   'error.db.writeMetaAborted': 'Writing meta aborted',
+  'error.db.writePlaylist': 'Writing the playlist failed',
+  'error.db.deletePlaylist': 'Deleting the playlist failed',
 
   'error.player.noElement': 'AudioPlayer requires an HTMLAudioElement',
   'error.player.element': 'Audio element error',
@@ -241,6 +243,13 @@ export default {
   'error.onedrive.authRequired': 'Sign in to OneDrive first',
   'error.onedrive.loginFailed': 'OneDrive sign-in failed',
   'error.onedrive.fetchFailed': 'Could not read the file from OneDrive',
+
+  'error.playlist.noWritePermission': 'Folder write permission was not granted',
+  'error.playlist.writeUnsupported':
+    'This source cannot be written to (folder permission or OneDrive)',
+  'error.playlist.notFound': 'Playlist not found',
+
+  'playlists.untitled': 'Untitled playlist',
 
   'fatal.message': 'LocalTune could not start: {message}',
   'fatal.hint': 'Reauthorize the music folder, or refresh the page to try again.',

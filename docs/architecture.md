@@ -50,7 +50,7 @@ Dockerfile, nginx.conf, .github/workflows/image.yaml   # Build Worker
  */
 ```
 
-IndexedDB（`localtune`，version 3）：
+IndexedDB（`localtune`，version 4）：
 
 - `tracks`：keyPath `id`；index `album`（`album`）、`artist`（`artist`）。
 - `meta`：keyPath `key`；键 `dirHandle`、`localMode`（`'import'|'reference'`）、`opfsRootName`、`lastScanBySource`（`{local?: {at,added,updated,removed}, onedrive?: {at,added,updated,removed}}`）、`lastBuildVersion`（最近一次乱码标签迁移针对的 `BUILD_VERSION` 字符串）、`playback`、`settings`、`onedriveToken`、`onedriveRoot`（`{driveId,itemId,path,name}`）、`onedriveItems`（`{ [相对路径]: itemId }`）、`onedriveAuthAt`。
@@ -58,6 +58,7 @@ IndexedDB（`localtune`，version 3）：
 - `pins`：keyPath `id`；固定（免驱逐）条目（细节归 D2）。
 - `playlog`：keyPath `id`，`autoIncrement`；`{ id, t, type, detail }`，环形保留最新 500 条（见 `src/core/playlog.js`）。
 - `opfsIndex`：keyPath `path`；`{ path, size, mtime }`，记录已导入 OPFS 的文件（见 `src/core/sources/opfs/index.js`）。
+- `playlists`：keyPath `id`；index `createdAt`（`createdAt`，非唯一）。行即 `Playlist`：`{ id, name, source, sourceUrl, items, createdAt }`；`id` 为 `pl_<毫秒时间戳>_<6 位 hex>`，`items[]` 为 `{ title, artist, durationMs, matchedTrackId, status, reasons, coverUrl }`（见 `src/core/playlist/model.js`）。
 
 ## 模块契约
 
@@ -95,6 +96,8 @@ export class FsaSource {
   async ensurePermission()         // 'prompt' 时 requestPermission，返回 boolean；不打开选择器
   async *scan()                    // 递归产出 SourceEntry；跳过隐藏目录；按扩展名过滤
   async getFile(path)              // 由缓存句柄按路径段取 File；找不到抛错
+  async writeTextFile(path, text)  // 未连接抛 error.source.notConnected；有 requestPermission 时先请求 {mode:'readwrite'}，
+                                   // 非 'granted' 抛 error.playlist.noWritePermission；目录段 create:true；createWritable → write → close
 }
 
 export class FileListSource {
@@ -155,12 +158,13 @@ Android Chrome 无法跨启动保留 File System Access 授权，因此提供“
   - `restore()` 只打开 OPFS 的 `music/` 与 `meta.opfsRootName`、`opfsIndex`；`permission()` 为 `opfsIndex` 有行时 `'granted'`，否则 `'none'`。不弹窗。
   - `scan()` 递归产出 `{ path, file, mtime, size }`，跳过点开头目录/文件、按扩展名过滤。
   - `getFile(path)` 按路径段从 `music/` 取 `File`，失败抛 `error.source.fileMissing`。
+  - `writeTextFile(path, text)` 写入 `music/` 下（`getDirectoryHandle('music', { create: true })`），目录段 `create: true`，`createWritable → write → close`；空文件名抛 `error.source.invalidPath`。
   - `usage()` 递归统计 `music/` 的 `bytes/count`（存储卡）；`clear()` 递归删除 `music/`、清空 `opfsIndex`、`meta.opfsRootName = null`；`forget()` 只清索引与名称，**不删已导入文件**。
 - OPFS 目录固定为 `music/`；文件保持选择目录内的相对路径。`meta.opfsRootName` 记住所选根目录名用于显示。`meta.localMode` 持久化 `'import'|'reference'`，`defaultLocalMode()`：UA 含 `Android` → 导入；否则有 `showDirectoryPicker` → 引用，否则导入。
 - `opfsIndex` 行结构：`{ path, size, mtime }`（keyPath `path`）。增量规则：`path` 相同且 `size` + `mtime` 都相同视为未变（`skipped`）；新路径或任一字段变化则重新复制；索引有而本次选择没有的路径删除 OPFS 文件与索引行。每个文件复制完成后立即写索引，中止/崩溃留下可续传的前缀。
 - 进度回调形状（`onProgress`，导入期间写入 `state.sources[local].progress`）：`{ phase: 'copy'|'remove'|'done', copied, total, removed, removedTotal, bytes, bytesTotal, skipped }`；`bytes` 为已复制字节。设置页只在 `copy`/`remove` 阶段显示进度行。
 
-iOS / 未来来源只需实现同一组方法（`connect/restore/permission/ensurePermission/scan/getFile`），`store` 不改。`state.sources[].kind` 为 `'fsa' | 'files' | 'opfs' | 'onedrive'`。
+iOS / 未来来源只需实现同一组方法（`connect/restore/permission/ensurePermission/scan/getFile`）；可选写能力为 `writeTextFile(path, text)`（FSA 与 OPFS 实现）。OneDrive **不写回**：`OneDriveSource` 没有 `writeTextFile`，歌单导出按钮在 OneDrive 或未授权的本地来源下为灰态（`store.writePlaylistM3u8()` 抛 `error.playlist.writeUnsupported`）。`state.sources[].kind` 为 `'fsa' | 'files' | 'opfs' | 'onedrive'`。
 
 ### `src/core/metadata/{index,id3,mp4}.js`
 
@@ -334,25 +338,61 @@ export class PlayLog {
 ### `src/core/db.js`
 
 ```js
-export const DB_NAME = 'localtune', DB_VERSION = 3;
-export function openDb()                         // Promise<IDBDatabase>
+export const DB_NAME = 'localtune', DB_VERSION = 4;
+export const PLAYLISTS_STORE = 'playlists';
+export function openDb()                         // Promise<IDBDatabase>（onupgradeneeded 逐 store 补建）
 export function putTracks(db, tracks)            // 单事务覆盖写
 export function deleteTracksById(db, ids)
 export function getAllTracks(db)                 // Promise<Track[]>
+export function putPlaylist(db, playlist)        // 单事务 put；失败消息 error.db.writePlaylist
+export function deletePlaylist(db, id)           // 单事务 delete；失败消息 error.db.deletePlaylist
+export function getAllPlaylists(db)              // Promise<Playlist[]>；非数组结果回落 []
 export function getMeta(db, key)                 // Promise<any>
 export function setMeta(db, key, value)
 ```
+
+### `src/core/playlist/*` — 歌单
+
+歌单只存匹配结果，不存音频：`PlaylistItem.status` 为 `'matched' | 'suspect' | 'missing'`，`reasons` 为 `'artist' | 'duration'` 的子集，`matchedTrackId` 为 `Track.id` 或 `null`。
+
+```js
+// src/core/playlist/model.js —— 纯函数，无 DOM/IDB/网络
+export const PLAYLIST_SOURCES = ['text','youtube','spotify','netease','qq'];
+export function normalizePlaylistItem(item)   // 补默认：title/artist 为 ''，durationMs/matchedTrackId/coverUrl 为 null，
+                                              // status 'missing'，reasons []；非法 status → 'missing'；
+                                              // 非 missing 且无 matchedTrackId → 'missing'
+export function normalizePlaylist(input, { now = Date.now, id } = {})
+                                              // → Playlist；id 缺省 `pl_${now()}_${6 位 hex}`；name trim 后空 → t('playlists.untitled')；
+                                              // source 非法 → 'text'；sourceUrl 非 http(s) → null；createdAt 缺失取 now()
+export function playlistCounts(playlist)      // → { matched, suspect, missing }
+export function missingText(playlist)         // 仅 missing：有 artist 写 `${artist} - ${title}`，否则 `${title}`；'\n' 连接，
+                                              // 非空时末尾带一个 '\n'；无缺失 → ''
+export function sanitizeFileName(name)        // 去 / \ : * ? " < > | 与控制字符，trim，折叠空白，截 80 字符；空 → 'playlist'
+export function m3u8Text(playlist, tracks)    // 只写 status === 'matched' 且 matchedTrackId 能在 tracks 中解析的行，按 items 顺序；
+                                              // 首行 '#EXTM3U'，每行 `#EXTINF:<秒>,<艺人> - <歌名>` + `./<path>`；
+                                              // 秒 = duration > 0 ? round(duration) : -1；无艺人只写歌名；空歌单 → '#EXTM3U\n'
+export async function rematchPlaylist(playlist, tracks, options = {})
+                                              // 只重跑 missing 行（await matchItem）；命中时替换 matchedTrackId/status/reasons；
+                                              // → { playlist: 新对象, added }，不改入参
+// src/core/playlist/repo.js —— 存储无关
+export function createPlaylistRepo(ops)       // ops: { all(), put(playlist), remove(id) }
+                                              // → { list(): 过滤非法行 + createdAt 降序 + 同值按 id 字典序,
+                                              //     save(playlist): normalize 后 put，返回落库对象,
+                                              //     remove(id) }
+```
+
+`src/core/playlist/match.js`（`matchItem`/`matchPlaylist`/相似度）与 `src/core/playlist/parse-text.js`（粘贴文本 → `{ items, delimiter, order, warnings }`）只做算法，不认识歌单存储。
 
 ### `src/core/persist.js`
 
 ```js
 export async function loadPlayback(db)   // meta.playback → {trackId,position,queueIds,queueIndex,repeat,shuffle,volume}|null
 export function savePlayback(db, snapshot) // 1s 防抖；调用 stop() 可 flush（模块内导出 savePlayback.flush）
-export async function loadSettings(db)   // {language:'auto'|'zh-CN'|'zh-TW'|'ja'|'en'}
-export async function saveSettings(db, settings) // 只写 language；非法/缺失落盘为 'auto'
+export async function loadSettings(db)   // {language, cacheLimitBytes, youtubeApiKey, playlistProxyUrl}
+export async function saveSettings(db, settings) // 写四个字段并返回同一形状；非法值落盘为默认
 ```
 
-`meta.settings.language` 缺省 `'auto'`：`'auto'` 表示跟随 `navigator.languages`，其余为显式语言。旧库残留的 `vinylSpin` 字段读取时忽略，下次保存后消失。
+`meta.settings.language` 缺省 `'auto'`：`'auto'` 表示跟随 `navigator.languages`，其余为显式语言。`youtubeApiKey` 为 trim 后 ≤ 200 字符的字符串，`playlistProxyUrl` 为 trim 后 ≤ 300 字符且以 `https://` 开头的字符串，两者不满足时读/写都落 `''`。旧库残留的 `vinylSpin` 字段读取时忽略，下次保存后消失。
 
 ### `src/core/mediaSession.js`
 
@@ -439,6 +479,18 @@ export class Store extends EventTarget {
   async unpinFolder(id)            // 只删 pin，不删缓存
   isPinned(source, dir)            // 该来源的 dir（或 dir === '' 的根）已固定
   async describeTrackTags(trackId) // 按 track.source 选 adapter → describeTags → formatTagReport
+  // 歌单：id 不存在时抛 t('error.playlist.notFound')
+  async createPlaylist({ name, source = 'text', sourceUrl = null, items = [] })
+                                   // normalize → repo.save → 插到 state.playlists 头部 → emit；返回落库对象
+  async deletePlaylist(id)         // repo.remove → 从 state 移除 → emit
+  async playlistTracks(id)         // status 为 matched/suspect 的 matchedTrackId 命中曲目，按 items 顺序
+  async confirmPlaylistItem(id, index)        // 已是 matched/suspect 且有 matchedTrackId → matched、reasons []；否则不改
+  async assignPlaylistItem(id, index, trackId) // 曲目存在且下标有效 → matchedTrackId=trackId、matched、reasons []；否则不改
+  async rematchPlaylist(id)        // 只重跑 missing 行；有新命中才保存/更新 state/emit；返回新增数
+  async playlistMissingText(id)    // → missingText(playlist)
+  async exportPlaylistM3u8(id)     // → { name: sanitizeFileName(name) + '.m3u8', text }；不写盘
+  async writePlaylistM3u8(id)      // 本地未授权抛 error.playlist.writeUnsupported；写入引用根或 OPFS music/，→ { name, path }
+  clearRematchNotice()             // state.rematch = null；emit
   setView(view)                    // 'tracks'|'albums'|'artists'|'folders'|'queue'|'settings'
   async playTrack(trackId)         // 以全部歌曲为队列，从该曲开始
   async playQueue(tracks, startId) // 以给定列表为队列
@@ -448,7 +500,8 @@ export class Store extends EventTarget {
   async seek(seconds)
   setVolume(v)
   toggleShuffle(); cycleRepeat()
-  setSetting(key, value)           // 'language' 与 'cacheLimitBytes'（后者校验合法值、写 meta、更新 cache.limit 并 enforceLimit）
+  setSetting(key, value)           // 'language'、'cacheLimitBytes'（校验合法值、写 meta、更新 cache.limit 并 enforceLimit）、
+                                   // 'youtubeApiKey'（trim 截 200）、'playlistProxyUrl'（trim 截 300，非 https:// 或空串则忽略）
   async jumpTo(index)              // 队列内跳转
   removeQueueAt(index)
   log(type, detail = {})           // 播放诊断行（best-effort，见 playlog）
@@ -478,7 +531,15 @@ export class Store extends EventTarget {
   ],
   onedrivePicker: { open: boolean, path: string, items: [{id,name,path,isFolder}],
                     loading: boolean, current: {id,name,path}|null },
-  settings: { language: 'auto'|'zh-CN'|'zh-TW'|'ja'|'en', cacheLimitBytes: number },
+  playlists: [ // 按 createdAt 降序；新建的排在最前
+    { id: 'pl_<ms>_<hex6>', name: string, source: 'text'|'youtube'|'spotify'|'netease'|'qq',
+      sourceUrl: string|null, items: [ { title, artist, durationMs, matchedTrackId,
+      status: 'matched'|'suspect'|'missing', reasons: ('artist'|'duration')[], coverUrl } ],
+      createdAt: number }
+  ],
+  rematch: { added: number } | null, // rescan 后自动补匹配的数量；clearRematchNotice() 清空
+  settings: { language: 'auto'|'zh-CN'|'zh-TW'|'ja'|'en', cacheLimitBytes: number,
+              youtubeApiKey: string, playlistProxyUrl: string },
   pins: [ // 每个来源的目录一条；根目录 dir === ''
     { id: `${source}:${dir}`, source: 'fsa'|'onedrive', dir: string,
       running: boolean, done: number, total: number, error: string|null }
@@ -496,7 +557,9 @@ export class Store extends EventTarget {
 - `onedrive` → `track.source = 'onedrive'`，`id = 'onedrive:' + path`，`path` 相对所选根，`externalIds = { onedrive: itemId }`。
 - `state.sources[].trackCount` 按 `track.source` 统计；`syncSource` 只替换该来源的轨道，`removedIds` 也只影响该来源。
 
-`init()` 顺序：`onedrive.handleRedirect()` → restore 两个来源 → 仅在 onedrive 已登录但尚无 root 时进入设置并打开 picker（有 root 的常规启动与重授权回跳都留在曲库）→ onedrive 有 root 且 `permission === 'prompt'` 时 `await onedrive.silentReauth()`（`prompt=none` 顶层跳转，10 分钟 guard，仅 init 调用）→ 读 tracks/playback/settings/pins，把 `settings.cacheLimitBytes` 写入 `cache.limit` 并构建 `state.sources`/`state.pins` → 恢复队列与播放位置 → emit。末尾以 `void this._maybeMigrateTags()` 启动后台迁移，**不 await**；若 onedrive 有 root、已授权且 `meta.lastScanBySource.onedrive.at` 距今超过 1 小时（或缺失），再 `void this.syncSource('onedrive')`。
+`init()` 顺序：`onedrive.handleRedirect()` → restore 两个来源 → 仅在 onedrive 已登录但尚无 root 时进入设置并打开 picker（有 root 的常规启动与重授权回跳都留在曲库）→ onedrive 有 root 且 `permission === 'prompt'` 时 `await onedrive.silentReauth()`（`prompt=none` 顶层跳转，10 分钟 guard，仅 init 调用）→ 读 tracks/playlists/playback/settings/pins，把 `settings.cacheLimitBytes` 写入 `cache.limit` 并构建 `state.sources`/`state.pins`/`state.playlists` → 恢复队列与播放位置 → emit。末尾以 `void this._maybeMigrateTags()` 启动后台迁移，**不 await**；若 onedrive 有 root、已授权且 `meta.lastScanBySource.onedrive.at` 距今超过 1 小时（或缺失），再 `void this.syncSource('onedrive')`。
+
+`rescan(kind)` 成功分支在写完 `meta.lastScanBySource` 之后、`_reconcileQueue()` 之前，对 `state.playlists` 逐条 `await rematchPlaylist()`（只重跑 missing 行）：有新增才 `repo.save` 并替换 state 中对应项，累计 `added > 0` 时置 `state.rematch = { added }`。任何异常被吞掉，扫描结果不受影响。首次匹配会懒加载繁简表（数十毫秒），因此重匹配只在扫描路径里做，不进入播放路径。
 
 `_maybeMigrateTags()` 触发条件：`meta.lastBuildVersion !== BUILD_VERSION` 且至少一个来源 `permission === 'granted'`。按来源分组调用 `migrateGarbledTracks`（`getFile` 用该来源的 adapter），合并结果后 `putTracks` 并用同 id 覆盖 `state.tracks`（`sortTracks` 后），再 `_reconcileQueue([])`；每 5 首或最后一首 emit 一次进度。成功后写 `meta.lastBuildVersion = BUILD_VERSION`（可疑曲目为 0 也写）；任何异常写 `state.migration.error` 且**不写版本号**，下次启动重试；无已授权来源时直接跳过且不写版本号。finally 里 `running = false` 并 emit。`running` 期间顶部状态栏显示 `t('migration.progress', { done, total })`，优先于扫描/就绪文案；`error` 在设置视图曲库卡显示一行 muted 文案。
 

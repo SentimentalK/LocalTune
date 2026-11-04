@@ -184,6 +184,35 @@ export class FsaSource {
     const fileHandle = await dir.getFileHandle(segments[segments.length - 1]);
     return fileHandle.getFile();
   }
+
+  /**
+   * Write a UTF-8 text file into the granted folder, creating directories as
+   * needed. The read grant from the picker does not cover writes, so ask for
+   * `readwrite` first; a refused prompt is a user-visible error.
+   */
+  async writeTextFile(path, text) {
+    const root = this.#root;
+    if (!root) throw new Error(t('error.source.notConnected'));
+    if (typeof root.requestPermission === 'function') {
+      const state = await root.requestPermission({ mode: 'readwrite' });
+      if (state !== 'granted') throw new Error(t('error.playlist.noWritePermission'));
+    }
+
+    const segments = String(path ?? '')
+      .split('/')
+      .filter(Boolean);
+    const name = segments[segments.length - 1] ?? '';
+    if (!name) throw new Error(t('error.source.invalidPath', { path }));
+
+    let dir = root;
+    for (const segment of segments.slice(0, -1)) {
+      dir = await dir.getDirectoryHandle(segment, { create: true });
+    }
+    const fileHandle = await dir.getFileHandle(name, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(text);
+    await writable.close();
+  }
 }
 
 /**
