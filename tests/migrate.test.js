@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { migrateGarbledTracks } from '../src/core/migrate.js';
+import { migrateGarbledTracks, selectRereadTargets } from '../src/core/migrate.js';
 
 const MOJIBAKE = 'Ã¤Â¸Â­';
 
@@ -138,4 +138,80 @@ test('migrateGarbledTracks leaves thoroughly unchanged tracks out of changed', a
   assert.equal(result.checked, 1);
   assert.equal(result.failed, 0);
   assert.deepEqual(result.changed, []);
+});
+
+const SWAPPED = [
+  '䠀椀琀漀洀椀 吀愀欀愀栀愀猀栀椀',
+  '匀琀愀爀刀椀渀最䌀栀椀氀搀',
+  '댰댰渰愰娰',
+];
+
+test('selectRereadTargets re-reads every track when the parser version moved', () => {
+  const tracks = [
+    makeTrack('garbled'),
+    makeTrack('clean-a', { title: '正常标题', artist: '正常歌手', album: '正常专辑' }),
+    makeTrack('clean-b', { title: 'Hello', artist: '', album: '' }),
+  ];
+
+  const ids = selectRereadTargets(tracks, {
+    kind: 'fsa',
+    parserVersion: 2,
+    lastParserVersion: 1,
+  }).map((track) => track.id);
+
+  assert.deepEqual(ids, ['garbled', 'clean-a', 'clean-b']);
+});
+
+test('selectRereadTargets keeps OneDrive on the heuristic, and local too at the same version', () => {
+  const swapped = SWAPPED.map((text, index) =>
+    makeTrack(`swapped-${index}`, { title: text, artist: text, album: text }),
+  );
+  const clean = [
+    makeTrack('ko', { title: '사랑', artist: '', album: '' }),
+    makeTrack('zh', { title: '夜空中最亮的星', artist: '', album: '' }),
+    makeTrack('ja', { title: '春はゆく', artist: '', album: '' }),
+  ];
+  const tracks = [...swapped, ...clean];
+  const expected = ['swapped-0', 'swapped-1', 'swapped-2'];
+
+  assert.deepEqual(
+    selectRereadTargets(tracks, {
+      kind: 'onedrive',
+      parserVersion: 2,
+      lastParserVersion: 1,
+    }).map((track) => track.id),
+    expected,
+  );
+  assert.deepEqual(
+    selectRereadTargets(tracks, {
+      kind: 'fsa',
+      parserVersion: 2,
+      lastParserVersion: 2,
+    }).map((track) => track.id),
+    expected,
+  );
+});
+
+test('migrateGarbledTracks re-reads all 60 tracks through shouldRead', async () => {
+  const tracks = Array.from({ length: 60 }, (_, index) =>
+    makeTrack(`track-${index}`, { title: '正常标题', artist: '正常歌手', album: '' }),
+  );
+  const progress = [];
+  const started = Date.now();
+
+  const result = await migrateGarbledTracks({
+    tracks,
+    shouldRead: () => true,
+    getFile: async (path) => ({ path }),
+    readMetadata: async (file) => ({ title: `Re-read ${file.path}` }),
+    onProgress: (step) => progress.push(step),
+  });
+  const elapsed = Date.now() - started;
+
+  assert.equal(result.checked, 60);
+  assert.equal(result.failed, 0);
+  assert.equal(result.changed.length, 60);
+  assert.equal(progress.at(-1).done, 60);
+  assert.equal(progress.at(-1).total, 60);
+  assert.ok(elapsed < 10_000, `elapsed ${elapsed}ms`);
 });

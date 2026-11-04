@@ -39,9 +39,8 @@ import {
 import { readMetadata, describeTags } from './metadata/index.js';
 import { formatTagReport } from './metadata/diagnostics.js';
 import { estimateLibrary } from './storage.js';
-import { isGarbledTrack } from './metadata/garbled.js';
 import { BUILD_VERSION } from './version.js';
-import { migrateGarbledTracks } from './migrate.js';
+import { migrateGarbledTracks, TAG_PARSER_VERSION, selectRereadTargets } from './migrate.js';
 import { diffScan } from './scan.js';
 import {
   createQueue,
@@ -535,42 +534,52 @@ export class Store extends EventTarget {
   }
 
   /**
-   * Re-read tags for tracks that look garbled, once per build. Runs in the
-   * background after init; playback is never awaited on it.
+   * Re-read tags when the build or the tag parser changed, plus a mojibake
+   * sweep funded by the same pass. Runs in the background after init;
+   * playback is never awaited on it.
    */
   async _maybeMigrateTags() {
     if (this._migrating) return;
     this._migrating = true;
     try {
       const last = await getMeta(this.db, 'lastBuildVersion').catch(() => null);
-      if (last === BUILD_VERSION) return;
+      const lastParser = await getMeta(this.db, 'lastTagParserVersion').catch(() => null);
+      if (last === BUILD_VERSION && lastParser === TAG_PARSER_VERSION) return;
       // Without a granted source there is nothing to read; retry next launch
       // or when the user grants permission in this session.
       const kinds = SOURCE_KINDS.filter((kind) => this.sources[kind].permission() === 'granted');
       if (!kinds.length) return;
 
-      const total = this._state.tracks.filter(
-        (track) => kinds.includes(kindOfTrack(track)) && isGarbledTrack(track),
-      ).length;
+      const groups = kinds.map((kind) => {
+        const list = this._state.tracks.filter((track) => kindOfTrack(track) === kind);
+        return {
+          kind,
+          selected: selectRereadTargets(list, {
+            kind,
+            parserVersion: TAG_PARSER_VERSION,
+            lastParserVersion: lastParser,
+          }),
+        };
+      });
+      const total = groups.reduce((sum, group) => sum + group.selected.length, 0);
       this._state.migration = { running: true, done: 0, total, error: null };
       this._emit();
 
       try {
         const changed = [];
         let base = 0;
-        for (const kind of kinds) {
-          const list = this._state.tracks.filter((track) => kindOfTrack(track) === kind);
-          const groupGarbled = list.filter(isGarbledTrack).length;
+        for (const { kind, selected } of groups) {
           const { changed: groupChanged } = await migrateGarbledTracks({
-            tracks: list,
+            tracks: selected,
             getFile: (path) => (kind === 'local' ? this.local : this.sources[kind]).getFile(path),
             readMetadata,
+            shouldRead: () => true,
             onProgress: ({ done }) => {
               this._state.migration = { ...this._state.migration, done: base + done, total };
-              if (done % 5 === 0 || done === groupGarbled) this._emit();
+              if (done % 5 === 0 || done === selected.length) this._emit();
             },
           });
-          base += groupGarbled;
+          base += selected.length;
           changed.push(...groupChanged);
         }
 
@@ -580,6 +589,7 @@ export class Store extends EventTarget {
           this._state.tracks.map((track) => byId.get(track.id) ?? track),
         );
         this._reconcileQueue([]);
+        await setMeta(this.db, 'lastTagParserVersion', TAG_PARSER_VERSION);
         await setMeta(this.db, 'lastBuildVersion', BUILD_VERSION);
       } catch (error) {
         this._state.migration = { ...this._state.migration, error: errorMessage(error) };

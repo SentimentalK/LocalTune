@@ -25,6 +25,26 @@ test('isGarbledText accepts text just under half half-width katakana', () => {
   assert.equal(isGarbledText(kana + cjk), false);
 });
 
+test('isGarbledText flags text whose UTF-16 bytes were swapped', () => {
+  assert.equal(isGarbledText('䠀椀琀漀洀椀 吀愀欀愀栀愀猀栀椀'), true);
+  assert.equal(isGarbledText('匀琀愀爀刀椀渀最䌀栀椀氀搀'), true);
+  assert.equal(isGarbledText('댰댰渰愰娰'), true);
+});
+
+test('isGarbledText leaves normal CJK alone even with swapped-looking units', () => {
+  assert.equal(isGarbledText('사랑'), false);
+  assert.equal(isGarbledText('夜空中最亮的星'), false);
+  assert.equal(isGarbledText('春はゆく'), false);
+  assert.equal(isGarbledText('ココロのちず'), false);
+  assert.equal(isGarbledText('奈落の花'), false);
+});
+
+test('isGarbledTrack flags swapped-byte titles', () => {
+  for (const title of ['䠀椀琀漀洀椀 吀愀欀愀栀愀猀栀椀', '匀琀愀爀刀椀渀最䌀栀椀氀搀', '댰댰渰愰娰']) {
+    assert.equal(isGarbledTrack({ title, artist: '', album: '' }), true, title);
+  }
+});
+
 test('isGarbledText leaves normal Chinese and Japanese alone', () => {
   assert.equal(isGarbledText('中文标题'), false);
   assert.equal(isGarbledText('こんにちは世界'), false);
