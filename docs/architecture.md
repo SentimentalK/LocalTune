@@ -59,7 +59,7 @@ IndexedDB（`localtune`，version 1）：
 
 ### `src/core/source.js` — 文件来源 adapter
 
-v1 唯一实现是 File System Access；调用方只依赖接口，不依赖 `showDirectoryPicker`。
+v1 有两个实现：File System Access（桌面 Chromium / Android Chrome 132+）与 `<input webkitdirectory>` 回退（无 `showDirectoryPicker` 的浏览器）。调用方只依赖接口，不依赖具体实现。
 
 ```js
 /** @typedef {Object} SourceEntry
@@ -71,19 +71,34 @@ v1 唯一实现是 File System Access；调用方只依赖接口，不依赖 `sh
 
 export const AUDIO_EXTENSIONS = new Set(['mp3','m4a','flac','ogg','oga','wav','webm']);
 
+export function hasDirectoryPicker()  // typeof globalThis.showDirectoryPicker === 'function'
+export function createSource(db)      // hasDirectoryPicker() ? new FsaSource(db) : new FileListSource(db)
+
 export class FsaSource {
   kind = 'fsa';
   name = '';                       // 根目录名，未连接为空串
-  async connect()                  // showDirectoryPicker({mode:'read'})，句柄写进 meta.dirHandle
-  async restore()                  // 读句柄并 queryPermission；不再弹窗
+  async connect()                  // showDirectoryPicker({mode:'read'})，句柄写进 meta.dirHandle；
+                                   // 同一手势内补一次 requestPermission()（best-effort，SecurityError 忽略）
+  async restore()                  // 读句柄并 queryPermission；不再弹窗、不调用 requestPermission
   permission()                     // 'granted' | 'prompt' | 'denied' | 'none'
-  async ensurePermission()         // 'prompt' 时 requestPermission，返回 boolean
+  async ensurePermission()         // 'prompt' 时 requestPermission，返回 boolean；不打开选择器
   async *scan()                    // 递归产出 SourceEntry；跳过隐藏目录；按扩展名过滤
   async getFile(path)              // 由缓存句柄按路径段取 File；找不到抛错
 }
+
+export class FileListSource {
+  kind = 'files';
+  name = '';                       // 所选根目录名（webkitRelativePath 的第一段）
+  async connect()                  // 隐藏 <input type="file" webkitdirectory multiple>，File 按 path 存 meta.fileList
+  async restore()                  // 从 meta.fileList 读回 File；无选择器、无权限弹窗
+  permission()                     // 有文件时 'granted'，否则 'none'
+  async ensurePermission()         // 有文件即 true
+  async *scan()                    // 产出 { path, file, mtime, size }
+  async getFile(path)              // 从内存 Map 取 File；找不到抛错
+}
 ```
 
-iOS / 未来来源只需实现同一组方法（`connect/restore/permission/ensurePermission/scan/getFile`），`store` 不改。
+iOS / 未来来源只需实现同一组方法（`connect/restore/permission/ensurePermission/scan/getFile`），`store` 不改。`state.source.kind` 为 `'fsa' | 'files'`。
 
 ### `src/core/metadata/{index,id3,mp4}.js`
 
@@ -218,7 +233,7 @@ export class Store extends EventTarget {
   tracks: Track[],
   queue: { tracks: Track[], index: number, shuffle: boolean, repeat: 'off'|'all'|'one' },
   current: { track: Track|null, playing: boolean, position: 0, duration: 0, volume: 1 },
-  source: { kind:'fsa', connected: false, permission:'none'|'granted'|'prompt'|'denied',
+  source: { kind:'fsa'|'files', connected: false, permission:'none'|'granted'|'prompt'|'denied',
             name: '', error: null, scanning: false, progress: { done: 0, total: 0 } },
   settings: { vinylSpin: boolean },
   updateReady: false
