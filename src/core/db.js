@@ -6,10 +6,12 @@
 import { t } from '../i18n/index.js';
 
 export const DB_NAME = 'localtune';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 export const TRACKS_STORE = 'tracks';
 export const META_STORE = 'meta';
+export const CACHE_INDEX_STORE = 'cacheIndex';
+export const PINS_STORE = 'pins';
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -43,6 +45,12 @@ export function openDb() {
       }
       if (!db.objectStoreNames.contains(META_STORE)) {
         db.createObjectStore(META_STORE, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(CACHE_INDEX_STORE)) {
+        db.createObjectStore(CACHE_INDEX_STORE, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(PINS_STORE)) {
+        db.createObjectStore(PINS_STORE, { keyPath: 'id' });
       }
     };
     request.onsuccess = () => resolve(request.result);
