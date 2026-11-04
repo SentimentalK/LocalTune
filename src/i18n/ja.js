@@ -77,6 +77,12 @@ export default {
   'settings.rescanTags': 'タグを再読み込み',
   'settings.library.title': 'ライブラリ',
   'settings.library.migrationFailed': 'タグの移行に失敗しました：{message}',
+  'settings.library.modeTitle': 'ローカルソース',
+  'settings.library.modeReference': 'フォルダーを参照',
+  'settings.library.modeImport': 'アプリに取り込む',
+  'settings.library.import': 'フォルダーを取り込む',
+  'settings.library.importProgress': '取り込み中 {copied} / {total} · {bytes}',
+  'settings.library.importRemoving': '削除中 {removed} / {removedTotal}',
   'settings.source.change': '変更',
   'settings.source.remove': '削除',
   'settings.source.removeConfirm': 'このソースを削除しますか？索引済みの曲は残ります。',
@@ -101,6 +107,42 @@ export default {
   'settings.onedrive.empty': 'サブフォルダーはありません',
   'settings.onedrive.loading': 'フォルダーを読み込み中…',
   'settings.onedrive.root': 'OneDrive',
+  'settings.background.title': 'バックグラウンド再生',
+  'settings.background.hint':
+    'アプリとしてインストールし、バッテリー最適化から除外すると、画面オフでも再生が途切れにくくなります。',
+  'settings.background.installed':
+    'インストール済み。ホーム画面から起動すればバックグラウンドで再生できます。',
+  'settings.background.installable':
+    'LocalTune をインストールすると、バックグラウンド再生が安定します。',
+  'settings.background.browserMode':
+    'このブラウザーではインストールできません。画面オフ時に再生が止まる場合があります。',
+  'settings.background.install': 'アプリをインストール',
+  'settings.background.batteryOpen': 'バッテリー最適化の設定',
+  'settings.background.batteryDesktop': 'バッテリー最適化は Android 端末でのみ関係します。',
+  'settings.background.batteryGuideTitle': '画面オフ後も再生を続ける',
+  'settings.background.batteryGuideHint':
+    '以下のシステム設定を開き、Chrome のバックグラウンド実行を許可してください。メニュー名は OS のバージョンで異なる場合があります。',
+  'settings.background.batteryBrandSamsung': 'サムスン',
+  'settings.background.batteryBrandXiaomi': 'Xiaomi',
+  'settings.background.batteryBrandHuawei': 'HUAWEI',
+  'settings.background.batteryBrandStock': 'Android',
+  'settings.background.samsung1':
+    '設定 → バッテリーとデバイスケア → バッテリー → バックグラウンド使用の制限',
+  'settings.background.samsung2': '「未使用のアプリをスリープさせる」をオフ',
+  'settings.background.samsung3':
+    '「スリープしないアプリ」→ ＋ → Chrome を選択。別ルート：設定 → アプリ → Chrome → バッテリー → バッテリーの最適化 → すべてのアプリ → Chrome → 最適化しない',
+  'settings.background.xiaomi1': '設定 → アプリ → アプリを管理 → Chrome',
+  'settings.background.xiaomi2': 'バッテリーセーバー → 制限なし',
+  'settings.background.xiaomi3': 'アプリの権限 → バックグラウンドでの自動起動 → 許可',
+  'settings.background.huawei1': '電話マネージャー → アプリ起動 → Chrome',
+  'settings.background.huawei2':
+    '「自動管理」をオフにし、自動起動・関連起動・バックグラウンド動作の3つをすべてオン',
+  'settings.background.huawei3':
+    '別ルート：設定 → バッテリー → バッテリーの最適化 → Chrome → 許可しない',
+  'settings.background.stock1': '設定 → アプリ → すべてのアプリを表示 → Chrome',
+  'settings.background.stock2': 'アプリのバッテリー使用量 → 制限なし',
+  'settings.background.stock3':
+    '別ルート：設定 → アプリ → 特別なアプリのアクセス → バッテリーの最適化 → Chrome → 最適化しない',
   'settings.storage.title': 'ストレージ',
   'settings.storage.index': '索引',
   'settings.storage.cover': 'カバー',
@@ -124,6 +166,12 @@ export default {
   'settings.storage.unpin': 'オフライン保持を解除',
   'settings.storage.pinned': 'オフラインで利用可能',
   'settings.storage.pinFailed': 'このフォルダーをキャッシュできませんでした',
+  'settings.storage.imported': 'アプリに取り込み済み',
+  'settings.storage.importCount': '{count} ファイル',
+  'settings.storage.clearImport': '取り込んだファイルを削除',
+  'settings.storage.clearImportConfirm':
+    '取り込んだコピーを削除しますか？ディスク上の元のフォルダーは変更されません。',
+  'settings.storage.importCleared': '取り込んだファイルを削除しました',
   'settings.language.title': '言語',
   'settings.language.auto': 'システムに従う',
   'settings.about.title': 'このアプリについて',
@@ -135,6 +183,10 @@ export default {
   'settings.about.updateReady': '新しいバージョンがあります',
   'settings.about.updateNow': '今すぐ更新',
   'settings.about.reload': '再読み込み',
+  'settings.about.playLog': '再生ログ',
+  'settings.about.playLogCopied': '再生ログをコピーしました',
+  'settings.about.playLogClear': '消去',
+  'settings.about.playLogClose': '閉じる',
 
   'aria.playTrack': '{title} を再生',
   'aria.playQueueItem': 'キューの {index} 曲目 {title} を再生',

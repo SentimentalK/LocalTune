@@ -24,3 +24,4 @@ import './opfs-mode.test.js';
 import './playlog.test.js';
 import './prefetch.test.js';
 import './install.test.js';
+import './battery.test.js';

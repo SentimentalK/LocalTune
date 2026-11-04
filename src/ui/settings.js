@@ -5,6 +5,7 @@
  */
 
 import { BUILD_VERSION } from '../core/version.js';
+import { BATTERY_BRANDS, BATTERY_STEP_KEYS, batteryTarget } from '../core/battery.js';
 import { formatBytes } from '../core/storage.js';
 import { CACHE_LIMIT_VALUES } from '../core/persist.js';
 import { t } from '../i18n/index.js';
@@ -24,6 +25,29 @@ function run(result) {
 
 function confirmed(message) {
   return typeof window === 'undefined' || window.confirm(message);
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Fall through to the selection-based copy.
+  }
+  try {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.append(area);
+    area.select();
+    const copied = document.execCommand('copy');
+    area.remove();
+    return copied;
+  } catch {
+    return false;
+  }
 }
 
 export function createSettingsView(store, sw) {
@@ -167,6 +191,51 @@ export function createSettingsView(store, sw) {
       addSourceButton.setAttribute('aria-expanded', String(next));
     },
   });
+  let modeBusy = false;
+  const localModeButtons = [
+    { value: 'reference', key: 'settings.library.modeReference' },
+    { value: 'import', key: 'settings.library.modeImport' },
+  ].map(({ value, key }) =>
+    el('button', {
+      type: 'button',
+      class: 'segment',
+      'data-testid': `local-mode-${value}`,
+      'aria-pressed': 'false',
+      text: t(key),
+      onclick: async () => {
+        if (modeBusy) return;
+        modeBusy = true;
+        try {
+          await store.setLocalMode(value);
+          if (value === 'import') void store.connectSource();
+        } finally {
+          modeBusy = false;
+        }
+      },
+    }),
+  );
+
+  const modeRow = el('div', { class: 'storage-limit' }, [
+    el('span', { text: t('settings.library.modeTitle') }),
+    el(
+      'div',
+      {
+        class: 'segmented',
+        role: 'group',
+        'aria-label': t('settings.library.modeTitle'),
+        'data-testid': 'local-mode',
+      },
+      localModeButtons,
+    ),
+  ]);
+
+  const importProgress = el('p', {
+    class: 'settings-progress muted',
+    role: 'status',
+    'data-testid': 'import-progress',
+  });
+  setHidden(importProgress, true);
+
   const rescanTagsButton = el('button', {
     class: 'btn-pill ghost',
     type: 'button',
@@ -181,7 +250,9 @@ export function createSettingsView(store, sw) {
     [
       el('h3', { text: t('settings.library.title') }),
       createSourceRow('local'),
+      modeRow,
       createSourceRow('onedrive'),
+      importProgress,
       progress,
       migrationError,
       el('div', { class: 'settings-actions' }, [
@@ -189,6 +260,167 @@ export function createSettingsView(store, sw) {
         sourceChoices,
         rescanTagsButton,
       ]),
+    ],
+  );
+
+  // ---- background playback ----
+  const BRAND_LABELS = {
+    samsung: 'settings.background.batteryBrandSamsung',
+    xiaomi: 'settings.background.batteryBrandXiaomi',
+    huawei: 'settings.background.batteryBrandHuawei',
+    stock: 'settings.background.batteryBrandStock',
+  };
+
+  function openBatteryGuide() {
+    const steps = el('ol', { class: 'tag-report', 'data-testid': 'battery-steps' });
+    const userAgent = globalThis.navigator?.userAgent ?? '';
+    let brand = batteryTarget({ userAgent });
+
+    const tabButtons = BATTERY_BRANDS.map((value) =>
+      el('button', {
+        type: 'button',
+        class: 'segment',
+        'data-testid': `battery-brand-${value}`,
+        'aria-pressed': 'false',
+        text: t(BRAND_LABELS[value]),
+        onclick: () => {
+          brand = value;
+          renderBrand();
+        },
+      }),
+    );
+
+    function renderBrand() {
+      for (const button of tabButtons) {
+        const value = button.getAttribute('data-testid').replace('battery-brand-', '');
+        const active = value === brand;
+        button.setAttribute('aria-pressed', String(active));
+        button.classList.toggle('is-active', active);
+      }
+      steps.replaceChildren(
+        ...(BATTERY_STEP_KEYS[brand] ?? []).map((key) => el('li', { text: t(key) })),
+      );
+    }
+
+    function close() {
+      document.removeEventListener('keydown', onKeydown);
+      overlay.remove();
+    }
+
+    function onKeydown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      }
+    }
+
+    const closeButton = el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': 'battery-guide-close',
+      text: t('diagnostics.close'),
+      onclick: () => close(),
+    });
+
+    const panel = el('div', { class: 'modal-panel', role: 'document' }, [
+      el('header', { class: 'modal-head' }, [
+        el('div', {}, [
+          el('h2', { text: t('settings.background.batteryGuideTitle') }),
+          el('p', { class: 'tag-track', text: t('settings.background.batteryGuideHint') }),
+        ]),
+        closeButton,
+      ]),
+      el(
+        'div',
+        {
+          class: 'segmented',
+          role: 'group',
+          'aria-label': t('settings.background.batteryGuideTitle'),
+        },
+        tabButtons,
+      ),
+      steps,
+    ]);
+
+    const overlay = el(
+      'div',
+      {
+        class: 'modal',
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-label': t('settings.background.batteryGuideTitle'),
+        'data-testid': 'battery-guide',
+      },
+      panel,
+    );
+
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) close();
+    });
+    document.addEventListener('keydown', onKeydown);
+    document.body.append(overlay);
+    renderBrand();
+
+    // The model arrives asynchronously; render the UA guess first, then switch
+    // tabs only when the high-entropy model changes the answer.
+    Promise.resolve()
+      .then(() => globalThis.navigator?.userAgentData?.getHighEntropyValues?.(['model']))
+      .then((values) => {
+        const next = batteryTarget({ userAgent, model: values?.model ?? '' });
+        if (next !== brand) {
+          brand = next;
+          renderBrand();
+        }
+      })
+      .catch(() => {});
+  }
+
+  const installStatus = el('p', { class: 'muted', 'data-testid': 'install-status' });
+  const installHint = el('p', {
+    class: 'muted',
+    text: t('settings.background.hint'),
+  });
+  const installButton = el('button', {
+    class: 'btn-pill',
+    type: 'button',
+    'data-testid': 'install-button',
+    text: t('settings.background.install'),
+    onclick: async () => {
+      installButton.disabled = true;
+      try {
+        await store.install?.prompt();
+      } finally {
+        installButton.disabled = false;
+      }
+    },
+  });
+  setHidden(installButton, true);
+
+  const isAndroid = /Android/i.test(globalThis.navigator?.userAgent ?? '');
+  const batteryButton = el('button', {
+    class: 'btn-pill ghost',
+    type: 'button',
+    'data-testid': 'battery-button',
+    text: t('settings.background.batteryOpen'),
+    onclick: () => openBatteryGuide(),
+  });
+  const batteryDesktop = el('p', {
+    class: 'muted',
+    text: t('settings.background.batteryDesktop'),
+  });
+  setHidden(batteryButton, !isAndroid);
+  setHidden(batteryDesktop, isAndroid);
+
+  const backgroundCard = el(
+    'section',
+    { class: 'card settings-card', 'data-testid': 'settings-section-background' },
+    [
+      el('h3', { text: t('settings.background.title') }),
+      installHint,
+      installStatus,
+      el('div', { class: 'settings-actions' }, [installButton]),
+      batteryButton,
+      batteryDesktop,
     ],
   );
 
@@ -305,6 +537,36 @@ export function createSettingsView(store, sw) {
   const indexRow = storageRow('storage-index', t('settings.storage.index'));
   const coverRow = storageRow('storage-cover', t('settings.storage.cover'));
   const audioRow = storageRow('storage-audio', t('settings.storage.audio'));
+  const importValue = el('b', {
+    text: `${formatBytes(0)} · ${t('settings.storage.importCount', { count: 0 })}`,
+  });
+  let clearingImport = false;
+  const clearImportButton = el('button', {
+    class: 'btn-pill ghost',
+    type: 'button',
+    'data-testid': 'storage-clear-import',
+    text: t('settings.storage.clearImport'),
+    onclick: async () => {
+      if (clearingImport) return;
+      if (!confirmed(t('settings.storage.clearImportConfirm'))) return;
+      clearingImport = true;
+      clearImportButton.disabled = true;
+      try {
+        await store.clearImported();
+        toast(t('settings.storage.importCleared'));
+        await refreshStorage();
+      } finally {
+        clearingImport = false;
+        clearImportButton.disabled = false;
+      }
+    },
+  });
+  const importRow = el('div', { class: 'storage-row', 'data-testid': 'storage-import' }, [
+    el('span', { text: t('settings.storage.imported') }),
+    importValue,
+    clearImportButton,
+  ]);
+
   const pinnedLabel = el('span', { text: t('settings.storage.pinnedCount', { count: 0 }) });
   const pinnedRow = el('div', { class: 'storage-row', 'data-testid': 'storage-pins' }, [
     pinnedLabel,
@@ -370,6 +632,7 @@ export function createSettingsView(store, sw) {
         indexRow.row,
         coverRow.row,
         audioRow.row,
+        importRow,
         pinnedRow,
       ]),
       usageLine,
@@ -453,6 +716,94 @@ export function createSettingsView(store, sw) {
     },
   });
 
+  function openPlayLog() {
+    const pre = el('pre', {
+      class: 'tag-report',
+      'data-testid': 'playlog-text',
+      text: t('common.loading'),
+    });
+
+    function close() {
+      document.removeEventListener('keydown', onKeydown);
+      overlay.remove();
+    }
+
+    function onKeydown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      }
+    }
+
+    const copyButton = el('button', {
+      class: 'btn-pill',
+      type: 'button',
+      'data-testid': 'playlog-copy',
+      text: t('diagnostics.copy'),
+      onclick: async () => {
+        await copyText(pre.textContent ?? '');
+        toast(t('settings.about.playLogCopied'));
+      },
+    });
+    const clearButton = el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': 'playlog-clear',
+      text: t('settings.about.playLogClear'),
+      onclick: async () => {
+        await store.clearPlayLog();
+        setText(pre, '');
+      },
+    });
+    const closeButton = el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': 'playlog-close',
+      text: t('settings.about.playLogClose'),
+      onclick: () => close(),
+    });
+
+    const panel = el('div', { class: 'modal-panel', role: 'document' }, [
+      el('header', { class: 'modal-head' }, [
+        el('h2', { text: t('settings.about.playLog') }),
+        closeButton,
+      ]),
+      pre,
+      el('div', { class: 'modal-actions' }, [copyButton, clearButton]),
+    ]);
+
+    const overlay = el(
+      'div',
+      {
+        class: 'modal',
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-label': t('settings.about.playLog'),
+        'data-testid': 'playlog-panel',
+      },
+      panel,
+    );
+
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) close();
+    });
+    document.addEventListener('keydown', onKeydown);
+    document.body.append(overlay);
+
+    Promise.resolve()
+      .then(() => store.playLogText())
+      .then((text) => setText(pre, String(text ?? '')))
+      .catch(() => setText(pre, ''));
+  }
+
+  const playLogButton = el('button', {
+    class: 'btn-pill ghost',
+    type: 'button',
+    'data-testid': 'playlog-open',
+    text: t('settings.about.playLog'),
+    onclick: () => openPlayLog(),
+  });
+
   const aboutCard = el(
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-about' },
@@ -466,11 +817,24 @@ export function createSettingsView(store, sw) {
         el('span', { text: t('settings.about.updateState') }),
         updateState,
       ]),
-      el('div', { class: 'settings-actions' }, [checkButton, applyButton, reloadButton]),
+      el('div', { class: 'settings-actions' }, [
+        checkButton,
+        applyButton,
+        reloadButton,
+        playLogButton,
+      ]),
     ],
   );
 
-  node.append(head, libraryCard, pickerCard, storageCard, languageCard, aboutCard);
+  node.append(
+    head,
+    libraryCard,
+    pickerCard,
+    backgroundCard,
+    storageCard,
+    languageCard,
+    aboutCard,
+  );
 
   // Storage figures are async and can be expensive on a large cache: throttle
   // to one leading call plus at most one trailing refresh per second.
@@ -489,6 +853,12 @@ export function createSettingsView(store, sw) {
       setText(indexRow.value, formatBytes(estimate.indexBytes));
       setText(coverRow.value, formatBytes(estimate.coverBytes));
       setText(audioRow.value, formatBytes(estimate.audioBytes));
+      setText(
+        importValue,
+        `${formatBytes(estimate.importBytes)} · ${t('settings.storage.importCount', {
+          count: estimate.importCount,
+        })}`,
+      );
       const hasUsage = Number.isFinite(estimate.usage) && Number.isFinite(estimate.quota);
       setHidden(usageLine, !hasUsage);
       if (hasUsage) {
@@ -559,6 +929,11 @@ export function createSettingsView(store, sw) {
     const scanningRow = rows.find((row) => row.scanning) ?? null;
     const anyScanning = Boolean(scanningRow);
     const anyGranted = rows.some((row) => row.permission === 'granted');
+    const localRow = rows.find((row) => row.id === 'local') ?? null;
+    // `emptyRow` does not carry the mode, so fall back to the store's value
+    // until a source refresh patches the row.
+    const localMode =
+      (localRow?.mode ?? store.localMode) === 'import' ? 'import' : 'reference';
 
     for (const [kind, view] of sourceViews) {
       const row = rows.find((item) => item.id === kind) ?? {
@@ -587,10 +962,60 @@ export function createSettingsView(store, sw) {
       if (!view.syncing) setText(view.syncButton, t('settings.source.sync'));
       view.changeButton.disabled = scanning;
       view.removeButton.disabled = scanning || permission === 'none';
+      if (kind === 'local') {
+        setText(
+          view.changeButton,
+          localMode === 'import' ? t('settings.library.import') : t('settings.source.change'),
+        );
+      }
 
       setHidden(view.error, !row.error);
       if (row.error) setText(view.error, row.error);
     }
+
+    for (const button of localModeButtons) {
+      const value = button.getAttribute('data-testid').replace('local-mode-', '');
+      const active = value === localMode;
+      button.setAttribute('aria-pressed', String(active));
+      button.classList.toggle('is-active', active);
+    }
+    setText(
+      localButton,
+      localMode === 'import' ? t('settings.library.import') : t('settings.source.localFolder'),
+    );
+
+    const importState = localRow?.kind === 'opfs' ? localRow.progress : null;
+    const importing = importState?.phase === 'copy' || importState?.phase === 'remove';
+    setHidden(importProgress, !importing);
+    if (importState?.phase === 'copy') {
+      setText(
+        importProgress,
+        t('settings.library.importProgress', {
+          copied: Number(importState.copied) || 0,
+          total: Number(importState.total) || 0,
+          bytes: formatBytes(Number(importState.bytes) || 0),
+        }),
+      );
+    } else if (importState?.phase === 'remove') {
+      setText(
+        importProgress,
+        t('settings.library.importRemoving', {
+          removed: Number(importState.removed) || 0,
+          removedTotal: Number(importState.removedTotal) || 0,
+        }),
+      );
+    }
+
+    const install = state.install ?? { status: 'browser' };
+    const installKey =
+      install.status === 'installed'
+        ? 'settings.background.installed'
+        : install.status === 'installable'
+          ? 'settings.background.installable'
+          : 'settings.background.browserMode';
+    setText(installStatus, t(installKey));
+    setHidden(installHint, install.status === 'installed');
+    setHidden(installButton, install.status !== 'installable');
 
     const onedrive = rows.find((row) => row.id === 'onedrive') ?? {
       permission: 'none',
