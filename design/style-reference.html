@@ -1,0 +1,211 @@
+<title>LocalTune 风格稿</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;1,9..144,300&family=Instrument+Sans:wght@400;500;600&family=Outfit:wght@400;500;600&display=swap">
+<style>
+/* Layout: a sticky style switcher over one phone-sized player mock. Same DOM, three skins via [data-style]. Single light theme by design (the brief is a white UI). */
+:root{
+  color-scheme:light;
+  --font-ui:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-display:"Manrope",system-ui,sans-serif;
+  --font-num:ui-monospace,"SF Mono",Menlo,monospace;
+  --bg:#f6f5f1; --surface:#ffffff; --fg:#17191b; --muted:#7b7f85; --line:#e8e6e1;
+  --accent:#1f5c45; --accent-fg:#ffffff;
+  --radius:28px; --radius-sm:16px;
+  --shadow:0 1px 2px rgba(20,24,28,.05),0 10px 30px rgba(20,24,28,.08);
+  --shadow-raised:0 1px 2px rgba(20,24,28,.08),0 6px 16px rgba(20,24,28,.12),inset 0 1px 0 #fff;
+  --cover:linear-gradient(135deg,#d9c6a0,#8b6f47 60%,#3a2d1e);
+  --vinyl-size:260px;
+}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 var(--font-ui);
+  padding-block:0 32px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  transition:background .35s}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
+/* ---- switcher ---- */
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.switch{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;display:flex;gap:6px;justify-content:center;
+  padding:12px 0;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px)}
+.switch button{padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-weight:600;font-size:13px;color:var(--muted)}
+.switch button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.note{max-width:420px;margin:4px auto 18px;text-align:center;color:var(--muted);font-size:13px;text-wrap:balance}
+
+/* ---- phone ---- */
+.phone{max-width:420px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+.top{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+.top b{color:var(--fg);letter-spacing:0;text-transform:none;font-size:15px;font-family:var(--font-display)}
+
+.stage{display:flex;justify-content:center;padding:8px 0}
+.vinyl{position:relative;width:var(--vinyl-size);height:var(--vinyl-size);max-width:100%;border-radius:50%;
+  background:
+    repeating-radial-gradient(circle at 50% 50%,#0e0e10 0 1.5px,#1d1d20 1.5px 3px),
+    #141416;
+  box-shadow:var(--shadow),inset 0 0 0 1px rgba(255,255,255,.04);
+  animation:spin 6s linear infinite;animation-play-state:paused}
+.vinyl::before{content:"";position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(from 20deg,rgba(255,255,255,0) 0 40%,rgba(255,255,255,.14) 50%,rgba(255,255,255,0) 60% 100%)}
+.vinyl .label{position:absolute;inset:34%;border-radius:50%;background:var(--cover);box-shadow:inset 0 0 0 2px rgba(0,0,0,.25)}
+.vinyl .label::after{content:"";position:absolute;inset:44%;border-radius:50%;background:var(--bg)}
+.playing .vinyl{animation-play-state:running}
+.cover{display:none;width:var(--vinyl-size);height:var(--vinyl-size);max-width:100%;background:var(--cover)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.vinyl{animation:none}}
+
+.meta{text-align:center}
+.meta h1{margin:0;font:600 22px/1.2 var(--font-display);text-wrap:balance}
+.meta p{margin:4px 0 0;color:var(--muted)}
+
+.progress{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;font:12px var(--font-num);color:var(--muted);font-variant-numeric:tabular-nums}
+.bar{height:4px;border-radius:99px;background:var(--line);position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0 62% 0 0;background:var(--accent);border-radius:99px}
+
+.controls{display:flex;justify-content:center;align-items:center;gap:18px}
+.btn{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:var(--surface);box-shadow:var(--shadow-raised);transition:transform .12s,box-shadow .12s}
+.btn:active{transform:scale(.96);box-shadow:0 1px 2px rgba(20,24,28,.1)}
+.btn.main{width:72px;height:72px;background:var(--accent);color:var(--accent-fg);box-shadow:0 8px 20px color-mix(in srgb,var(--accent) 35%,transparent),inset 0 1px 0 rgba(255,255,255,.25)}
+.btn svg{width:22px;height:22px;fill:currentColor}
+.btn.main svg{width:28px;height:28px}
+
+.list{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);padding:6px;overflow:hidden}
+.list header{display:flex;justify-content:space-between;padding:12px 14px 6px;font-size:12px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.row{display:grid;grid-template-columns:40px 1fr auto;gap:12px;align-items:center;padding:10px 12px;border-radius:var(--radius-sm)}
+.row .art{width:40px;height:40px;border-radius:10px;background:var(--cover)}
+.row .t{min-width:0}
+.row .t b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .t span{color:var(--muted);font-size:12px}
+.row time{font:12px var(--font-num);color:var(--muted);font-variant-numeric:tabular-nums}
+.row.now{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.row.now b{color:var(--accent)}
+.row:nth-child(3) .art{--cover:linear-gradient(135deg,#9fb8c9,#3d5a73)}
+.row:nth-child(4) .art{--cover:linear-gradient(135deg,#e2b4a6,#8a3b3b)}
+.row:nth-child(5) .art{--cover:linear-gradient(135deg,#c9d3a8,#4f6a2f)}
+
+/* ================= B · Editorial Minimal ================= */
+[data-style="b"]{
+  --font-ui:"Instrument Sans",system-ui,sans-serif;
+  --font-display:"Fraunces","Iowan Old Style",Georgia,serif;
+  --bg:#ffffff; --surface:#ffffff; --fg:#111111; --muted:#8a8a8a; --line:#e3e3e3;
+  --accent:#111111; --accent-fg:#ffffff;
+  --radius:0; --radius-sm:0;
+  --shadow:none; --shadow-raised:none;
+  --vinyl-size:300px;
+}
+[data-style="b"] .vinyl{display:none}
+[data-style="b"] .cover{display:block;position:relative}
+[data-style="b"] .cover::after{content:"";position:absolute;right:-14px;bottom:-14px;width:44px;height:44px;border-radius:50%;
+  background:repeating-radial-gradient(circle,#111 0 1px,#333 1px 2.5px);box-shadow:0 0 0 4px #fff;animation:spin 4s linear infinite;animation-play-state:paused}
+[data-style="b"] .playing .cover::after{animation-play-state:running}
+[data-style="b"] .cover::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.35),transparent 50%)}
+[data-style="b"] .meta{text-align:left}
+[data-style="b"] .meta h1{font:300 34px/1.05 var(--font-display);letter-spacing:-.01em}
+[data-style="b"] .meta h1 em{font-style:italic;font-weight:300}
+[data-style="b"] .meta p{font-size:15px}
+[data-style="b"] .stage{justify-content:flex-start;padding:0}
+[data-style="b"] .bar{height:1px;background:var(--line)}
+[data-style="b"] .controls{justify-content:space-between;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:10px 0}
+[data-style="b"] .btn{width:44px;height:44px;border-radius:0;background:transparent}
+[data-style="b"] .btn.main{width:56px;height:56px;border-radius:0;box-shadow:none}
+[data-style="b"] .list{padding:0}
+[data-style="b"] .list header{padding:0 0 10px;border-bottom:1px solid var(--line)}
+[data-style="b"] .row{padding:14px 0;border-bottom:1px solid var(--line);grid-template-columns:28px 1fr auto}
+[data-style="b"] .row .art{display:none}
+[data-style="b"] .row .n{display:block;font:italic 300 14px var(--font-display);color:var(--muted)}
+[data-style="b"] .row.now{background:none}
+[data-style="b"] .row.now .n{color:var(--fg)}
+[data-style="b"] .switch button[aria-pressed="true"]{background:#111;color:#fff}
+.row .n{display:none}
+
+/* ================= C · Glass Light ================= */
+[data-style="c"]{
+  --font-ui:"Outfit",system-ui,sans-serif;
+  --font-display:"Outfit",system-ui,sans-serif;
+  --bg:#f3f5fa; --surface:rgba(255,255,255,.55); --fg:#1b2130; --muted:#6f788c; --line:rgba(27,33,48,.1);
+  --accent:#3a63d8; --accent-fg:#ffffff;
+  --radius:24px; --radius-sm:14px;
+  --shadow:0 8px 32px rgba(40,60,120,.10),inset 0 1px 0 rgba(255,255,255,.8);
+  --shadow-raised:0 4px 14px rgba(40,60,120,.12),inset 0 1px 0 rgba(255,255,255,.9);
+  --vinyl-size:240px;
+  position:relative;
+}
+[data-style="c"]::before,[data-style="c"]::after{content:"";position:fixed;z-index:-1;border-radius:50%;filter:blur(70px);opacity:.55;pointer-events:none}
+[data-style="c"]::before{width:380px;height:380px;left:-120px;top:60px;background:#b9c7f5}
+[data-style="c"]::after{width:320px;height:320px;right:-100px;top:380px;background:#f2c7b5}
+[data-style="c"] .vinyl{box-shadow:0 20px 50px rgba(40,60,120,.25)}
+[data-style="c"] .vinyl .label::after{background:#eef1f8}
+[data-style="c"] .list,[data-style="c"] .btn{backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);border:1px solid rgba(255,255,255,.7)}
+[data-style="c"] .btn.main{border:0;background:linear-gradient(180deg,#5a7fe8,#3a63d8)}
+[data-style="c"] .switch button{backdrop-filter:blur(10px)}
+[data-style="c"] .switch button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+</style>
+
+<div class="switch" role="tablist" aria-label="风格">
+  <button id="tab-a" data-s="a" aria-pressed="true">A · Soft Vinyl</button>
+  <button id="tab-b" data-s="b" aria-pressed="false">B · Editorial</button>
+  <button id="tab-c" data-s="c" aria-pressed="false">C · Glass</button>
+</div>
+<p class="note" id="note">暖白底、双层柔影、凸起圆钮，黑胶是主视觉。点播放键看唱片转。</p>
+
+<div class="phone" id="phone">
+  <div class="top"><span>正在播放</span><b>LocalTune</b><span>14 首</span></div>
+
+  <div class="stage">
+    <div class="vinyl" aria-hidden="true"><div class="label"></div></div>
+    <div class="cover" aria-hidden="true"></div>
+  </div>
+
+  <div class="meta">
+    <h1>Nightfall <em>in</em> Montréal</h1>
+    <p>占位歌手 · 占位专辑 · 2024</p>
+  </div>
+
+  <div class="progress"><time>1:42</time><div class="bar"><i></i></div><time>4:31</time></div>
+
+  <div class="controls">
+    <button class="btn" aria-label="随机"><svg viewBox="0 0 24 24"><path d="M17 4l4 4-4 4V9h-2.2l-2.6 3 2.6 3H17v-3l4 4-4 4v-3h-3.1l-3.2-3.8L7.5 17H3v-2h3.6l2.6-3-2.6-3H3V7h4.5l3.2 3.8L13.9 7H17z"/></svg></button>
+    <button class="btn" aria-label="上一首"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zm12 0v14L9 12z"/></svg></button>
+    <button class="btn main" id="play" aria-label="播放"><svg id="ico-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><svg id="ico-pause" viewBox="0 0 24 24" hidden><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg></button>
+    <button class="btn" aria-label="下一首"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM6 5l9 7-9 7z"/></svg></button>
+    <button class="btn" aria-label="循环"><svg viewBox="0 0 24 24"><path d="M7 7h10V4l4 4-4 4V9H9v3H7zm10 10H7v3l-4-4 4-4v3h8v-3h2z"/></svg></button>
+  </div>
+
+  <section class="list">
+    <header><span>队列</span><span>Music / 2024</span></header>
+    <div class="row now"><span class="n">01</span><div class="art"></div><div class="t"><b>Nightfall in Montréal</b><span>占位歌手</span></div><time>4:31</time></div>
+    <div class="row"><span class="n">02</span><div class="art"></div><div class="t"><b>Paper Boats</b><span>占位歌手</span></div><time>3:08</time></div>
+    <div class="row"><span class="n">03</span><div class="art"></div><div class="t"><b>Slow Train to Saint-Henri</b><span>另一位占位歌手</span></div><time>5:12</time></div>
+    <div class="row"><span class="n">04</span><div class="art"></div><div class="t"><b>Winter Static</b><span>占位乐队</span></div><time>2:57</time></div>
+  </section>
+</div>
+
+<script>
+(function(){
+  var notes={
+    a:"暖白底、双层柔影、凸起圆钮，黑胶是主视觉。点播放键看唱片转。",
+    b:"杂志式极简：无阴影，细线分隔，衬线大标题，黑胶缩成角落小圆。桌面更好看。",
+    c:"浅色玻璃：底层淡彩环境光，控件磨砂半透明。好看但在低端安卓上会掉帧。"
+  };
+  var tabs=document.querySelectorAll('.switch button');
+  function apply(s){
+    if(!notes[s]) s='a';
+    document.documentElement.setAttribute('data-style',s);
+    document.getElementById('note').textContent=notes[s];
+    tabs.forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.s===s));});
+    try{localStorage.setItem('lt-style',s)}catch(e){}
+  }
+  tabs.forEach(function(b){b.addEventListener('click',function(){location.hash=b.dataset.s;apply(b.dataset.s);});});
+  window.addEventListener('hashchange',function(){apply(location.hash.slice(1));});
+  var init=location.hash.slice(1);
+  if(!notes[init]){try{init=localStorage.getItem('lt-style')||'a'}catch(e){init='a'}}
+  apply(init);
+
+  var phone=document.getElementById('phone'),play=document.getElementById('play');
+  play.addEventListener('click',function(){
+    var on=phone.classList.toggle('playing');
+    document.getElementById('ico-play').hidden=on;
+    document.getElementById('ico-pause').hidden=!on;
+    play.setAttribute('aria-label',on?'暂停':'播放');
+  });
+})();
+</script>
