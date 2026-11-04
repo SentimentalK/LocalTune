@@ -581,6 +581,14 @@ time {
   color: var(--muted);
 }
 
+.settings-group-title {
+  margin: 4px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
 .settings-view .muted {
   color: var(--muted);
 }

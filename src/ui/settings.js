@@ -179,8 +179,33 @@ export function createSettingsView(store, sw) {
     onclick: () => oneDriveAction(),
   });
 
-  const sourceChoices = el('div', { class: 'source-choices' }, [localButton, oneDriveButton]);
+  const sourceChoices = el('div', { class: 'source-choices' }, [localButton]);
   setHidden(sourceChoices, true);
+
+  // The cloud group keeps its own entry point, so it is never hidden behind
+  // the "Add source" toggle.
+  const hint = el('p', {
+    class: 'muted',
+    'data-testid': 'settings-onedrive-hint',
+    text: t('settings.onedrive.connectedHint'),
+  });
+  setHidden(hint, true);
+
+  // Mirrors the OneDrive row from the last render so the retry action can pick
+  // the same step the row's own button would.
+  let oneDriveRow = { permission: 'none', root: null, error: null };
+  const retryButton = el('button', {
+    class: 'btn-pill ghost',
+    type: 'button',
+    'data-testid': 'settings-onedrive-retry',
+    text: t('settings.source.retry'),
+    onclick: () => {
+      if (oneDriveRow.permission === 'granted') run(store.browseOneDrive(''));
+      else if (oneDriveRow.permission === 'prompt') run(store.reauthenticateOneDrive());
+      else run(store.connectOneDrive());
+    },
+  });
+  setHidden(retryButton, true);
 
   const addSourceButton = el('button', {
     class: 'btn-pill ghost',
@@ -252,17 +277,26 @@ export function createSettingsView(store, sw) {
     { class: 'card settings-card', 'data-testid': 'settings-section-library' },
     [
       el('h3', { text: t('settings.library.title') }),
-      createSourceRow('local'),
-      modeRow,
-      createSourceRow('onedrive'),
+      el('div', { 'data-testid': 'settings-library-local' }, [
+        el('h4', { class: 'settings-group-title', text: t('settings.library.localGroup') }),
+        createSourceRow('local'),
+        modeRow,
+        el('div', { class: 'settings-actions' }, [
+          addSourceButton,
+          sourceChoices,
+          rescanTagsButton,
+        ]),
+      ]),
+      el('div', { 'data-testid': 'settings-library-cloud' }, [
+        el('h4', { class: 'settings-group-title', text: t('settings.library.cloudGroup') }),
+        hint,
+        createSourceRow('onedrive'),
+        oneDriveButton,
+        retryButton,
+      ]),
       importProgress,
       progress,
       migrationError,
-      el('div', { class: 'settings-actions' }, [
-        addSourceButton,
-        sourceChoices,
-        rescanTagsButton,
-      ]),
     ],
   );
 
@@ -444,6 +478,7 @@ export function createSettingsView(store, sw) {
   const pickerCard = el('section', {
     class: 'card settings-card onedrive-picker',
     'data-testid': 'onedrive-picker',
+    tabindex: '-1',
   });
   setHidden(pickerCard, true);
   let pickerSignature = null;
@@ -1160,6 +1195,10 @@ export function createSettingsView(store, sw) {
       oneDriveAction = () => run(store.connectOneDrive());
       setText(oneDriveButton, t('settings.source.onedriveSignIn'));
     }
+
+    oneDriveRow = onedrive;
+    setHidden(retryButton, !onedrive.error);
+    setHidden(hint, !(onedrive.permission === 'granted' && !onedrive.root));
 
     rescanTagsButton.disabled = anyScanning || !anyGranted;
     localButton.disabled = anyScanning;
