@@ -8,13 +8,31 @@
  * `state.sources`; tracks remember which adapter produced them.
  */
 
-import { openDb, putTracks, deleteTracksById, getAllTracks, getMeta, setMeta } from './db.js';
+import {
+  openDb,
+  putTracks,
+  deleteTracksById,
+  getAllTracks,
+  getMeta,
+  setMeta,
+  putPlaylist,
+  deletePlaylist,
+  getAllPlaylists,
+} from './db.js';
 import { createSource, hasDirectoryPicker } from './source.js';
 import { OpfsSource } from './sources/opfs/source.js';
 import { defaultLocalMode } from './sources/opfs/mode.js';
 import { OneDriveSource } from './sources/onedrive/source.js';
 import { AudioCache } from './cache/audioCache.js';
 import { createCacheIndex, createPinStore } from './cache/index.js';
+import { createPlaylistRepo } from './playlist/repo.js';
+import {
+  normalizePlaylist,
+  missingText,
+  sanitizeFileName,
+  m3u8Text,
+  rematchPlaylist as rematchPlaylistModel,
+} from './playlist/model.js';
 import { readMetadata, describeTags } from './metadata/index.js';
 import { formatTagReport } from './metadata/diagnostics.js';
 import { estimateLibrary } from './storage.js';
@@ -132,6 +150,11 @@ export class Store extends EventTarget {
     this.localMode = 'reference';
     this.local = this.reference;
     this.pinStore = createPinStore(db);
+    this.playlistRepo = createPlaylistRepo({
+      all: () => getAllPlaylists(db),
+      put: (playlist) => putPlaylist(db, playlist),
+      remove: (id) => deletePlaylist(db, id),
+    });
     this.cache = new AudioCache({
       index: createCacheIndex(db),
       pins: this.pinStore,
@@ -177,7 +200,14 @@ export class Store extends EventTarget {
       current: { track: null, playing: false, position: 0, duration: 0, volume: 1 },
       sources: SOURCE_KINDS.map((kind) => emptyRow(kind, this.sources[kind])),
       onedrivePicker: { open: false, path: '', items: [], loading: false, current: null },
-      settings: { language: 'auto', cacheLimitBytes: DEFAULT_CACHE_LIMIT_BYTES },
+      playlists: [],
+      rematch: null,
+      settings: {
+        language: 'auto',
+        cacheLimitBytes: DEFAULT_CACHE_LIMIT_BYTES,
+        youtubeApiKey: '',
+        playlistProxyUrl: '',
+      },
       pins: [],
       updateReady: false,
       migration: { running: false, done: 0, total: 0, error: null },
@@ -326,15 +356,19 @@ export class Store extends EventTarget {
     }
 
     const tracks = sortTracks(await getAllTracks(this.db).catch(() => []));
+    const playlists = await this.playlistRepo.list().catch(() => []);
     const playback = await loadPlayback(this.db).catch(() => null);
     const settings = await loadSettings(this.db).catch(() => ({
       language: 'auto',
       cacheLimitBytes: DEFAULT_CACHE_LIMIT_BYTES,
+      youtubeApiKey: '',
+      playlistProxyUrl: '',
     }));
     const pins = await this.pinStore.all().catch(() => []);
 
     this.cache.limit = settings.cacheLimitBytes;
     this._state.tracks = tracks;
+    this._state.playlists = playlists;
     this._state.settings = { language: 'auto', ...settings };
     this._state.pins = Array.from(pins ?? [])
       .filter((pin) => pin && typeof pin.id === 'string')
@@ -677,6 +711,31 @@ export class Store extends EventTarget {
       };
       const lastScanBySource = (await getMeta(this.db, 'lastScanBySource').catch(() => null)) ?? {};
       await setMeta(this.db, 'lastScanBySource', { ...lastScanBySource, [kind]: summary });
+
+      // A fresh library may resolve rows that were missing. Matching is
+      // best-effort: a failure here never changes the scan result. The first
+      // call builds the traditional→simplified table (tens of ms), so this
+      // stays inside the scan, never on the playback path.
+      if (this._state.playlists.length) {
+        try {
+          const resolved = new Map();
+          let added = 0;
+          for (const playlist of this._state.playlists) {
+            const result = await rematchPlaylistModel(playlist, this._state.tracks);
+            if (!result.added) continue;
+            resolved.set(playlist.id, await this.playlistRepo.save(result.playlist));
+            added += result.added;
+          }
+          if (resolved.size) {
+            this._state.playlists = this._state.playlists.map(
+              (playlist) => resolved.get(playlist.id) ?? playlist,
+            );
+          }
+          if (added > 0) this._state.rematch = { added };
+        } catch {
+          // Playlists keep their old rows; the scan result still stands.
+        }
+      }
 
       this._reconcileQueue(diff.removedIds);
       this._refreshSource(kind, { scanning: false, progress: { done: 0, total: 0 } });
@@ -1161,9 +1220,131 @@ export class Store extends EventTarget {
       await this.cache.enforceLimit();
       return;
     }
+    if (key === 'youtubeApiKey' || key === 'playlistProxyUrl') {
+      const limit = key === 'youtubeApiKey' ? 200 : 300;
+      const text = typeof value === 'string' ? value.trim().slice(0, limit) : '';
+      if (key === 'playlistProxyUrl' && text !== '' && !text.startsWith('https://')) return;
+      this._state.settings = { ...this._state.settings, [key]: text };
+      void saveSettings(this.db, this._state.settings).catch(() => {});
+      this._emit();
+      return;
+    }
     if (!(key in this._state.settings)) return;
     this._state.settings = { ...this._state.settings, [key]: value };
     void saveSettings(this.db, this._state.settings).catch(() => {});
+    this._emit();
+  }
+
+  /** @returns {object} the stored playlist; it is also at the head of state */
+  async createPlaylist({ name, source = 'text', sourceUrl = null, items = [] } = {}) {
+    const saved = await this.playlistRepo.save(
+      normalizePlaylist({ name, source, sourceUrl, items }),
+    );
+    this._state.playlists = [saved, ...this._state.playlists];
+    this._emit();
+    return saved;
+  }
+
+  async deletePlaylist(id) {
+    this.#playlist(id);
+    await this.playlistRepo.remove(id);
+    this._state.playlists = this._state.playlists.filter((playlist) => playlist.id !== id);
+    this._emit();
+  }
+
+  /** Tracks behind the matched/suspect rows, in playlist order. */
+  async playlistTracks(id) {
+    const playlist = this.#playlist(id);
+    const items = Array.isArray(playlist.items) ? playlist.items : [];
+    const byId = new Map(this._state.tracks.map((track) => [track.id, track]));
+    const tracks = [];
+    for (const item of items) {
+      if (item.status !== 'matched' && item.status !== 'suspect') continue;
+      const track = byId.get(item.matchedTrackId);
+      if (track) tracks.push(track);
+    }
+    return tracks;
+  }
+
+  async confirmPlaylistItem(id, index) {
+    const playlist = this.#playlist(id);
+    const item = playlist.items?.[index];
+    if (!item || !item.matchedTrackId) return;
+    if (item.status !== 'matched' && item.status !== 'suspect') return;
+    await this.#updatePlaylistItem(id, index, { status: 'matched', reasons: [] });
+  }
+
+  async assignPlaylistItem(id, index, trackId) {
+    const playlist = this.#playlist(id);
+    if (!playlist.items?.[index]) return;
+    if (!this._state.tracks.some((track) => track.id === trackId)) return;
+    await this.#updatePlaylistItem(id, index, {
+      matchedTrackId: trackId,
+      status: 'matched',
+      reasons: [],
+    });
+  }
+
+  /** Re-match the missing rows against the current library; → number added */
+  async rematchPlaylist(id) {
+    const playlist = this.#playlist(id);
+    const result = await rematchPlaylistModel(playlist, this._state.tracks);
+    if (!result.added) return 0;
+    const saved = await this.playlistRepo.save(result.playlist);
+    this._state.playlists = this._state.playlists.map((entry) =>
+      entry.id === id ? saved : entry,
+    );
+    this._emit();
+    return result.added;
+  }
+
+  async playlistMissingText(id) {
+    return missingText(this.#playlist(id));
+  }
+
+  /** → { name: 'playlist.m3u8', text } without touching the disk */
+  async exportPlaylistM3u8(id) {
+    const playlist = this.#playlist(id);
+    return {
+      name: `${sanitizeFileName(playlist.name)}.m3u8`,
+      text: m3u8Text(playlist, this._state.tracks),
+    };
+  }
+
+  /**
+   * Write the `.m3u8` next to the library (reference root or OPFS `music/`).
+   * OneDrive playlists and unconnected local sources have no write target.
+   */
+  async writePlaylistM3u8(id) {
+    if (this.local.permission() !== 'granted') {
+      throw new Error(t('error.playlist.writeUnsupported'));
+    }
+    const adapter = this.localMode === 'import' ? this.opfs : this.reference;
+    const file = await this.exportPlaylistM3u8(id);
+    await adapter.writeTextFile(file.name, file.text);
+    return { name: file.name, path: file.name };
+  }
+
+  clearRematchNotice() {
+    this._state.rematch = null;
+    this._emit();
+  }
+
+  #playlist(id) {
+    const playlist = this._state.playlists.find((entry) => entry.id === id);
+    if (!playlist) throw new Error(t('error.playlist.notFound'));
+    return playlist;
+  }
+
+  async #updatePlaylistItem(id, index, patch) {
+    const playlist = this.#playlist(id);
+    const items = (playlist.items ?? []).map((item, at) =>
+      at === index ? { ...item, ...patch } : item,
+    );
+    const saved = await this.playlistRepo.save({ ...playlist, items });
+    this._state.playlists = this._state.playlists.map((entry) =>
+      entry.id === id ? saved : entry,
+    );
     this._emit();
   }
 

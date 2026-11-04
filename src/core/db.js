@@ -6,7 +6,7 @@
 import { t } from '../i18n/index.js';
 
 export const DB_NAME = 'localtune';
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 export const TRACKS_STORE = 'tracks';
 export const META_STORE = 'meta';
@@ -14,6 +14,7 @@ export const CACHE_INDEX_STORE = 'cacheIndex';
 export const PINS_STORE = 'pins';
 export const PLAYLOG_STORE = 'playlog';
 export const OPFS_INDEX_STORE = 'opfsIndex';
+export const PLAYLISTS_STORE = 'playlists';
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -60,6 +61,10 @@ export function openDb() {
       if (!db.objectStoreNames.contains(OPFS_INDEX_STORE)) {
         db.createObjectStore(OPFS_INDEX_STORE, { keyPath: 'path' });
       }
+      if (!db.objectStoreNames.contains(PLAYLISTS_STORE)) {
+        const store = db.createObjectStore(PLAYLISTS_STORE, { keyPath: 'id' });
+        store.createIndex('createdAt', 'createdAt', { unique: false });
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error(t('error.db.open')));
@@ -96,6 +101,32 @@ export function getAllTracks(db) {
   const tx = db.transaction(TRACKS_STORE, 'readonly');
   const request = tx.objectStore(TRACKS_STORE).getAll();
   return requestResult(request).then((tracks) => (Array.isArray(tracks) ? tracks : []));
+}
+
+export function putPlaylist(db, playlist) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PLAYLISTS_STORE, 'readwrite');
+    tx.objectStore(PLAYLISTS_STORE).put(playlist);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error(t('error.db.writePlaylist')));
+    tx.onabort = () => reject(tx.error ?? new Error(t('error.db.writePlaylist')));
+  });
+}
+
+export function deletePlaylist(db, id) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PLAYLISTS_STORE, 'readwrite');
+    tx.objectStore(PLAYLISTS_STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error(t('error.db.deletePlaylist')));
+    tx.onabort = () => reject(tx.error ?? new Error(t('error.db.deletePlaylist')));
+  });
+}
+
+export function getAllPlaylists(db) {
+  const tx = db.transaction(PLAYLISTS_STORE, 'readonly');
+  const request = tx.objectStore(PLAYLISTS_STORE).getAll();
+  return requestResult(request).then((rows) => (Array.isArray(rows) ? rows : []));
 }
 
 export function getMeta(db, key) {

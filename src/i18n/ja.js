@@ -217,6 +217,8 @@ export default {
   'error.db.deleteTracksAborted': '曲の削除が中止されました',
   'error.db.writeMeta': 'meta の書き込みに失敗しました',
   'error.db.writeMetaAborted': 'meta の書き込みが中止されました',
+  'error.db.writePlaylist': 'プレイリストの書き込みに失敗しました',
+  'error.db.deletePlaylist': 'プレイリストの削除に失敗しました',
 
   'error.player.noElement': 'AudioPlayer には HTMLAudioElement が必要です',
   'error.player.element': 'オーディオ要素でエラーが発生しました',
@@ -242,6 +244,13 @@ export default {
   'error.onedrive.authRequired': '先に OneDrive にサインインしてください',
   'error.onedrive.loginFailed': 'OneDrive のサインインに失敗しました',
   'error.onedrive.fetchFailed': 'OneDrive からファイルを読み取れませんでした',
+
+  'error.playlist.noWritePermission': 'フォルダーの書き込み許可が得られませんでした',
+  'error.playlist.writeUnsupported':
+    'このソースには書き込めません（未許可または OneDrive）',
+  'error.playlist.notFound': 'プレイリストが見つかりません',
+
+  'playlists.untitled': '無題のプレイリスト',
 
   'fatal.message': 'アプリを起動できません：{message}',
   'fatal.hint': '音楽フォルダーを再認証するか、ページを再読み込みしてもう一度お試しください。',

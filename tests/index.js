@@ -27,3 +27,5 @@ import './install.test.js';
 import './battery.test.js';
 import './playlist-text.test.js';
 import './playlist-match.test.js';
+import './playlist-model.test.js';
+import './playlist-repo.test.js';

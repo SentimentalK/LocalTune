@@ -12,6 +12,9 @@ const SAVE_DELAY = 1000;
 const REPEAT_VALUES = new Set(['off', 'all', 'one']);
 const LANGUAGE_VALUES = new Set(['auto', 'zh-CN', 'zh-TW', 'ja', 'en']);
 const DEFAULT_LANGUAGE = 'auto';
+const MAX_API_KEY = 200;
+const MAX_PROXY_URL = 300;
+const HTTPS_URL_RE = /^https:\/\//;
 
 /** One list of allowed cache limits, owned by the cache module. */
 export const DEFAULT_CACHE_LIMIT_BYTES = DEFAULT_CACHE_LIMIT;
@@ -19,6 +22,19 @@ export const CACHE_LIMIT_VALUES = CACHE_LIMIT_OPTIONS;
 
 function isCacheLimit(bytes) {
   return Number.isFinite(bytes) && CACHE_LIMIT_OPTIONS.includes(bytes);
+}
+
+function cleanApiKey(value) {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  return text.length > MAX_API_KEY ? '' : text;
+}
+
+function cleanProxyUrl(value) {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  if (text.length > MAX_PROXY_URL || !HTTPS_URL_RE.test(text)) return '';
+  return text;
 }
 
 let pending = null;
@@ -85,6 +101,8 @@ export async function loadSettings(db) {
     cacheLimitBytes: isCacheLimit(value?.cacheLimitBytes)
       ? value.cacheLimitBytes
       : DEFAULT_CACHE_LIMIT_BYTES,
+    youtubeApiKey: cleanApiKey(value?.youtubeApiKey),
+    playlistProxyUrl: cleanProxyUrl(value?.playlistProxyUrl),
   };
 }
 
@@ -93,5 +111,12 @@ export async function saveSettings(db, settings) {
   const cacheLimitBytes = isCacheLimit(settings?.cacheLimitBytes)
     ? settings.cacheLimitBytes
     : DEFAULT_CACHE_LIMIT_BYTES;
-  await setMeta(db, SETTINGS_KEY, { language, cacheLimitBytes });
+  const stored = {
+    language,
+    cacheLimitBytes,
+    youtubeApiKey: cleanApiKey(settings?.youtubeApiKey),
+    playlistProxyUrl: cleanProxyUrl(settings?.playlistProxyUrl),
+  };
+  await setMeta(db, SETTINGS_KEY, stored);
+  return stored;
 }
