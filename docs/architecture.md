@@ -673,6 +673,7 @@ UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.
 - CI：push 任意分支 → amd64 load + curl 冒烟（`/healthz`、`/`、`/manifest.webmanifest`、`/sw.js`；`sw.js` 头含 `no-cache`；一个 `/assets/*.js` 含 `immutable`）；非 PR 推 `linux/amd64,linux/arm64` 到 `ghcr.io/sentimentalk/localtune`，tag `sha-<short>` 与分支名，main 更新 `latest`。
 
 AD
+AD
 ### search 模块（APP-001-F1）
 
 - `normalizeQuery(value)`：直接返回 `normalizeText(value)`；非字符串或空串返回 `''`。
@@ -704,3 +705,41 @@ AD
 - 增益解析（`src/core/gain.js`）：`parseGainDb` 只接受 `-7.25 dB` / `+3.0 dB` / `-7.25` / `7.2 db` 这类单个数值（可带 `dB` 后缀），夹到 ±24 dB，非法或空 → `null`；`gainFactor(db) = 10 ** (db / 20)` 夹到 `[0.1, 4]`，非有限数 → 1；`decideGain` 在 `enabled` 为假时返回 `reason:'off'`，缺少有限 `trackGainDb` 时 `reason:'none'`，否则 `reason:'tag'`。只认 ID3v2.3/v2.4 的 `TXXX` 帧（`REPLAYGAIN_TRACK_GAIN` / `REPLAYGAIN_TRACK_PEAK` / `REPLAYGAIN_ALBUM_GAIN`，描述大小写不敏感，压缩帧跳过）；`iTunNORM` 只解成整数数组供诊断（`parseItunNorm`，少于四个 8 位十六进制词即 `null`），**不参与增益**。
 - GainNode 启用（`AudioPlayer.enableLeveling()`）：上下文优先用注入的 `createAudioContext`，否则用全局 `AudioContext`/`webkitAudioContext`，两者都没有则返回 `false`。必须先 `await ctx.resume()` 且 `ctx.state === 'running'` 才建 `createMediaElementSource → createGain → destination`；状态不是 running 时 `ctx.close()` 并返回 `false`——**绝不在不可运行的上下文里建图**，否则元素被路由后静音（iOS 上 `resume()` 需要用户手势）。重复调用只 `resume()` 并返回 `true`；任何异常都返回 `false`，不抛。`setGain(db)` 在图未建时只记住数值，`levelingReady` 报告图是否就绪，`disableLeveling()` 把 gain 设回 1 并保持连接（Web Audio 无法断开已接的路由）。
 - `get canHandOffSynchronously()`：`true` 当且仅当元素已有 `src`，即 `playNow()` 不会因「未加载」抛错；store 据此判断能否不 `await` 直接交接下一首（避免等待丢掉用户手势）。
+### lyrics 模块（APP-001-F1）
+
+歌词数据层是纯模块，不访问 DOM/IndexedDB，也不 import 任何 adapter；来源文件统一由调用方注入的 `getFile(path)` 读取。
+
+```js
+// src/core/lyrics/lrc.js
+export function parseLrc(text)
+// → { offset: number, lines: Array<{ time: number, text: string }>, plain: string }
+
+export function activeLineIndex(lines, position)
+// → number：最后一个 time <= position 的下标；空数组或 position 小于首行时为 -1
+
+export function decodeLyricsBytes(bytes)
+// → string：去 UTF-8 BOM；UTF-8（fatal）失败时按 decodeLegacyText 回退；异常返回 ''
+
+export function sidecarCandidates(path)
+// → ['<dir>/<base>.lrc', '<dir>/<base>.LRC']；去掉最后一个扩展名，base 为空时返回 []
+```
+
+`parseLrc` 支持 `[m:ss]`、`[mm:ss]`、`[h:mm:ss.xx]`（毫秒 1–3 位）、一行多时间标签、`[offset:±N]`（毫秒，文件内全局生效并夹到 0）、增强格式 `<m:ss.xx>` 剥离；`[ar|ti|al|by|offset|length|re|ve|tool:]` 不产生歌词行。结果按时间升序稳定排序；没有任何带时间的行时，所有非空、非元数据行以 `\n` 拼进 `plain`，否则 `plain` 为 `''`。
+
+```js
+// src/core/lyrics/embedded.js
+export async function readEmbeddedLyrics(file)
+// → { synced: Array<{ time: number, text: string }>, plain: string }
+// 仅按文件名扩展名处理 mp3/m4a；其余扩展名或任何解析异常返回空结果
+```
+
+mp3 直接读 ID3v2 头与不超过 4 MiB 的 tag，遍历 v2.3（uint32 帧长）/v2.4（syncsafe 帧长）帧，跳过 compressed 帧：`USLT` 进 `plain`（多帧按出现顺序以 `\n` 拼接），`SYLT` 时间格式 2（毫秒）进 `synced` 并按时间排序，格式 1 整帧忽略。m4a 沿 `moov → udta → meta（跳过 4 字节 version/flags）→ ilst → ©lyr → data` 取 UTF-8 文本进 `plain`。
+
+```js
+// src/core/lyrics/index.js
+export async function resolveLyrics({ track, getFile, readEmbedded = readEmbeddedLyrics })
+// → { source: 'lrc'|'lrc-plain'|'sylt'|'uslt'|'lyr'|'none',
+//     lines: Array<{ time: number, text: string }>, plain: string }
+```
+
+优先级：同目录 `.lrc` > `.LRC` > 内嵌 SYLT > 内嵌 USLT（mp3）/©lyr（m4a）。sidecar 依次经 `getFile` → `decodeLyricsBytes` → `parseLrc`，有行返回 `lrc`，否则有 `plain` 返回 `lrc-plain`；sidecar 全部缺失/为空/失败后对 `track.path` 调用一次 `getFile` 交给 `readEmbedded`，有 `synced` 返回 `sylt`，否则按扩展名返回 `uslt` 或 `lyr`；全失败返回 `none`。OPFS 导入保留 `.lrc` sidecar（扩展名大小写不敏感），但 `scan()` 仍只产出音频。

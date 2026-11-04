@@ -27,6 +27,11 @@ function isAudioFile(name) {
   return AUDIO_EXTENSIONS.has(extensionOf(String(name ?? '')));
 }
 
+/** Sidecar lyrics travel with the audio so `resolveLyrics` can read them later. */
+function isLyricsFile(name) {
+  return extensionOf(String(name ?? '')) === 'lrc';
+}
+
 function abortError(message) {
   const error = new Error(message);
   error.name = 'AbortError';
@@ -56,7 +61,7 @@ async function collectHandleEntries(dir, prefix, out) {
       await collectHandleEntries(handle, path, out);
       continue;
     }
-    if (handle.kind !== 'file' || !isAudioFile(name)) continue;
+    if (handle.kind !== 'file' || !(isAudioFile(name) || isLyricsFile(name))) continue;
     const file = await handle.getFile();
     out.push({
       path,
@@ -230,7 +235,7 @@ export class OpfsSource {
     const list = Array.from(files ?? []);
     const rootName = rootNameOf(list);
     const entries = list
-      .filter((file) => isAudioFile(file.name))
+      .filter((file) => isAudioFile(file.name) || isLyricsFile(file.name))
       .map((file) => entryOf(file, rootName));
     if (!entries.length) throw abortError(t('error.source.noAudio'));
     return this.#importEntries(entries, rootName, { signal });
