@@ -52,6 +52,7 @@ async function seedLibrary(page) {
           key: 'fileList',
           value: rows.map(({ path, file }) => ({ path, file })),
         });
+        tx.objectStore('meta').put({ key: 'localMode', value: 'reference' });
         const store = tx.objectStore('tracks');
         for (const { path, title, file } of rows) {
           store.put({
