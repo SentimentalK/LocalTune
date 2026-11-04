@@ -2,13 +2,20 @@
  * Application store: the single entry point for the UI.
  * Owns the library, the queue, the audio element and persistence, and emits
  * a 'change' event whenever the read-only state snapshot is updated.
+ *
+ * Two library sources are supported: a local folder (File System Access or
+ * `<input webkitdirectory>`) and OneDrive. Each has its own row in
+ * `state.sources`; tracks remember which adapter produced them.
  */
 
 import { openDb, putTracks, deleteTracksById, getAllTracks, getMeta, setMeta } from './db.js';
 import { createSource } from './source.js';
+import { OneDriveSource } from './sources/onedrive/source.js';
+import { AudioCache } from './cache/audioCache.js';
+import { createCacheIndex, createPinStore } from './cache/index.js';
 import { readMetadata, describeTags } from './metadata/index.js';
 import { formatTagReport } from './metadata/diagnostics.js';
-import { estimateLibrary, estimateAudioCache, clearAudioCache as clearCachedAudio } from './storage.js';
+import { estimateLibrary } from './storage.js';
 import { isGarbledTrack } from './metadata/garbled.js';
 import { BUILD_VERSION } from './version.js';
 import { migrateGarbledTracks } from './migrate.js';
@@ -30,6 +37,17 @@ import { t } from '../i18n/index.js';
 
 const VIEWS = new Set(['tracks', 'albums', 'artists', 'folders', 'queue', 'settings']);
 const MEDIA_SYNC_INTERVAL = 1000;
+const SOURCE_KINDS = ['local', 'onedrive'];
+const TRACK_SOURCE = { local: 'fsa', onedrive: 'onedrive' };
+const ONEDRIVE_SYNC_INTERVAL = 60 * 60 * 1000;
+
+function trackSourceOf(kind) {
+  return TRACK_SOURCE[kind] ?? 'fsa';
+}
+
+function kindOfTrack(track) {
+  return track?.source === 'onedrive' ? 'onedrive' : 'local';
+}
 
 function sortTracks(tracks) {
   return Array.from(tracks ?? []).sort((a, b) => String(a.path).localeCompare(String(b.path)));
@@ -56,10 +74,27 @@ function errorMessage(error) {
   return error.message ? String(error.message) : String(error);
 }
 
-function buildTrack(entry, meta) {
+function emptyRow(kind, adapter) {
+  const permission = adapter.permission();
+  return {
+    id: kind,
+    kind: kind === 'onedrive' ? 'onedrive' : adapter.kind,
+    name: adapter.name ?? '',
+    connected: permission !== 'none',
+    permission,
+    trackCount: 0,
+    scanning: false,
+    progress: { done: 0, total: 0 },
+    error: null,
+    sync: null,
+    root: kind === 'onedrive' ? adapter.root()?.path ?? null : null,
+  };
+}
+
+function buildTrack(entry, meta, { trackSource = 'fsa', externalIds = {} } = {}) {
   const path = entry.path;
   return {
-    id: `fsa:${path}`,
+    id: `${trackSource}:${path}`,
     path,
     title: meta.title || fallbackTitle(path),
     artist: meta.artist || '',
@@ -70,8 +105,8 @@ function buildTrack(entry, meta) {
     mtime: Number.isFinite(entry.mtime) ? entry.mtime : entry.file?.lastModified ?? 0,
     size: Number.isFinite(entry.size) ? entry.size : entry.file?.size ?? 0,
     cover: meta.cover ?? null,
-    source: 'fsa',
-    externalIds: {},
+    source: trackSource,
+    externalIds: externalIds && typeof externalIds === 'object' ? externalIds : {},
   };
 }
 
@@ -79,17 +114,31 @@ export class Store extends EventTarget {
   constructor(db) {
     super();
     this.db = db;
-    this.source = createSource(db);
+    this.local = createSource(db);
+    this.cache = new AudioCache({
+      index: createCacheIndex(db),
+      pins: createPinStore(db),
+    });
+    this.onedrive = new OneDriveSource({
+      meta: {
+        get: (key) => getMeta(db, key),
+        set: (key, value) => setMeta(db, key, value),
+      },
+      cache: this.cache,
+    });
+    this.sources = { local: this.local, onedrive: this.onedrive };
+
     this.audio = typeof Audio === 'function' ? new Audio() : null;
     this.player = this.audio ? new AudioPlayer(this.audio) : null;
     this.queue = createQueue([]);
 
-    this._scanning = false;
+    this._scanning = new Set();
     this._migrating = false;
     this._loading = false;
     this._loadedId = null;
     this._pendingSeek = null;
     this._lastSyncAt = 0;
+    this._pickerIndex = new Map();
 
     this._state = {
       ready: false,
@@ -97,15 +146,8 @@ export class Store extends EventTarget {
       tracks: [],
       queue: { tracks: [], index: -1, shuffle: false, repeat: 'off' },
       current: { track: null, playing: false, position: 0, duration: 0, volume: 1 },
-      source: {
-        kind: this.source.kind,
-        connected: false,
-        permission: 'none',
-        name: '',
-        error: null,
-        scanning: false,
-        progress: { done: 0, total: 0 },
-      },
+      sources: SOURCE_KINDS.map((kind) => emptyRow(kind, this.sources[kind])),
+      onedrivePicker: { open: false, path: '', items: [], loading: false, current: null },
       settings: { language: 'auto' },
       updateReady: false,
       migration: { running: false, done: 0, total: 0, error: null },
@@ -161,18 +203,46 @@ export class Store extends EventTarget {
 
     player.addEventListener('error', (event) => {
       const error = event.detail?.error ?? new Error(t('error.store.playFailed'));
-      this._state.source.error = errorMessage(error);
+      const track = this._state.current.track;
+      if (track) this._patchSource(kindOfTrack(track), { error: errorMessage(error) });
       this._state.current.playing = false;
       this._emit();
     });
   }
 
   async init() {
-    let permission = 'none';
+    let loggedIn = false;
     try {
-      permission = await this.source.restore();
+      loggedIn = await this.onedrive.handleRedirect();
     } catch {
-      permission = 'none';
+      loggedIn = false;
+    }
+
+    try {
+      await this.local.restore();
+    } catch {
+      // A missing or unreadable handle leaves the local source disconnected.
+    }
+    try {
+      await this.onedrive.restore();
+    } catch {
+      // Same for a malformed token/root entry.
+    }
+
+    if (loggedIn || this.onedrive.hasRoot()) {
+      this._state.view = 'settings';
+      this._state.onedrivePicker = {
+        open: true,
+        path: '',
+        items: [],
+        loading: false,
+        current: null,
+      };
+    }
+
+    if (this.onedrive.hasRoot() && this.onedrive.permission() === 'prompt') {
+      // Top-level `prompt=none` redirect; guarded so a broken grant cannot loop.
+      await this.onedrive.silentReauth().catch(() => false);
     }
 
     const tracks = sortTracks(await getAllTracks(this.db).catch(() => []));
@@ -183,13 +253,10 @@ export class Store extends EventTarget {
 
     this._state.tracks = tracks;
     this._state.settings = { language: 'auto', ...settings };
-    this._state.source = {
-      ...this._state.source,
-      kind: this.source.kind,
-      connected: permission !== 'none',
-      permission,
-      name: this.source.name ?? '',
-    };
+    this._state.sources = SOURCE_KINDS.map((kind) => ({
+      ...emptyRow(kind, this.sources[kind]),
+      trackCount: this._countTracks(kind),
+    }));
 
     const volume = Number.isFinite(playback?.volume) ? playback.volume : 1;
     if (tracks.length) {
@@ -240,6 +307,45 @@ export class Store extends EventTarget {
     syncMediaSession(this._state);
     this._emit();
     void this._maybeMigrateTags();
+
+    if (this._state.onedrivePicker.open && this.onedrive.permission() === 'granted') {
+      void this.browseOneDrive('');
+    }
+
+    if (this.onedrive.hasRoot() && this.onedrive.permission() === 'granted') {
+      const lastScan = await getMeta(this.db, 'lastScanBySource').catch(() => null);
+      const at = lastScan?.onedrive?.at ?? 0;
+      if (Date.now() - at > ONEDRIVE_SYNC_INTERVAL) void this.syncSource('onedrive');
+    }
+  }
+
+  _countTracks(kind) {
+    const trackSource = trackSourceOf(kind);
+    return this._state.tracks.filter((track) => track.source === trackSource).length;
+  }
+
+  _patchSource(kind, patch) {
+    this._state.sources = this._state.sources.map((row) =>
+      row.id === kind ? { ...row, ...patch } : row,
+    );
+  }
+
+  _refreshSource(kind, patch = {}) {
+    const adapter = this.sources[kind];
+    const permission = adapter.permission();
+    this._patchSource(kind, {
+      kind: kind === 'onedrive' ? 'onedrive' : adapter.kind,
+      name: adapter.name ?? '',
+      connected: permission !== 'none',
+      permission,
+      trackCount: this._countTracks(kind),
+      root: kind === 'onedrive' ? adapter.root()?.path ?? null : null,
+      ...patch,
+    });
+  }
+
+  _adapterForTrack(track) {
+    return track?.source === 'onedrive' ? this.onedrive : this.local;
   }
 
   /**
@@ -252,28 +358,35 @@ export class Store extends EventTarget {
     try {
       const last = await getMeta(this.db, 'lastBuildVersion').catch(() => null);
       if (last === BUILD_VERSION) return;
-      // Without a granted directory there is nothing to read; retry next launch
+      // Without a granted source there is nothing to read; retry next launch
       // or when the user grants permission in this session.
-      if (this.source.permission() !== 'granted') return;
+      const kinds = SOURCE_KINDS.filter((kind) => this.sources[kind].permission() === 'granted');
+      if (!kinds.length) return;
 
-      this._state.migration = {
-        running: true,
-        done: 0,
-        total: this._state.tracks.filter(isGarbledTrack).length,
-        error: null,
-      };
+      const total = this._state.tracks.filter(
+        (track) => kinds.includes(kindOfTrack(track)) && isGarbledTrack(track),
+      ).length;
+      this._state.migration = { running: true, done: 0, total, error: null };
       this._emit();
 
       try {
-        const { changed } = await migrateGarbledTracks({
-          tracks: this._state.tracks,
-          getFile: (path) => this.source.getFile(path),
-          readMetadata,
-          onProgress: ({ done, total }) => {
-            this._state.migration = { ...this._state.migration, done, total };
-            if (done % 5 === 0 || done === total) this._emit();
-          },
-        });
+        const changed = [];
+        let base = 0;
+        for (const kind of kinds) {
+          const list = this._state.tracks.filter((track) => kindOfTrack(track) === kind);
+          const groupGarbled = list.filter(isGarbledTrack).length;
+          const { changed: groupChanged } = await migrateGarbledTracks({
+            tracks: list,
+            getFile: (path) => this.sources[kind].getFile(path),
+            readMetadata,
+            onProgress: ({ done }) => {
+              this._state.migration = { ...this._state.migration, done: base + done, total };
+              if (done % 5 === 0 || done === groupGarbled) this._emit();
+            },
+          });
+          base += groupGarbled;
+          changed.push(...groupChanged);
+        }
 
         if (changed.length) await putTracks(this.db, changed);
         const byId = new Map(changed.map((track) => [track.id, track]));
@@ -294,114 +407,155 @@ export class Store extends EventTarget {
   }
 
   async connectSource() {
-    this._state.source = { ...this._state.source, error: null };
+    this._patchSource('local', { error: null });
     this._emit();
     try {
-      await this.source.connect();
-      this._state.source = {
-        ...this._state.source,
-        connected: true,
-        permission: this.source.permission(),
-        name: this.source.name ?? '',
-      };
+      await this.local.connect();
+      this._refreshSource('local');
       this._emit();
-      await this.rescan();
+      await this.rescan('local');
       void this._maybeMigrateTags();
     } catch (error) {
       if (error?.name === 'AbortError') return;
-      this._state.source = {
-        ...this._state.source,
-        connected: this.source.permission() !== 'none',
-        permission: this.source.permission(),
-        name: this.source.name ?? '',
-        error: errorMessage(error),
-      };
+      this._refreshSource('local', { error: errorMessage(error) });
       this._emit();
     }
   }
 
   async requestSourcePermission() {
-    const granted = await this.source.ensurePermission().catch(() => false);
-    this._state.source = {
-      ...this._state.source,
-      connected: this.source.permission() !== 'none',
-      permission: this.source.permission(),
-      error: null,
-    };
+    const granted = await this.local.ensurePermission().catch(() => false);
+    this._refreshSource('local', { error: null });
     this._emit();
     if (granted) {
-      await this.rescan();
+      await this.rescan('local');
       void this._maybeMigrateTags();
     }
     return granted;
   }
 
-  async rescan() {
-    if (this._scanning) return;
-    this._state.source = { ...this._state.source, error: null };
+  async connectOneDrive() {
+    return this.onedrive.startLogin();
+  }
+
+  async browseOneDrive(path = '') {
+    this._state.onedrivePicker = { ...this._state.onedrivePicker, open: true, path, loading: true };
+    this._emit();
+    try {
+      const items = await this.onedrive.browse(path);
+      for (const item of items) this._pickerIndex.set(item.path, item);
+      const current = path ? this._pickerIndex.get(path) ?? null : null;
+      this._state.onedrivePicker = { open: true, path, items, loading: false, current };
+      this._refreshSource('onedrive', { error: null });
+      this._emit();
+      return items;
+    } catch (error) {
+      this._state.onedrivePicker = {
+        ...this._state.onedrivePicker,
+        open: true,
+        path,
+        items: [],
+        loading: false,
+        current: null,
+      };
+      this._refreshSource('onedrive', { error: errorMessage(error) });
+      this._emit();
+      return [];
+    }
+  }
+
+  closeOneDrivePicker() {
+    this._state.onedrivePicker = {
+      open: false,
+      path: '',
+      items: [],
+      loading: false,
+      current: null,
+    };
+    this._emit();
+  }
+
+  async chooseOneDriveRoot({ id, path, name }) {
+    const currentRoot = this.onedrive.root();
+    await this.onedrive.setRoot({
+      driveId: currentRoot?.driveId ?? null,
+      itemId: id,
+      path,
+      name,
+    });
+    this._refreshSource('onedrive');
+    this._emit();
+    await this.rescan('onedrive');
+    this.closeOneDrivePicker();
+  }
+
+  async reauthenticateOneDrive() {
+    await this.onedrive.forget();
+    this._refreshSource('onedrive', { error: null, sync: null });
+    this._emit();
+    return this.connectOneDrive();
+  }
+
+  async rescan(kind = 'local') {
+    const adapter = this.sources[kind];
+    if (!adapter || this._scanning.has(kind)) return null;
+    this._patchSource(kind, { error: null });
     this._emit();
 
-    if (this.source.permission() !== 'granted') {
-      const granted = await this.source.ensurePermission().catch(() => false);
+    if (adapter.permission() !== 'granted') {
+      const granted = await adapter.ensurePermission().catch(() => false);
       if (!granted) {
-        this._state.source = {
-          ...this._state.source,
-          connected: this.source.permission() !== 'none',
-          permission: this.source.permission(),
+        const permission = adapter.permission();
+        this._refreshSource(kind, {
           error:
-            this.source.permission() === 'none'
+            permission === 'none'
               ? t('error.store.notConnected')
               : t('error.store.permissionRequired'),
-        };
+        });
         this._emit();
-        return;
+        return null;
       }
-      this._state.source = { ...this._state.source, permission: 'granted' };
+      this._patchSource(kind, { permission: 'granted', connected: true });
     }
 
-    this._scanning = true;
-    this._state.source = {
-      ...this._state.source,
+    this._scanning.add(kind);
+    this._patchSource(kind, {
       scanning: true,
       error: null,
       progress: { done: 0, total: 0 },
-    };
+    });
     this._emit();
 
+    const trackSource = trackSourceOf(kind);
     try {
       const entries = [];
-      for await (const entry of this.source.scan()) {
+      for await (const entry of adapter.scan()) {
         entries.push(entry);
-        this._state.source = {
-          ...this._state.source,
-          progress: { done: entries.length, total: 0 },
-        };
+        this._patchSource(kind, { progress: { done: entries.length, total: 0 } });
         if (entries.length % 25 === 0) this._emit();
       }
 
-      const previous = await getAllTracks(this.db).catch(() => this._state.tracks);
+      const all = await getAllTracks(this.db).catch(() => this._state.tracks);
+      const previous = all.filter((track) => track.source === trackSource);
       const diff = diffScan(previous, entries);
       const byId = new Map(previous.map((track) => [track.id, track]));
 
       const pending = [...diff.added, ...diff.updated];
-      this._state.source = {
-        ...this._state.source,
-        progress: { done: 0, total: pending.length },
-      };
+      this._patchSource(kind, { progress: { done: 0, total: pending.length } });
       this._emit();
 
       const fresh = [];
       let done = 0;
       for (const entry of pending) {
-        const meta = await readMetadata(entry.file);
-        const track = buildTrack(entry, meta);
+        const file = typeof entry.readFile === 'function' ? await entry.readFile() : entry.file;
+        const meta = await readMetadata(file);
+        const track = buildTrack(entry, meta, {
+          trackSource,
+          externalIds: entry.externalIds ?? {},
+        });
         fresh.push(track);
         byId.set(track.id, track);
         done += 1;
-        this._state.source = {
-          ...this._state.source,
-          progress: { done, total: pending.length },
-        };
+        this._patchSource(kind, { progress: { done, total: pending.length } });
         if (done % 5 === 0 || done === pending.length) this._emit();
       }
 
@@ -409,121 +563,132 @@ export class Store extends EventTarget {
       if (diff.removedIds.length) await deleteTracksById(this.db, diff.removedIds);
       for (const id of diff.removedIds) byId.delete(id);
 
-      this._state.tracks = sortTracks([...byId.values()]);
-      await setMeta(this.db, 'lastScan', {
+      const others = this._state.tracks.filter((track) => track.source !== trackSource);
+      this._state.tracks = sortTracks([...others, ...byId.values()]);
+
+      const summary = {
         at: Date.now(),
         added: diff.added.length,
         updated: diff.updated.length,
         removed: diff.removedIds.length,
-      });
+      };
+      const lastScanBySource = (await getMeta(this.db, 'lastScanBySource').catch(() => null)) ?? {};
+      await setMeta(this.db, 'lastScanBySource', { ...lastScanBySource, [kind]: summary });
 
       this._reconcileQueue(diff.removedIds);
-      this._state.source = {
-        ...this._state.source,
-        scanning: false,
-        progress: { done: 0, total: 0 },
-      };
+      this._refreshSource(kind, { scanning: false, progress: { done: 0, total: 0 } });
       this._emit();
       this._savePlayback();
+      return summary;
     } catch (error) {
-      this._state.source = {
-        ...this._state.source,
+      this._refreshSource(kind, {
         scanning: false,
         progress: { done: 0, total: 0 },
         error: errorMessage(error),
-      };
+      });
       this._emit();
+      return null;
     } finally {
-      this._scanning = false;
+      this._scanning.delete(kind);
     }
   }
 
-  async rescanTags() {
-    if (this._scanning) return;
-    this._scanning = true;
-    const tracks = this._state.tracks;
-    this._state.source = {
-      ...this._state.source,
-      scanning: true,
-      progress: { done: 0, total: tracks.length },
-    };
+  async syncSource(kind = 'onedrive') {
+    const result = await this.rescan(kind);
+    if (result) this._patchSource(kind, { sync: result });
     this._emit();
+    return result;
+  }
 
-    if (this.source.permission() !== 'granted') {
-      const granted = await this.source.ensurePermission().catch(() => false);
+  async rescanTags() {
+    if (this._scanning.has('tags')) return;
+    this._scanning.add('tags');
+    const kinds = SOURCE_KINDS.filter((kind) => this.sources[kind].permission() === 'granted');
+    if (!kinds.length) {
+      const granted = await this.local.ensurePermission().catch(() => false);
       if (!granted) {
-        this._state.source = {
-          ...this._state.source,
-          connected: this.source.permission() !== 'none',
-          permission: this.source.permission(),
-          scanning: false,
-          progress: { done: 0, total: 0 },
-          error: t('error.store.permissionRequired'),
-        };
-        this._scanning = false;
+        this._refreshSource('local', { error: t('error.store.permissionRequired') });
+        this._scanning.delete('tags');
         this._emit();
         return;
       }
-      this._state.source = { ...this._state.source, permission: 'granted' };
+      kinds.push('local');
+      this._patchSource('local', { permission: 'granted', connected: true });
     }
 
+    for (const kind of kinds) {
+      this._patchSource(kind, {
+        scanning: true,
+        progress: { done: 0, total: this._countTracks(kind) },
+      });
+    }
+    this._emit();
+
     try {
-      const updated = [];
+      const updated = this._state.tracks.filter((track) => !kinds.includes(kindOfTrack(track)));
       const changed = [];
-      let done = 0;
-      for (const track of tracks) {
-        try {
-          const file = await this.source.getFile(track.path);
-          const meta = await readMetadata(file);
-          const hasMeta =
-            Boolean(meta.title) ||
-            Boolean(meta.artist) ||
-            Boolean(meta.album) ||
-            meta.year != null ||
-            meta.trackNo != null ||
-            meta.duration > 0 ||
-            Boolean(meta.cover);
-          if (hasMeta) {
-            const next = buildTrack(
-              { path: track.path, file, mtime: track.mtime, size: track.size },
-              { ...meta, duration: meta.duration > 0 ? meta.duration : track.duration },
-            );
-            updated.push(next);
-            changed.push(next);
-          } else {
+      for (const kind of kinds) {
+        const adapter = this.sources[kind];
+        const trackSource = trackSourceOf(kind);
+        const list = this._state.tracks.filter((track) => track.source === trackSource);
+        let done = 0;
+        for (const track of list) {
+          try {
+            const file = await adapter.getFile(track.path);
+            const meta = await readMetadata(file);
+            const hasMeta =
+              Boolean(meta.title) ||
+              Boolean(meta.artist) ||
+              Boolean(meta.album) ||
+              meta.year != null ||
+              meta.trackNo != null ||
+              meta.duration > 0 ||
+              Boolean(meta.cover);
+            if (hasMeta) {
+              const next = buildTrack(
+                {
+                  path: track.path,
+                  file,
+                  mtime: track.mtime,
+                  size: track.size,
+                  externalIds: track.externalIds ?? {},
+                },
+                { ...meta, duration: meta.duration > 0 ? meta.duration : track.duration },
+                { trackSource, externalIds: track.externalIds ?? {} },
+              );
+              updated.push(next);
+              changed.push(next);
+            } else {
+              updated.push(track);
+            }
+          } catch {
             updated.push(track);
           }
-        } catch {
-          updated.push(track);
+          done += 1;
+          this._patchSource(kind, { progress: { done, total: list.length } });
+          if (done % 25 === 0 || done === list.length) this._emit();
         }
-        done += 1;
-        this._state.source = {
-          ...this._state.source,
-          progress: { done, total: tracks.length },
-        };
-        if (done % 25 === 0 || done === tracks.length) this._emit();
       }
 
-      this._state.tracks = updated;
+      this._state.tracks = sortTracks(updated);
       if (changed.length) await putTracks(this.db, changed);
       this._reconcileQueue([]);
-      this._state.source = {
-        ...this._state.source,
-        scanning: false,
-        progress: { done: 0, total: 0 },
-      };
+      for (const kind of kinds) {
+        this._refreshSource(kind, { scanning: false, progress: { done: 0, total: 0 } });
+      }
       this._emit();
       this._savePlayback();
     } catch (error) {
-      this._state.source = {
-        ...this._state.source,
-        scanning: false,
-        progress: { done: 0, total: 0 },
-        error: errorMessage(error),
-      };
+      for (const kind of kinds) {
+        this._refreshSource(kind, {
+          scanning: false,
+          progress: { done: 0, total: 0 },
+          error: errorMessage(error),
+        });
+      }
       this._emit();
     } finally {
-      this._scanning = false;
+      this._scanning.delete('tags');
     }
   }
 
@@ -533,16 +698,12 @@ export class Store extends EventTarget {
     this._emit();
   }
 
-  /** Disconnect the source and forget its grant; indexed tracks stay. */
-  async removeSource() {
-    await this.source.forget().catch(() => {});
-    this._state.source = {
-      ...this._state.source,
-      connected: false,
-      permission: 'none',
-      name: '',
-      error: null,
-    };
+  /** Disconnect one source and forget its grant; indexed tracks stay. */
+  async removeSource(kind = 'local') {
+    const adapter = this.sources[kind];
+    if (!adapter) return;
+    await adapter.forget().catch(() => {});
+    this._refreshSource(kind, { error: null, sync: null });
     this._emit();
   }
 
@@ -562,6 +723,7 @@ export class Store extends EventTarget {
       position: 0,
       duration: 0,
     };
+    for (const kind of SOURCE_KINDS) this._refreshSource(kind);
     this._emit();
     this._savePlayback();
   }
@@ -569,7 +731,7 @@ export class Store extends EventTarget {
   /** Index, cover, cached-audio and browser quota figures for the settings view. */
   async storageEstimate() {
     const { indexBytes, coverBytes } = await estimateLibrary(this._state.tracks);
-    const audioBytes = await estimateAudioCache().catch(() => 0);
+    const audioBytes = await this.cache.total().catch(() => 0);
     let usage = null;
     let quota = null;
     try {
@@ -584,14 +746,14 @@ export class Store extends EventTarget {
 
   /** Drop cached audio responses; returns the bytes released. */
   async clearAudioCache() {
-    return clearCachedAudio();
+    return this.cache.clear();
   }
 
   /** Multi-line tag report for one track; errors are left for the dialog. */
   async describeTrackTags(trackId) {
     const track = this._state.tracks.find((item) => item.id === trackId);
     if (!track) throw new Error(t('error.store.trackMissing'));
-    const file = await this.source.getFile(track.path);
+    const file = await this._adapterForTrack(track).getFile(track.path);
     const described = await describeTags(file);
     return formatTagReport(described);
   }
@@ -641,7 +803,7 @@ export class Store extends EventTarget {
       return;
     }
     this.player.play().catch((error) => {
-      this._state.source = { ...this._state.source, error: errorMessage(error) };
+      this._patchSource(kindOfTrack(track), { error: errorMessage(error) });
       this._state.current.playing = false;
       this._emit();
     });
@@ -891,7 +1053,7 @@ export class Store extends EventTarget {
     this._pendingSeek = position > 0 ? position : null;
     this._emit();
     try {
-      const file = await this.source.getFile(track.path);
+      const file = await this._adapterForTrack(track).getFile(track.path);
       if (currentTrack(this.queue)?.id !== track.id) return false;
       await this.player.load(file);
       this._loadedId = track.id;
@@ -903,7 +1065,7 @@ export class Store extends EventTarget {
       if (play) await this.player.play();
       return true;
     } catch (error) {
-      this._state.source = { ...this._state.source, error: errorMessage(error) };
+      this._patchSource(kindOfTrack(track), { error: errorMessage(error) });
       this._state.current.playing = false;
       this._emit();
       return false;

@@ -49,41 +49,79 @@ export function createSettingsView(store, sw) {
   };
 
   // ---- library ----
-  const sourceName = el('b', { text: t('common.disconnected') });
-  const sourceCount = el('span', { text: t('common.trackCount', { count: 0 }) });
-  const sourceChip = el('span', { class: 'chip', text: t('settings.source.permissionNone') });
+  const sourceViews = new Map();
 
-  const rescanButton = el('button', {
-    class: 'btn-pill ghost',
-    type: 'button',
-    'data-testid': 'settings-rescan',
-    text: t('settings.rescan'),
-    onclick: () => run(store.rescan()),
-  });
-  const changeButton = el('button', {
-    class: 'btn-pill ghost',
-    type: 'button',
-    'data-testid': 'settings-source-change',
-    text: t('settings.source.change'),
-    onclick: () => run(store.connectSource()),
-  });
-  const removeButton = el('button', {
-    class: 'btn-pill ghost',
-    type: 'button',
-    'data-testid': 'settings-source-remove',
-    text: t('settings.source.remove'),
-    onclick: () => {
-      if (!confirmed(t('settings.source.removeConfirm'))) return;
-      run(store.removeSource());
-    },
-  });
+  function createSourceRow(kind) {
+    const name = el('b', { text: t('common.disconnected') });
+    const count = el('span', { text: t('settings.source.trackCount', { count: 0 }) });
+    const chip = el('span', { class: 'chip', text: t('settings.source.permissionNone') });
+    const rowError = el('p', { class: 'settings-error muted', role: 'alert' });
+    setHidden(rowError, true);
 
-  const sourceRow = el('div', { class: 'source-row' }, [
-    el('span', { class: 'source-icon', 'aria-hidden': 'true' }, [icon('folder')]),
-    el('span', { class: 'source-body' }, [sourceName, sourceCount]),
-    sourceChip,
-    el('div', { class: 'source-actions' }, [rescanButton, changeButton, removeButton]),
-  ]);
+    const view = { name, count, chip, error: rowError, syncing: false };
+
+    view.syncButton = el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': `settings-sync-${kind}`,
+      text: t('settings.source.sync'),
+      onclick: async () => {
+        if (view.syncing) return;
+        view.syncing = true;
+        view.syncButton.disabled = true;
+        setText(view.syncButton, t('settings.source.syncing'));
+        try {
+          const result = await store.syncSource(kind);
+          if (result) {
+            toast(
+              t('settings.source.syncResult', {
+                added: result.added,
+                removed: result.removed,
+              }),
+            );
+          }
+        } finally {
+          view.syncing = false;
+          view.syncButton.disabled = false;
+          setText(view.syncButton, t('settings.source.sync'));
+        }
+      },
+    });
+
+    view.changeButton = el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': kind === 'local' ? 'settings-source-change' : 'settings-onedrive-change',
+      text: t('settings.source.change'),
+      onclick: () => run(kind === 'local' ? store.connectSource() : store.browseOneDrive('')),
+    });
+
+    view.removeButton = el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': kind === 'local' ? 'settings-source-remove' : 'settings-onedrive-remove',
+      text: t('settings.source.remove'),
+      onclick: () => {
+        if (!confirmed(t('settings.source.removeConfirm'))) return;
+        run(store.removeSource(kind));
+      },
+    });
+
+    view.node = el('div', { class: 'source-row', 'data-testid': `source-row-${kind}` }, [
+      el('span', { class: 'source-icon', 'aria-hidden': 'true' }, [icon('folder')]),
+      el('span', { class: 'source-body' }, [name, count]),
+      chip,
+      el('div', { class: 'source-actions' }, [
+        view.syncButton,
+        view.changeButton,
+        view.removeButton,
+      ]),
+      rowError,
+    ]);
+
+    sourceViews.set(kind, view);
+    return view.node;
+  }
 
   const progressBar = el('i');
   const progressLabel = el('span');
@@ -103,37 +141,31 @@ export function createSettingsView(store, sw) {
     text: t('settings.source.localFolder'),
     onclick: () => run(store.connectSource()),
   });
-  const oneDriveButton = el(
-    'button',
-    {
-      class: 'btn-pill ghost source-choice',
-      type: 'button',
-      'data-testid': 'settings-source-onedrive',
-      disabled: true,
-    },
-    [
-      el('span', { text: t('settings.source.onedrive') }),
-      el('span', { class: 'source-soon', text: t('settings.source.onedriveSoon') }),
-    ],
-  );
+
+  let oneDriveAction = () => run(store.connectOneDrive());
+  const oneDriveButton = el('button', {
+    class: 'btn-pill ghost source-choice',
+    type: 'button',
+    'data-testid': 'settings-source-onedrive',
+    text: t('settings.source.onedrive'),
+    onclick: () => oneDriveAction(),
+  });
+
   const sourceChoices = el('div', { class: 'source-choices' }, [localButton, oneDriveButton]);
   setHidden(sourceChoices, true);
 
-  const addSourceButton = el(
-    'button',
-    {
-      class: 'btn-pill ghost',
-      type: 'button',
-      'data-testid': 'settings-source-add',
-      'aria-expanded': 'false',
-      text: t('settings.source.add'),
-      onclick: () => {
-        const next = sourceChoices.hidden;
-        setHidden(sourceChoices, !next);
-        addSourceButton.setAttribute('aria-expanded', String(next));
-      },
+  const addSourceButton = el('button', {
+    class: 'btn-pill ghost',
+    type: 'button',
+    'data-testid': 'settings-source-add',
+    'aria-expanded': 'false',
+    text: t('settings.source.add'),
+    onclick: () => {
+      const next = sourceChoices.hidden;
+      setHidden(sourceChoices, !next);
+      addSourceButton.setAttribute('aria-expanded', String(next));
     },
-  );
+  });
   const rescanTagsButton = el('button', {
     class: 'btn-pill ghost',
     type: 'button',
@@ -147,7 +179,8 @@ export function createSettingsView(store, sw) {
     { class: 'card settings-card', 'data-testid': 'settings-section-library' },
     [
       el('h3', { text: t('settings.library.title') }),
-      sourceRow,
+      createSourceRow('local'),
+      createSourceRow('onedrive'),
       progress,
       migrationError,
       el('div', { class: 'settings-actions' }, [
@@ -157,6 +190,106 @@ export function createSettingsView(store, sw) {
       ]),
     ],
   );
+
+  // ---- OneDrive folder picker ----
+  const pickerCard = el('section', {
+    class: 'card settings-card onedrive-picker',
+    'data-testid': 'onedrive-picker',
+  });
+  setHidden(pickerCard, true);
+  let pickerSignature = null;
+
+  function parentPath(path) {
+    const segments = String(path ?? '').split('/').filter(Boolean);
+    segments.pop();
+    return segments.join('/');
+  }
+
+  function renderPicker(state) {
+    const picker = state.onedrivePicker ?? { open: false };
+    setHidden(pickerCard, !picker.open);
+    if (!picker.open) {
+      pickerSignature = null;
+      return;
+    }
+
+    const path = picker.path ?? '';
+    const items = picker.items ?? [];
+    const signature = JSON.stringify({
+      path,
+      loading: Boolean(picker.loading),
+      ids: items.map((item) => item.id),
+    });
+    if (signature === pickerSignature) return;
+    pickerSignature = signature;
+
+    const crumbs = [el('span', { class: 'picker-crumb', text: t('settings.onedrive.root') })];
+    for (const segment of path.split('/').filter(Boolean)) {
+      crumbs.push(el('span', { class: 'picker-crumb', text: segment }));
+    }
+
+    const children = [
+      el('h3', { text: t('settings.onedrive.title') }),
+      el('div', { class: 'picker-crumbs' }, crumbs),
+    ];
+
+    if (picker.loading) {
+      children.push(el('p', { class: 'muted', text: t('settings.onedrive.loading') }));
+    } else if (!items.length) {
+      children.push(el('p', { class: 'muted', text: t('settings.onedrive.empty') }));
+    } else {
+      children.push(
+        el(
+          'ul',
+          { class: 'picker-list' },
+          items.map((item) =>
+            el('li', {}, [
+              el('button', {
+                class: 'picker-folder',
+                type: 'button',
+                'data-testid': 'onedrive-folder',
+                text: item.name,
+                onclick: () => run(store.browseOneDrive(item.path)),
+              }),
+            ]),
+          ),
+        ),
+      );
+    }
+
+    const current = picker.current ?? null;
+    const upButton = el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': 'onedrive-picker-up',
+      text: t('settings.onedrive.up'),
+      disabled: !path,
+      onclick: () => run(store.browseOneDrive(parentPath(path))),
+    });
+    const chooseButton = el('button', {
+      class: 'btn-pill',
+      type: 'button',
+      'data-testid': 'onedrive-picker-choose',
+      text: t('settings.onedrive.choose'),
+      disabled: !path || !current,
+      onclick: () => {
+        if (!current) return;
+        run(
+          store.chooseOneDriveRoot({ id: current.id, path: current.path, name: current.name }),
+        );
+      },
+    });
+    const cancelButton = el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': 'onedrive-picker-cancel',
+      text: t('settings.onedrive.cancel'),
+      onclick: () => store.closeOneDrivePicker(),
+    });
+
+    children.push(el('div', { class: 'settings-actions' }, [upButton, chooseButton, cancelButton]));
+    pickerCard.replaceChildren(...children);
+  }
 
   // ---- storage ----
   function storageRow(testid, label) {
@@ -294,7 +427,7 @@ export function createSettingsView(store, sw) {
     ],
   );
 
-  node.append(head, libraryCard, storageCard, languageCard, aboutCard);
+  node.append(head, libraryCard, pickerCard, storageCard, languageCard, aboutCard);
 
   // Storage figures are async and can be expensive on a large cache: throttle
   // to one leading call plus at most one trailing refresh per second.
@@ -377,34 +510,69 @@ export function createSettingsView(store, sw) {
   });
 
   function render(state) {
-    const { source, settings, migration } = state;
-    const scanning = Boolean(source.scanning);
+    const { settings, migration } = state;
+    const rows = state.sources ?? [];
+    const scanningRow = rows.find((row) => row.scanning) ?? null;
+    const anyScanning = Boolean(scanningRow);
+    const anyGranted = rows.some((row) => row.permission === 'granted');
 
-    setText(sourceName, source.name || t('settings.source.permissionNone'));
-    setText(
-      sourceCount,
-      t('common.trackCount', { count: state.tracks.length }),
-    );
+    for (const [kind, view] of sourceViews) {
+      const row = rows.find((item) => item.id === kind) ?? {
+        permission: 'none',
+        name: '',
+        trackCount: 0,
+        scanning: false,
+        progress: { done: 0, total: 0 },
+        error: null,
+      };
+      setText(view.name, row.name || t('settings.source.permissionNone'));
+      setText(view.count, t('settings.source.trackCount', { count: row.trackCount ?? 0 }));
 
-    const permission = source.permission;
-    const chipKey =
-      permission === 'granted'
-        ? 'settings.source.permissionGranted'
-        : permission === 'prompt' || permission === 'denied'
-          ? 'settings.source.permissionRequired'
-          : 'settings.source.permissionNone';
-    setText(sourceChip, t(chipKey));
-    sourceChip.className = `chip is-${permission}`;
+      const permission = row.permission;
+      const chipKey =
+        permission === 'granted'
+          ? 'settings.source.permissionGranted'
+          : permission === 'prompt' || permission === 'denied'
+            ? 'settings.source.permissionRequired'
+            : 'settings.source.permissionNone';
+      setText(view.chip, t(chipKey));
+      view.chip.className = `chip is-${permission}`;
 
-    rescanButton.disabled = scanning || permission === 'none';
-    changeButton.disabled = scanning;
-    removeButton.disabled = scanning || permission === 'none';
-    rescanTagsButton.disabled = scanning || permission === 'none';
-    localButton.disabled = scanning;
+      const scanning = Boolean(row.scanning);
+      view.syncButton.disabled = view.syncing || scanning || permission === 'none';
+      if (!view.syncing) setText(view.syncButton, t('settings.source.sync'));
+      view.changeButton.disabled = scanning;
+      view.removeButton.disabled = scanning || permission === 'none';
 
-    setHidden(progress, !scanning);
-    if (scanning) {
-      const { done, total } = source.progress ?? { done: 0, total: 0 };
+      setHidden(view.error, !row.error);
+      if (row.error) setText(view.error, row.error);
+    }
+
+    const onedrive = rows.find((row) => row.id === 'onedrive') ?? {
+      permission: 'none',
+      connected: false,
+      root: null,
+    };
+    if (onedrive.permission === 'prompt') {
+      oneDriveAction = () => run(store.reauthenticateOneDrive());
+      setText(oneDriveButton, t('settings.source.onedriveReauth'));
+    } else if (onedrive.permission === 'granted' && onedrive.root) {
+      oneDriveAction = () => run(store.browseOneDrive(''));
+      setText(oneDriveButton, t('settings.source.onedriveChange'));
+    } else if (onedrive.connected || onedrive.permission === 'granted') {
+      oneDriveAction = () => run(store.browseOneDrive(''));
+      setText(oneDriveButton, t('settings.source.onedrivePick'));
+    } else {
+      oneDriveAction = () => run(store.connectOneDrive());
+      setText(oneDriveButton, t('settings.source.onedriveSignIn'));
+    }
+
+    rescanTagsButton.disabled = anyScanning || !anyGranted;
+    localButton.disabled = anyScanning;
+
+    setHidden(progress, !anyScanning);
+    if (scanningRow) {
+      const { done, total } = scanningRow.progress ?? { done: 0, total: 0 };
       setText(
         progressLabel,
         total > 0
@@ -435,6 +603,8 @@ export function createSettingsView(store, sw) {
       updateState,
       state.updateReady ? t('settings.about.updateReady') : t('settings.about.upToDate'),
     );
+
+    renderPicker(state);
 
     if (state.view === 'settings') scheduleStorage();
   }

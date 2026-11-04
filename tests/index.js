@@ -16,4 +16,5 @@ import './i18n.test.js';
 import './storage.test.js';
 import './onedrive-auth.test.js';
 import './onedrive-graph.test.js';
+import './onedrive-source.test.js';
 import './audio-cache.test.js';

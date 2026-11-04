@@ -4,7 +4,7 @@
 
 ## 约束
 
-- 纯静态产物：`dist/` 只有静态文件；运行时不访问第三方域（系统字体栈，无 CDN、无分析、无 API）。
+- 纯静态产物：`dist/` 只有静态文件；唯一允许的第三方域是 `login.microsoftonline.com`、`graph.microsoft.com` 与 `@microsoft.graph.downloadUrl` 的下载主机；无 CDN、无分析、无代理。
 - 无框架运行时；首屏 JS gzip 总计 ≤ 100 KB（`npm run size` 强制，见「构建与 SW」）。
 - 构建：esbuild 只做打包/压缩/内容哈希，Node 版本取 `node -v`（本机 v24.20.0，`engines: ">=22"`）。
 - 运行时依赖 0；devDependencies 仅 `esbuild`、`@playwright/test`。
@@ -45,15 +45,17 @@ Dockerfile, nginx.conf, .github/workflows/image.yaml   # Build Worker
  * @property {number} mtime         // File.lastModified
  * @property {number} size          // bytes
  * @property {Blob|null} cover
- * @property {'fsa'} source
- * @property {Object<string,string>} externalIds  // v1 为空对象
+ * @property {'fsa'|'onedrive'} source
+ * @property {Object<string,string>} externalIds  // onedrive: { onedrive: itemId }；本地为空对象
  */
 ```
 
-IndexedDB（`localtune`，version 1）：
+IndexedDB（`localtune`，version 2）：
 
 - `tracks`：keyPath `id`；index `album`（`album`）、`artist`（`artist`）。
-- `meta`：keyPath `key`；键 `dirHandle`、`lastScan`（`{at:number, added:number, updated:number, removed:number}`）、`lastBuildVersion`（最近一次乱码标签迁移针对的 `BUILD_VERSION` 字符串）、`playback`、`settings`。
+- `meta`：keyPath `key`；键 `dirHandle`、`lastScanBySource`（`{local?: {at,added,updated,removed}, onedrive?: {at,added,updated,removed}}`）、`lastBuildVersion`（最近一次乱码标签迁移针对的 `BUILD_VERSION` 字符串）、`playback`、`settings`、`onedriveToken`、`onedriveRoot`（`{driveId,itemId,path,name}`）、`onedriveItems`（`{ [相对路径]: itemId }`）、`onedriveAuthAt`。
+- `cacheIndex`：keyPath `key`；`{ key, source, path, size, lastAccess }`（音频缓存 LRU，细节归 D2）。
+- `pins`：keyPath `id`；固定（免驱逐）条目（细节归 D2）。
 
 ## 模块契约
 
@@ -64,11 +66,17 @@ v1 有两个实现：File System Access（桌面 Chromium / Android Chrome 132+�
 ```js
 /** @typedef {Object} SourceEntry
  * @property {string} path   // 相对根的 POSIX 路径
- * @property {File} file
+ * @property {File} [file]   // 本地来源
+ * @property {() => Promise<File|Blob>} [readFile]  // 远程来源按需构造 File-like 对象
  * @property {number} mtime
  * @property {number} size
+ * @property {Object<string,string>} [externalIds]  // onedrive: { onedrive: itemId }
  */
+```
 
+`SourceEntry.file` 与 `SourceEntry.readFile()` 二选一：`store.rescan()` 优先调用 `readFile()`，否则使用 `file`。`readFile()` 返回的对象只需满足 `readMetadata` 的最小需求（`name`、`size`、`slice().arrayBuffer()`）。
+
+```js
 export const AUDIO_EXTENSIONS = new Set(['mp3','m4a','flac','ogg','oga','wav','webm']);
 
 export function hasDirectoryPicker()  // typeof globalThis.showDirectoryPicker === 'function'
@@ -100,7 +108,43 @@ export class FileListSource {
 }
 ```
 
-iOS / 未来来源只需实现同一组方法（`connect/restore/permission/ensurePermission/scan/getFile`），`store` 不改。`state.source.kind` 为 `'fsa' | 'files'`。
+### `src/core/sources/onedrive/source.js` — OneDrive 来源 adapter
+
+`OneDriveSource` 与本地来源实现同一组 `connect/restore/permission/ensurePermission/scan/getFile` 语义（`connect` 换成顶层授权跳转），并额外提供：
+
+```js
+export class OneDriveSource {
+  kind = 'onedrive';
+  trackSource = 'onedrive';
+  name = '';
+  constructor({ meta, fetchImpl, cache = null, sessionStore, location, history, now })
+  async startLogin({ prompt = 'select_account' }) // 生成 PKCE，写 sessionStorage，location.assign 授权页
+  async handleRedirect(search = location.search)  // 校验 state → 换 token → 清 query；返回 boolean，不抛
+  async restore()                                 // 只读 meta；token 缺失 'none'，过期 'prompt'
+  permission()                                    // 'none' | 'granted' | 'prompt'
+  async ensurePermission()                        // 过期且有 refresh_token 时刷新；invalid_grant → 'prompt'
+  hasRoot(); root()                               // { driveId, itemId, path, name } | null
+  async browse(path = '')                         // 只列文件夹，按 name 排序
+  async setRoot({ driveId, itemId, path, name })
+  async forget()
+  async *scan({ signal })                         // 递归 children，过滤非音频与点开头项
+  async getFile(path)                             // 先查缓存（token 过期也能播），未命中再鉴权下载
+  async silentReauth()                            // 仅 init：prompt=none 整页跳转，10 分钟防循环
+}
+```
+
+- token 只存 `meta.onedriveToken`（`{accessToken,refreshToken,expiresAt,scope}`），不写日志、不进 DOM；`meta.onedriveAuthAt` 记录最近一次写入时间。
+- 消费级 SPA 的 refresh token 有效期 24 h；过期后 `ensurePermission()` 失败，用户需在设置里重新走顶层授权。
+- `getFile()` 的缓存键是 `cacheKey('onedrive', path)`；命中直接返回 Blob，不调用 `ensurePermission()`、不发网络请求。
+- 整首下载失败（非 2xx 或网络错误）时重取一次 item 的 `@microsoft.graph.downloadUrl` 再试一次；成功后 `void cache.write(...)`，不阻塞播放。
+- `_fetchRange` 的任一次 Range 请求失败同样重取一次 downloadUrl 再试一次，第二次失败才向上抛。
+- `src/core/sources/onedrive/remoteFile.js` 的 `createRemoteFile()` 把下载 URL 包装成 `{name,size,slice(start,end).arrayBuffer()}`：首次 `slice` 预取头 256 KB（大文件再取尾 128 B），缓冲外切片现取；`status === 200` 表示服务端忽略 Range，小文件当整文件缓冲，超过 `maxRangeBytes`（32 MB）抛 `range ignored for large file`。
+
+### `src/core/sources/onedrive/graph.js` — Graph 客户端
+
+`createGraphClient({ fetchImpl, getToken })` 只做 HTTP，不存 token：分页走 `@odata.nextLink`；`listChildren` 默认 `$top=200` 并显式 `$select`（含 `@microsoft.graph.downloadUrl`）；`getDownloadUrl` 从 item 注解取临时下载 URL；`fetchRange(url,start,end)` 发 `Range: bytes=start-end` 且不带 `Authorization`。downloadUrl 会过期，调用方在失败时重取 item。
+
+iOS / 未来来源只需实现同一组方法（`connect/restore/permission/ensurePermission/scan/getFile`），`store` 不改。`state.sources[].kind` 为 `'fsa' | 'files' | 'onedrive'`。
 
 ### `src/core/metadata/{index,id3,mp4}.js`
 
@@ -281,15 +325,23 @@ export function applyDocumentLang()                // 有 document 时写 docume
 export async function createApp()  // → Store（已 init）
 export class Store extends EventTarget {
   get state()                      // 只读快照，见下
-  async connectSource()            // 首次授权 / 重新授权（目录选择器）
-  async requestSourcePermission()  // 'prompt' 时只调 requestPermission，不打开选择器；granted 后 rescan
-  async rescan()                   // 扫描 + diff + 元数据 + 写库 + 刷新 state
-  async rescanTags()               // 对已索引曲目重新读取标签（不重新扫描目录），保留 duration
-  async removeSource()             // source.forget()；state.source 复位为未连接，保留已索引曲目
+  local; onedrive; sources         // adapters: { local, onedrive }
+  cache                            // AudioCache（Cache Storage + cacheIndex/pins）
+  async connectSource()            // 本地来源：首次授权 / 重新授权（目录选择器）
+  async requestSourcePermission()  // 本地 'prompt' 时只调 requestPermission；granted 后 rescan('local')
+  async connectOneDrive()          // onedrive.startLogin()（整页跳转）
+  async browseOneDrive(path = '')  // 打开 picker 并列出子文件夹；失败写入 onedrive 行 error
+  closeOneDrivePicker()
+  async chooseOneDriveRoot({ id, path, name })  // setRoot → rescan('onedrive') → 关闭 picker
+  async reauthenticateOneDrive()   // forget + connectOneDrive
+  async rescan(kind = 'local')     // 只扫描该来源；diff 只影响该来源的 track.source；返回 {at,added,updated,removed}|null
+  async syncSource(kind = 'onedrive') // rescan(kind)，结果同时写入该行 sync
+  async rescanTags()               // 遍历 permission === 'granted' 的来源；按 track.source 选 adapter
+  async removeSource(kind = 'local') // adapter.forget()；该行复位，保留已索引曲目
   async clearLibrary()             // 删除全部曲目索引，暂停播放并清空队列/current，不动授权与 settings
-  async storageEstimate()          // → {indexBytes, coverBytes, audioBytes, usage, quota}；无 quota API 时后两项 null
-  async clearAudioCache()          // 删除 Cache Storage 音频条目 → 释放字节数
-  async describeTrackTags(trackId) // getFile → describeTags → formatTagReport，返回多行报告；异常抛给 UI
+  async storageEstimate()          // → {indexBytes, coverBytes, audioBytes, usage, quota}；audioBytes = cache.total()
+  async clearAudioCache()          // cache.clear() → 释放字节数
+  async describeTrackTags(trackId) // 按 track.source 选 adapter → describeTags → formatTagReport
   setView(view)                    // 'tracks'|'albums'|'artists'|'folders'|'queue'|'settings'
   async playTrack(trackId)         // 以全部歌曲为队列，从该曲开始
   async playQueue(tracks, startId) // 以给定列表为队列
@@ -316,15 +368,29 @@ export class Store extends EventTarget {
   tracks: Track[],
   queue: { tracks: Track[], index: number, shuffle: boolean, repeat: 'off'|'all'|'one' },
   current: { track: Track|null, playing: boolean, position: 0, duration: 0, volume: 1 },
-  source: { kind:'fsa'|'files', connected: false, permission:'none'|'granted'|'prompt'|'denied',
-            name: '', error: null, scanning: false, progress: { done: 0, total: 0 } },
+  sources: [ // 固定两行，顺序 local、onedrive
+    { id: 'local'|'onedrive', kind: 'fsa'|'files'|'onedrive', name: string,
+      connected: boolean, permission: 'none'|'granted'|'prompt'|'denied',
+      trackCount: number, scanning: boolean, progress: { done: 0, total: 0 },
+      error: string|null, sync: null|{ at, added, updated, removed }, root: string|null }
+  ],
+  onedrivePicker: { open: boolean, path: string, items: [{id,name,path,isFolder}],
+                    loading: boolean, current: {id,name,path}|null },
   settings: { language: 'auto'|'zh-CN'|'zh-TW'|'ja'|'en' },
   updateReady: false,
   migration: { running: false, done: 0, total: 0, error: null }
 }
 ```
 
-`init()` 末尾以 `void this._maybeMigrateTags()` 启动后台迁移，**不 await**，不阻塞播放。触发条件：`meta.lastBuildVersion !== BUILD_VERSION` 且 `source.permission() === 'granted'`。迁移对可疑曲目重读标签（不可疑的不读文件），把字段实际变化的曲目 `putTracks` 写库并用同 id 覆盖 `state.tracks`（`sortTracks` 后），再 `_reconcileQueue([])`；每 5 首或最后一首 emit 一次进度。成功后写 `meta.lastBuildVersion = BUILD_VERSION`（可疑曲目为 0 也写）；任何异常写 `state.migration.error` 且**不写版本号**，下次启动重试；权限未授予时直接跳过且不写版本号。finally 里 `running = false` 并 emit。`running` 期间顶部状态栏显示 `t('migration.progress', { done, total })`，优先于扫描/就绪文案；`error` 在设置视图曲库卡显示一行 muted 文案。
+轨道来源与 id：
+
+- `local` → `track.source = 'fsa'`，`id = 'fsa:' + path`（与旧库一致，不迁移）。
+- `onedrive` → `track.source = 'onedrive'`，`id = 'onedrive:' + path`，`path` 相对所选根，`externalIds = { onedrive: itemId }`。
+- `state.sources[].trackCount` 按 `track.source` 统计；`syncSource` 只替换该来源的轨道，`removedIds` 也只影响该来源。
+
+`init()` 顺序：`onedrive.handleRedirect()` → restore 两个来源 → 登录或已有 root 时进入设置并打开 picker → onedrive 有 root 且 `permission === 'prompt'` 时 `await onedrive.silentReauth()`（`prompt=none` 顶层跳转，10 分钟 guard，仅 init 调用）→ 读 tracks/playback/settings 并构建 `state.sources` → 恢复队列与播放位置 → emit。末尾以 `void this._maybeMigrateTags()` 启动后台迁移，**不 await**；若 onedrive 有 root、已授权且 `meta.lastScanBySource.onedrive.at` 距今超过 1 小时（或缺失），再 `void this.syncSource('onedrive')`。
+
+`_maybeMigrateTags()` 触发条件：`meta.lastBuildVersion !== BUILD_VERSION` 且至少一个来源 `permission === 'granted'`。按来源分组调用 `migrateGarbledTracks`（`getFile` 用该来源的 adapter），合并结果后 `putTracks` 并用同 id 覆盖 `state.tracks`（`sortTracks` 后），再 `_reconcileQueue([])`；每 5 首或最后一首 emit 一次进度。成功后写 `meta.lastBuildVersion = BUILD_VERSION`（可疑曲目为 0 也写）；任何异常写 `state.migration.error` 且**不写版本号**，下次启动重试；无已授权来源时直接跳过且不写版本号。finally 里 `running = false` 并 emit。`running` 期间顶部状态栏显示 `t('migration.progress', { done, total })`，优先于扫描/就绪文案；`error` 在设置视图曲库卡显示一行 muted 文案。
 
 ### `src/core/selectors.js`
 
@@ -368,7 +434,8 @@ export function openTagInfo(track, { loadReport }) // 标签信息弹层；loadR
 
 - 头部右上角齿轮（`data-testid="settings-open"`）进入设置并隐藏自身；UI 局部变量记录进入前的 view（默认 `'tracks'`），`settings-back` 恢复该 view。齿轮/曲目行菜单/返回都走事件委托，`createSettingsView` 只持有 `store` 与 `sw`。
 - 四张卡（`settings-section-library|storage|language|about`）只创建一次；`render(state)` 只改文本、数值、chip 与 disabled，不重建节点。
-- 曲库卡：来源行（类型图标、名称、曲目数、授权 chip）、重新扫描/更换/移除、添加来源（本地文件夹；OneDrive 禁用并标注「即将支持」）、重新读取标签；扫描中禁用动作并显示 `state.source.progress`。`removeSource()` 的确认文案走 `t('settings.source.removeConfirm')`；`state.migration.error` 在本卡显示一行。
+- 曲库卡：固定两行来源（`data-testid="source-row-local|onedrive"`；类型图标、名称、曲目数、授权 chip、该行 `error`）。每行动作：同步（`settings-sync-<id>`，运行中禁用并显示 `settings.source.syncing`，完成后 toast `settings.source.syncResult`）、更换（本地 `settings-source-change` / OneDrive `settings-onedrive-change` 重新打开 picker）、移除（`settings-source-remove` / `settings-onedrive-remove`，确认后调 `store.removeSource(id)`）。添加来源：本地文件夹；OneDrive 按钮（`settings-source-onedrive`）按状态显示 `settings.source.onedriveSignIn` / `onedrivePick` / `onedriveChange`，`permission === 'prompt'` 时显示 `settings.source.onedriveReauth` 并调 `store.reauthenticateOneDrive()`。另有重新读取标签。扫描中禁用动作并显示正在扫描那一行的 `progress`。
+- OneDrive 目录选择器：`state.onedrivePicker.open` 时作为独立 card 渲染在曲库卡下方（`data-testid="onedrive-picker"`）：面包屑（`settings.onedrive.root` + 已进入的路径段）、上一级（`onedrive-picker-up`，根层禁用）、文件夹列表（`onedrive-folder`）、选择此文件夹（`onedrive-picker-choose`，根层或没有记录当前项时禁用）、取消（`onedrive-picker-cancel`）。加载中显示 `settings.onedrive.loading`，空目录显示 `settings.onedrive.empty`；当前目录项（`{id,name,path}`）记在 `state.onedrivePicker.current`。
 - 存储卡：索引/封面/缓存音乐三行（`formatBytes`），挂载后及每次 store change 异步调 `store.storageEstimate()`（1s 节流，失败忽略）；`usage/quota` 都可用时显示「已用/可用」。清除缓存与清空曲库都经 `confirm`，完成后由 app 的 toast 提示。
 - 语言卡：五个 `segmented` 选项（`data-testid="language-auto|zh-CN|zh-TW|ja|en"`），点击 `store.setSetting('language', value)`；除 `auto` 外显示各语言本地名。
 - 关于卡：`BUILD_VERSION`（`data-testid="about-version"`）、检查更新（`sw.checkForUpdate()`，waiting 时 `store.setUpdateReady(true)`）、更新状态行（`state.updateReady` 时给出「立即更新」→ `sw.applyUpdate()`）与重新加载。
