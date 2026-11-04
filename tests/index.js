@@ -8,3 +8,4 @@ import './metadata.test.js';
 import './scan.test.js';
 import './queue.test.js';
 import './folders.test.js';
+import './update-flow.test.js';

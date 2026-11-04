@@ -25,10 +25,9 @@ function renderFatal(error) {
 let store = null;
 try {
   store = await createApp();
-  mountUi(root, store);
+  const sw = registerServiceWorker(() => store?.setUpdateReady(true));
+  mountUi(root, store, sw);
 } catch (error) {
   console.error('LocalTune failed to start', error);
   renderFatal(error);
 }
-
-registerServiceWorker(() => store?.setUpdateReady(true));
