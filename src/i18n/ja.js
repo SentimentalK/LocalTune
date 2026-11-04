@@ -144,6 +144,11 @@ export default {
   'settings.background.stock2': 'アプリのバッテリー使用量 → 制限なし',
   'settings.background.stock3':
     '別ルート：設定 → アプリ → 特別なアプリのアクセス → バッテリーの最適化 → Chrome → 最適化しない',
+  'settings.background.iosTitle': 'iOS でインストール',
+  'settings.background.iosHint': 'ホーム画面に追加するとバックグラウンド再生。',
+  'settings.background.ios1': 'Safari の共有をタップ',
+  'settings.background.ios2': '「ホーム画面に追加」を選択',
+  'settings.background.ios3': 'ホーム画面から起動',
   'settings.storage.title': 'ストレージ',
   'settings.storage.index': '索引',
   'settings.storage.cover': 'カバー',

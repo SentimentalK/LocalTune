@@ -770,3 +770,19 @@ export async function resolveLyrics({ track, getFile, readEmbedded = readEmbedde
 ```
 
 优先级：同目录 `.lrc` > `.LRC` > 内嵌 SYLT > 内嵌 USLT（mp3）/©lyr（m4a）。sidecar 依次经 `getFile` → `decodeLyricsBytes` → `parseLrc`，有行返回 `lrc`，否则有 `plain` 返回 `lrc-plain`；sidecar 全部缺失/为空/失败后对 `track.path` 调用一次 `getFile` 交给 `readEmbedded`，有 `synced` 返回 `sylt`，否则按扩展名返回 `uslt` 或 `lyr`；全失败返回 `none`。OPFS 导入保留 `.lrc` sidecar（扩展名大小写不敏感），但 `scan()` 仍只产出音频。
+### iOS 适配（APP-001-F2）
+
+- `<head>` 中 `apple-mobile-web-app-capable="yes"` 让 iOS 从主屏启动时以 standalone 模式运行（无 Safari 工具栏）；`apple-mobile-web-app-status-bar-style="default"` 保持系统默认状态栏样式；`apple-mobile-web-app-title="LocalTune"` 决定主屏图标下方的名称；`apple-touch-icon` 提供 180×180 主屏图标。四者都只是声明，不引入外部资源或脚本。
+- 设置「后台播放」卡按 UA 显示 iOS 安装引导（`data-testid="ios-install-guide"`）：`ua` 匹配 `iPad|iPhone|iPod`，或 `Macintosh` 且 `navigator.maxTouchPoints > 1`（iPadOS 桌面 UA），并且 `state.install.status !== 'installed'` 时可见；非 iOS 或已安装时整块隐藏。引导内容为「分享 → 添加到主屏幕 → 从主屏启动」三步。
+- 能力矩阵：
+
+| 能力 | iOS 行为 |
+| --- | --- |
+| File System Access | 不可用；改用 OPFS 导入模式（`local-mode-import`） |
+| `beforeinstallprompt` | 不会派发；安装只能通过手动引导（分享 → 添加到主屏幕）完成 |
+| Media Session | iOS 16.4+ 才可用；PWA 必须从主屏以 standalone 启动，Safari 标签页内不生效。`setPositionState` 在 iOS 上不可靠，进度条可能不随播放更新 |
+| Web Audio（均衡/增益） | `AudioContext` 需要用户手势才能 `resume()`；无法进入 running 时开关静默降级（不建图、不抛错） |
+| 后台定时器 | 进入后台后 JS 定时器可能被节流，睡眠定时的淡出可能一次跳到终点（仍会停止播放） |
+| OneDrive 授权 | refresh token 24 h 过期，之后需要重新授权；已缓存曲目不受影响 |
+
+- 不做承诺：受系统后台策略限制，iOS 上不能保证与 Android 同等的后台连续播放；真机验证以 `docs/device-test-checklist.md` 的 S31–S36 为准。

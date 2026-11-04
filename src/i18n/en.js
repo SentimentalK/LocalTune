@@ -143,6 +143,11 @@ export default {
   'settings.background.stock2': 'App battery usage → Unrestricted',
   'settings.background.stock3':
     'Alternative: Settings → Apps → Special app access → Battery optimization → Chrome → Don’t optimize',
+  'settings.background.iosTitle': 'Install on iOS',
+  'settings.background.iosHint': 'Add to Home Screen for background playback.',
+  'settings.background.ios1': 'Tap Share in Safari',
+  'settings.background.ios2': 'Add to Home Screen',
+  'settings.background.ios3': 'Open from Home Screen',
   'settings.storage.title': 'Storage',
   'settings.storage.index': 'Index',
   'settings.storage.cover': 'Covers',

@@ -135,6 +135,11 @@ export default {
   'settings.background.stock2': '应用电池用量 → 不受限制',
   'settings.background.stock3':
     '备选：设置 → 应用 → 特殊应用权限 → 电池优化 → Chrome → 不优化',
+  'settings.background.iosTitle': '在 iOS 上安装',
+  'settings.background.iosHint': 'iOS 需添加到主屏幕才能后台播放。',
+  'settings.background.ios1': '在 Safari 点分享',
+  'settings.background.ios2': '选「添加到主屏幕」',
+  'settings.background.ios3': '从主屏幕打开',
   'settings.storage.title': '存储',
   'settings.storage.index': '索引',
   'settings.storage.cover': '封面',
