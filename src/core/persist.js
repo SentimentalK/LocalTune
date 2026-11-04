@@ -9,6 +9,8 @@ const PLAYBACK_KEY = 'playback';
 const SETTINGS_KEY = 'settings';
 const SAVE_DELAY = 1000;
 const REPEAT_VALUES = new Set(['off', 'all', 'one']);
+const LANGUAGE_VALUES = new Set(['auto', 'zh-CN', 'zh-TW', 'ja', 'en']);
+const DEFAULT_LANGUAGE = 'auto';
 
 let pending = null;
 let timer = null;
@@ -71,10 +73,12 @@ export async function loadSettings(db) {
   const value = await getMeta(db, SETTINGS_KEY);
   return {
     vinylSpin: typeof value?.vinylSpin === 'boolean' ? value.vinylSpin : true,
+    language: LANGUAGE_VALUES.has(value?.language) ? value.language : DEFAULT_LANGUAGE,
   };
 }
 
 export async function saveSettings(db, settings) {
   const vinylSpin = typeof settings?.vinylSpin === 'boolean' ? settings.vinylSpin : true;
-  await setMeta(db, SETTINGS_KEY, { vinylSpin });
+  const language = LANGUAGE_VALUES.has(settings?.language) ? settings.language : DEFAULT_LANGUAGE;
+  await setMeta(db, SETTINGS_KEY, { vinylSpin, language });
 }

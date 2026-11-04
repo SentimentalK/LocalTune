@@ -1,4 +1,5 @@
 import { getMeta, setMeta } from './db.js';
+import { t } from '../i18n/index.js';
 
 /**
  * File source adapters: File System Access (Chrome 132+ on Android, all
@@ -47,7 +48,7 @@ export class FsaSource {
   async connect() {
     const picker = globalThis.showDirectoryPicker;
     if (typeof picker !== 'function') {
-      throw new Error('浏览器不支持 File System Access');
+      throw new Error(t('error.source.unsupportedFsa'));
     }
     const handle = await picker({ mode: 'read' });
     this.#root = handle;
@@ -74,7 +75,7 @@ export class FsaSource {
       state = await handle.requestPermission({ mode: 'read' });
     }
     this.#permission = state;
-    if (state !== 'granted') throw new Error('未获得目录读取权限');
+    if (state !== 'granted') throw new Error(t('error.source.permissionDenied'));
 
     if (this.#db) await setMeta(this.#db, DIR_HANDLE_KEY, handle);
     return handle;
@@ -132,7 +133,7 @@ export class FsaSource {
 
   /** @returns {AsyncGenerator<{path:string,file:File,mtime:number,size:number}>} */
   async *scan() {
-    if (!this.#root) throw new Error('目录未连接');
+    if (!this.#root) throw new Error(t('error.source.notConnected'));
     this.#dirs = new Map();
     yield* this.#walk(this.#root, '');
   }
@@ -158,9 +159,9 @@ export class FsaSource {
 
   /** Resolve a File from the cached/known root handle without prompting again. */
   async getFile(path) {
-    if (!this.#root) throw new Error('目录未连接');
+    if (!this.#root) throw new Error(t('error.source.notConnected'));
     const segments = String(path).split('/').filter(Boolean);
-    if (!segments.length) throw new Error(`无效路径: ${path}`);
+    if (!segments.length) throw new Error(t('error.source.invalidPath', { path }));
     let dir = this.#root;
     for (let i = 0; i < segments.length - 1; i += 1) {
       const key = segments.slice(0, i + 1).join('/');
@@ -205,7 +206,7 @@ export class FileListSource {
 
   async connect() {
     if (typeof document === 'undefined') {
-      throw new Error('浏览器不支持文件选择');
+      throw new Error(t('error.source.unsupportedPicker'));
     }
     const input = document.createElement('input');
     input.type = 'file';
@@ -225,7 +226,7 @@ export class FileListSource {
         finish(resolve, Array.from(input.files ?? []));
       }
       function onCancel() {
-        const error = new Error('已取消选择文件夹');
+        const error = new Error(t('error.source.cancelled'));
         error.name = 'AbortError';
         finish(reject, error);
       }
@@ -236,7 +237,7 @@ export class FileListSource {
 
     const audio = files.filter((file) => isAudioFile(file.name));
     if (!audio.length) {
-      const error = new Error('所选文件夹里没有音频文件');
+      const error = new Error(t('error.source.noAudio'));
       error.name = 'AbortError';
       throw error;
     }
@@ -291,7 +292,7 @@ export class FileListSource {
 
   async getFile(path) {
     const file = this.#files.get(path);
-    if (!file) throw new Error(`文件不存在: ${path}`);
+    if (!file) throw new Error(t('error.source.fileMissing', { path }));
     return file;
   }
 }

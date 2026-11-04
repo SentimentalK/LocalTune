@@ -37,8 +37,8 @@ Dockerfile, nginx.conf, .github/workflows/image.yaml   # Build Worker
  * @property {string} id            // `${source}:${path}`
  * @property {string} path          // 相对授权目录的 POSIX 路径
  * @property {string} title
- * @property {string} artist        // 解析失败用 '未知歌手'
- * @property {string} album         // 解析失败用 '未知专辑'
+ * @property {string} artist        // 空串表示未知；展示层用 common.unknownArtist
+ * @property {string} album         // 空串表示未知；展示层用 common.unknownAlbum
  * @property {number|null} year
  * @property {number|null} trackNo
  * @property {number} duration      // 秒，未知为 0
@@ -225,9 +225,11 @@ export function setMeta(db, key, value)
 ```js
 export async function loadPlayback(db)   // meta.playback → {trackId,position,queueIds,queueIndex,repeat,shuffle,volume}|null
 export function savePlayback(db, snapshot) // 1s 防抖；调用 stop() 可 flush（模块内导出 savePlayback.flush）
-export async function loadSettings(db)   // {vinylSpin:boolean}
-export async function saveSettings(db, settings)
+export async function loadSettings(db)   // {vinylSpin:boolean, language:'auto'|'zh-CN'|'zh-TW'|'ja'|'en'}
+export async function saveSettings(db, settings) // 非法/缺失的 language 落盘为 'auto'
 ```
+
+`meta.settings.language` 缺省 `'auto'`：`'auto'` 表示跟随 `navigator.languages`，其余为显式语言。老的 `{vinylSpin}` 记录读上来时自动补 `language: 'auto'`。
 
 ### `src/core/mediaSession.js`
 
@@ -235,6 +237,28 @@ export async function saveSettings(db, settings)
 export function installMediaSession(store)   // 绑定 play/pause/previoustrack/nexttrack/seekto/seekforward/seekbackward
 export function syncMediaSession(state)      // metadata + playbackState + positionState（duration>0 才设）
 ```
+
+### `src/i18n/*` — 文案与语言
+
+```js
+export const LOCALES = ['zh-CN', 'zh-TW', 'ja', 'en'];
+export function resolveLocale(languages = [])      // 依次看每一项：'zh-TW'|'zh-HK'|'zh-Hant*' → 'zh-TW'；
+                                                   // 'zh*' → 'zh-CN'；'ja*' → 'ja'；其余看下一项；都不匹配 → 'en'
+export function resolveLanguage(setting, languages) // setting ∈ LOCALES 时原样返回；
+                                                    // 'auto' 或非法值按 resolveLocale(languages)
+export function getLocale(); export function setLocale(locale)  // 非法 locale 忽略
+export function t(key, params = {})                // 当前表 → 缺 key 回退 en → 仍缺返回 key 并 console.warn（同 key 只警告一次）
+                                                   // 插值：{name} 替换为 params.name
+export function applyDocumentLang()                // 有 document 时写 documentElement.lang
+```
+
+四张表 `src/i18n/{en,zh-CN,zh-TW,ja}.js` 都是默认导出的扁平对象，key 为点分命名（`common.*`、`tabs.*`、`player.*`、`empty.*`、`settings.*`、`aria.*`、`error.*`、`fatal.*`），四张表 key 集合必须完全一致（`tests/i18n.test.js` 断言），en 是唯一兜底表。
+
+- 模块加载时默认 locale = `resolveLocale(navigator.languages ?? [navigator.language])`（无 `navigator` 时 `'en'`）；导入不访问 DOM，Node 测试可直接 import。
+- `src/main.js` 在 `createApp()` 之后、`mountUi()` 之前用 `store.state.settings.language` 调 `setLocale(resolveLanguage(...))` + `applyDocumentLang()`；fatal 页文案也走 `t('fatal.*')`。
+- `src/index.html` 的 `<html lang="zh-CN">` 只是无 JS 时的回退，运行时由 `applyDocumentLang()` 覆盖。
+- 语言只持久化在 `meta.settings.language`，不进 localStorage。
+- UI 约定：`src/ui/**` 与 `src/main.js` 不得硬编码用户可见文案（按钮、空状态、状态栏、tab、更新 banner、设置卡片、`aria-label`），一律 `t(key, { ... })`；计数用 `{count}` / `{done}` / `{total}` 模板。`src/core/{db,player,source,store}.js` 抛出的用户可见 `Error` 消息同样走 `t('error.*')`。unknown artist/album 在 `Track` 里只存空串，展示时用 `common.unknownArtist` / `common.unknownAlbum`；`src/ui/app.js` 的 `UNKNOWN` 集合兼容旧库里已存的中文哨兵值。
 
 ### `src/core/store.js` — app 状态与动作（UI 唯一入口）
 
@@ -255,7 +279,7 @@ export class Store extends EventTarget {
   async seek(seconds)
   setVolume(v)
   toggleShuffle(); cycleRepeat()
-  setSetting(key, value)           // 'vinylSpin'
+  setSetting(key, value)           // 'vinylSpin' | 'language'
   async jumpTo(index)              // 队列内跳转
   removeQueueAt(index)
   setUpdateReady(flag)             // SW 检测到新版本
@@ -274,7 +298,7 @@ export class Store extends EventTarget {
   current: { track: Track|null, playing: boolean, position: 0, duration: 0, volume: 1 },
   source: { kind:'fsa'|'files', connected: false, permission:'none'|'granted'|'prompt'|'denied',
             name: '', error: null, scanning: false, progress: { done: 0, total: 0 } },
-  settings: { vinylSpin: boolean },
+  settings: { vinylSpin: boolean, language: 'auto'|'zh-CN'|'zh-TW'|'ja'|'en' },
   updateReady: false,
   migration: { running: false, done: 0, total: 0, error: null }
 }
@@ -313,6 +337,8 @@ export function mountUi(root, store, sw)  // 首次渲染 + store.on('change') �
 ```
 
 `sw` 是 `registerServiceWorker()` 的返回值（`{ applyUpdate, checkForUpdate }`），UI 只通过它触发更新，不直接碰 `navigator.serviceWorker`。
+
+语言切换即时生效：`render(state)` 开头比较 `resolveLanguage(state.settings.language, navigator.languages)` 与 `getLocale()`，不同则 `setLocale()` + `applyDocumentLang()` + 用 `createShell` 重建整个壳（重新绑定进度条事件、`root.replaceChildren(ui.app)`、清空视图缓存后重渲染）。**不得用 `location.reload()` 切换语言**；`store` 的 `change` 监听只绑一次。
 
 UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.mediaSession`；全部经 Store。
 
