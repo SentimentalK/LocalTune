@@ -7,6 +7,29 @@
 import { isGarbledTrack } from './metadata/garbled.js';
 
 /**
+ * Bump when tag parsing output changes; drives the full local re-read.
+ */
+export const TAG_PARSER_VERSION = 2;
+
+/**
+ * Pick the tracks whose tags should be re-read for one source.
+ *
+ * Local and OPFS sources are fully re-read when the parser version moved on,
+ * and only suspicious tracks otherwise. OneDrive never takes the full path:
+ * listing every file is expensive, so it stays on the mojibake heuristic.
+ *
+ * @param {Iterable<object>|null|undefined} tracks
+ * @param {{kind: string, parserVersion: number, lastParserVersion: (number|null|undefined)}} options
+ * @returns {object[]} tracks that need a fresh read, in input order.
+ */
+export function selectRereadTargets(tracks, { kind, parserVersion, lastParserVersion }) {
+  const list = Array.from(tracks ?? []);
+  if (kind === 'onedrive') return list.filter(isGarbledTrack);
+  if (parserVersion !== lastParserVersion) return list;
+  return list.filter(isGarbledTrack);
+}
+
+/**
  * Merge freshly read metadata onto a track. Only non-empty values win; fields
  * the reader omits keep their old value.
  */
@@ -52,6 +75,7 @@ function mergeTrack(track, meta) {
  *   tracks: object[],
  *   getFile: (path:string) => Promise<File|Blob>,
  *   readMetadata: (file: File|Blob) => Promise<object>,
+ *   shouldRead?: (track: object) => boolean,
  *   onProgress?: (progress:{done:number,total:number,changed:number,failed:number}) => void
  * }} options
  * @returns {Promise<{changed: object[], checked: number, failed: number}>}
@@ -60,9 +84,10 @@ export async function migrateGarbledTracks({
   tracks,
   getFile,
   readMetadata,
+  shouldRead = isGarbledTrack,
   onProgress = () => {},
 }) {
-  const suspects = Array.from(tracks ?? []).filter(isGarbledTrack);
+  const suspects = Array.from(tracks ?? []).filter(shouldRead);
   const total = suspects.length;
   const changed = [];
   let done = 0;
