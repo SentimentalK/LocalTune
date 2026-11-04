@@ -199,6 +199,17 @@ export async function clearAudioCache(cachesImpl = globalThis.caches)     // 删
 - 音频条目判定：请求 URL pathname 以 `.mp3/.m4a/.flac/.ogg/.oga/.wav/.webm` 结尾，或响应 `content-type` 以 `audio/` 开头；只处理同源条目，遍历全部 Cache，单条 `match`/`blob` 失败跳过。
 - `clearAudioCache` 先累加命中响应 blob 的 size，再删除对应条目，返回总和；无命中返回 0。`cachesImpl` 可注入内存替身（`tests/storage.test.js`）。
 
+### D2 契约 — 音频缓存、固定与上限
+
+- 命名：音频 blob 全部放在 Cache Storage 的 `audio-v1`（`AUDIO_CACHE_NAME`）中，key 为同源合成 URL `/__audio/<encodeURIComponent(cacheKey(source, path))>`，从不发出网络请求；`cacheKey` = `<source>:<path 去前导 />`。
+- `cacheIndex`：keyPath `key`；每行 `{ key, source, path, size, lastAccess }`。`size` 来自 blob；`lastAccess` 在每次命中时刷新。
+- `pins`：keyPath `id`；每行 `{ id: "<source>:<dir>", source, dir, at }`，`dir === ''` 表示该来源的整个根。固定条目永不被 LRU 选中。
+- LRU：写入后立即 `enforceLimit()`；超限时按 `lastAccess` 升序（同值按 key）驱逐，直到总量 ≤ 上限；全部固定且超限时一个都不驱逐。
+- 上限：`CACHE_LIMIT_OPTIONS` = `[512 MiB, 1 GiB, 2 GiB, 5 GiB, 0(不限)]`，默认 `2 GiB`（`DEFAULT_CACHE_LIMIT`）。`persist.js` 直接 re-export 这两个常量（`CACHE_LIMIT_VALUES` / `DEFAULT_CACHE_LIMIT_BYTES`），`meta.settings.cacheLimitBytes` 缺失或非法一律回落到默认值；`0` 表示不限。
+- 状态与动作：`state.pins` 是 `{ id, source, dir, running, done, total, error }` 的数组；`pinFolder` 先落库再逐首 `getFile`（并发 1，单曲失败跳过，全部失败保留 pin 并写 `error`），`unpinFolder` 只删 pin、缓存保留；`isPinned(source, dir)` 对 `dir === ''` 的根 pin 返回 true。
+- 启动同步：`init()` 只在 `meta.lastScanBySource.onedrive.at` 距今超过 1 小时（或缺失）时后台 `syncSource('onedrive')`，不阻塞首屏。
+- 清除：`store.clearAudioCache()` = `cache.clear()` + 删除全部 pins（`state.pins = []`），返回释放字节数；两条路径都不触碰源文件。
+
 ### `src/core/migrate.js` — 乱码标签迁移
 
 ```js
@@ -316,7 +327,7 @@ export function applyDocumentLang()                // 有 document 时写 docume
 - 模块加载时默认 locale = `resolveLocale(navigator.languages ?? [navigator.language])`（无 `navigator` 时 `'en'`）；导入不访问 DOM，Node 测试可直接 import。
 - `src/main.js` 在 `createApp()` 之后、`mountUi()` 之前用 `store.state.settings.language` 调 `setLocale(resolveLanguage(...))` + `applyDocumentLang()`；fatal 页文案也走 `t('fatal.*')`。
 - `src/index.html` 的 `<html lang="zh-CN">` 只是无 JS 时的回退，运行时由 `applyDocumentLang()` 覆盖。
-- 语言只持久化在 `meta.settings.language`，不进 localStorage。
+- 语言只持久化在 `meta.settings.language`，不进 localStorage；同一 `meta.settings` 还存 `cacheLimitBytes`（允许值见 D2，缺失/非法回落 2 GiB）。
 - UI 约定：`src/ui/**` 与 `src/main.js` 不得硬编码用户可见文案（按钮、空状态、状态栏、tab、更新 banner、设置卡片、`aria-label`），一律 `t(key, { ... })`；计数用 `{count}` / `{done}` / `{total}` 模板。`src/core/{db,player,source,store}.js` 抛出的用户可见 `Error` 消息同样走 `t('error.*')`。unknown artist/album 在 `Track` 里只存空串，展示时用 `common.unknownArtist` / `common.unknownAlbum`；`src/ui/app.js` 的 `UNKNOWN` 集合兼容旧库里已存的中文哨兵值。
 
 ### `src/core/store.js` — app 状态与动作（UI 唯一入口）
@@ -339,8 +350,11 @@ export class Store extends EventTarget {
   async rescanTags()               // 遍历 permission === 'granted' 的来源；按 track.source 选 adapter
   async removeSource(kind = 'local') // adapter.forget()；该行复位，保留已索引曲目
   async clearLibrary()             // 删除全部曲目索引，暂停播放并清空队列/current，不动授权与 settings
-  async storageEstimate()          // → {indexBytes, coverBytes, audioBytes, usage, quota}；audioBytes = cache.total()
-  async clearAudioCache()          // cache.clear() → 释放字节数
+  async storageEstimate()          // → {indexBytes, coverBytes, audioBytes, usage, quota, limitBytes, pinnedCount}；audioBytes = cache.total()
+  async clearAudioCache()          // cache.clear() + 删除全部 pins → 释放字节数
+  async pinFolder({ source, dir, trackIds })  // 记录 pin 后按序拉取每首（并发 1）写入缓存；已存在同 id 直接返回
+  async unpinFolder(id)            // 只删 pin，不删缓存
+  isPinned(source, dir)            // 该来源的 dir（或 dir === '' 的根）已固定
   async describeTrackTags(trackId) // 按 track.source 选 adapter → describeTags → formatTagReport
   setView(view)                    // 'tracks'|'albums'|'artists'|'folders'|'queue'|'settings'
   async playTrack(trackId)         // 以全部歌曲为队列，从该曲开始
@@ -351,7 +365,7 @@ export class Store extends EventTarget {
   async seek(seconds)
   setVolume(v)
   toggleShuffle(); cycleRepeat()
-  setSetting(key, value)           // 仅 'language'
+  setSetting(key, value)           // 'language' 与 'cacheLimitBytes'（后者校验合法值、写 meta、更新 cache.limit 并 enforceLimit）
   async jumpTo(index)              // 队列内跳转
   removeQueueAt(index)
   setUpdateReady(flag)             // SW 检测到新版本
@@ -376,7 +390,11 @@ export class Store extends EventTarget {
   ],
   onedrivePicker: { open: boolean, path: string, items: [{id,name,path,isFolder}],
                     loading: boolean, current: {id,name,path}|null },
-  settings: { language: 'auto'|'zh-CN'|'zh-TW'|'ja'|'en' },
+  settings: { language: 'auto'|'zh-CN'|'zh-TW'|'ja'|'en', cacheLimitBytes: number },
+  pins: [ // 每个来源的目录一条；根目录 dir === ''
+    { id: `${source}:${dir}`, source: 'fsa'|'onedrive', dir: string,
+      running: boolean, done: number, total: number, error: string|null }
+  ],
   updateReady: false,
   migration: { running: false, done: 0, total: 0, error: null }
 }
@@ -388,7 +406,7 @@ export class Store extends EventTarget {
 - `onedrive` → `track.source = 'onedrive'`，`id = 'onedrive:' + path`，`path` 相对所选根，`externalIds = { onedrive: itemId }`。
 - `state.sources[].trackCount` 按 `track.source` 统计；`syncSource` 只替换该来源的轨道，`removedIds` 也只影响该来源。
 
-`init()` 顺序：`onedrive.handleRedirect()` → restore 两个来源 → 登录或已有 root 时进入设置并打开 picker → onedrive 有 root 且 `permission === 'prompt'` 时 `await onedrive.silentReauth()`（`prompt=none` 顶层跳转，10 分钟 guard，仅 init 调用）→ 读 tracks/playback/settings 并构建 `state.sources` → 恢复队列与播放位置 → emit。末尾以 `void this._maybeMigrateTags()` 启动后台迁移，**不 await**；若 onedrive 有 root、已授权且 `meta.lastScanBySource.onedrive.at` 距今超过 1 小时（或缺失），再 `void this.syncSource('onedrive')`。
+`init()` 顺序：`onedrive.handleRedirect()` → restore 两个来源 → 登录或已有 root 时进入设置并打开 picker → onedrive 有 root 且 `permission === 'prompt'` 时 `await onedrive.silentReauth()`（`prompt=none` 顶层跳转，10 分钟 guard，仅 init 调用）→ 读 tracks/playback/settings/pins，把 `settings.cacheLimitBytes` 写入 `cache.limit` 并构建 `state.sources`/`state.pins` → 恢复队列与播放位置 → emit。末尾以 `void this._maybeMigrateTags()` 启动后台迁移，**不 await**；若 onedrive 有 root、已授权且 `meta.lastScanBySource.onedrive.at` 距今超过 1 小时（或缺失），再 `void this.syncSource('onedrive')`。
 
 `_maybeMigrateTags()` 触发条件：`meta.lastBuildVersion !== BUILD_VERSION` 且至少一个来源 `permission === 'granted'`。按来源分组调用 `migrateGarbledTracks`（`getFile` 用该来源的 adapter），合并结果后 `putTracks` 并用同 id 覆盖 `state.tracks`（`sortTracks` 后），再 `_reconcileQueue([])`；每 5 首或最后一首 emit 一次进度。成功后写 `meta.lastBuildVersion = BUILD_VERSION`（可疑曲目为 0 也写）；任何异常写 `state.migration.error` 且**不写版本号**，下次启动重试；无已授权来源时直接跳过且不写版本号。finally 里 `running = false` 并 emit。`running` 期间顶部状态栏显示 `t('migration.progress', { done, total })`，优先于扫描/就绪文案；`error` 在设置视图曲库卡显示一行 muted 文案。
 
@@ -436,7 +454,7 @@ export function openTagInfo(track, { loadReport }) // 标签信息弹层；loadR
 - 四张卡（`settings-section-library|storage|language|about`）只创建一次；`render(state)` 只改文本、数值、chip 与 disabled，不重建节点。
 - 曲库卡：固定两行来源（`data-testid="source-row-local|onedrive"`；类型图标、名称、曲目数、授权 chip、该行 `error`）。每行动作：同步（`settings-sync-<id>`，运行中禁用并显示 `settings.source.syncing`，完成后 toast `settings.source.syncResult`）、更换（本地 `settings-source-change` / OneDrive `settings-onedrive-change` 重新打开 picker）、移除（`settings-source-remove` / `settings-onedrive-remove`，确认后调 `store.removeSource(id)`）。添加来源：本地文件夹；OneDrive 按钮（`settings-source-onedrive`）按状态显示 `settings.source.onedriveSignIn` / `onedrivePick` / `onedriveChange`，`permission === 'prompt'` 时显示 `settings.source.onedriveReauth` 并调 `store.reauthenticateOneDrive()`。另有重新读取标签。扫描中禁用动作并显示正在扫描那一行的 `progress`。
 - OneDrive 目录选择器：`state.onedrivePicker.open` 时作为独立 card 渲染在曲库卡下方（`data-testid="onedrive-picker"`）：面包屑（`settings.onedrive.root` + 已进入的路径段）、上一级（`onedrive-picker-up`，根层禁用）、文件夹列表（`onedrive-folder`）、选择此文件夹（`onedrive-picker-choose`，根层或没有记录当前项时禁用）、取消（`onedrive-picker-cancel`）。加载中显示 `settings.onedrive.loading`，空目录显示 `settings.onedrive.empty`；当前目录项（`{id,name,path}`）记在 `state.onedrivePicker.current`。
-- 存储卡：索引/封面/缓存音乐三行（`formatBytes`），挂载后及每次 store change 异步调 `store.storageEstimate()`（1s 节流，失败忽略）；`usage/quota` 都可用时显示「已用/可用」。清除缓存与清空曲库都经 `confirm`，完成后由 app 的 toast 提示。
+- 存储卡：上限分段控件（`data-testid="cache-limit"`，`0.5 GB / 1 GB / 2 GB / 5 GB / 不限`，当前值 `aria-pressed` + `.is-active`，点击 `store.setSetting('cacheLimitBytes', value)`）、索引/封面/缓存音乐/固定条目数四行（`formatBytes`；固定行用 `settings.storage.pinnedCount` + `state.pins.length`），挂载后及每次 store change 异步调 `store.storageEstimate()`（1s 节流，失败忽略）；`usage/quota` 都可用时显示「已用/可用」。清除缓存的音乐先 `confirm(settings.storage.clearConfirmCache)`，再调 `store.clearAudioCache()`，toast `settings.storage.cacheCleared`；清空曲库同样 `confirm`，完成后由 app 的 toast 提示。
 - 语言卡：五个 `segmented` 选项（`data-testid="language-auto|zh-CN|zh-TW|ja|en"`），点击 `store.setSetting('language', value)`；除 `auto` 外显示各语言本地名。
 - 关于卡：`BUILD_VERSION`（`data-testid="about-version"`）、检查更新（`sw.checkForUpdate()`，waiting 时 `store.setUpdateReady(true)`）、更新状态行（`state.updateReady` 时给出「立即更新」→ `sw.applyUpdate()`）与重新加载。
 - 更新 banner 固定在底部，文案 `update.available` + `update.apply`，`data-testid="update-apply"` 保留。
@@ -447,7 +465,7 @@ export function openTagInfo(track, { loadReport }) // 标签信息弹层；loadR
 
 UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.mediaSession`；全部经 Store。
 
-视图：歌曲 / 专辑 / 歌手 / 文件夹 / 队列 / 设置（全屏）。设置区不再有唱片旋转开关；来源、存储、语言、关于都在设置视图。文件夹视图整行点击 = 以该目录曲目替换队列并播放；行尾「加入队列」= 追加到队列末尾。
+视图：歌曲 / 专辑 / 歌手 / 文件夹 / 队列 / 设置（全屏）。设置区不再有唱片旋转开关；来源、存储、语言、关于都在设置视图。文件夹视图整行点击 = 以该目录曲目替换队列并播放；行尾「加入队列」= 追加到队列末尾；行尾固定按钮（`data-testid="pin-<dir|root>"`）= 对该目录出现过的每个 `track.source` 调 `store.pinFolder`，已全部固定时改为 `unpinFolder`。固定运行中按钮禁用并显示 `settings.storage.pinning`（跨来源求和 `done/total`），完成后显示 `settings.storage.pinned`；状态由 `store.isPinned` + `state.pins` 决定，`aria-pressed` + `.is-on` 表达开关。
 
 ## 构建与 SW
 

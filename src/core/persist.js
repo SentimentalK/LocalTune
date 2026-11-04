@@ -4,6 +4,7 @@
  */
 
 import { getMeta, setMeta } from './db.js';
+import { CACHE_LIMIT_OPTIONS, DEFAULT_CACHE_LIMIT } from './cache/audioCache.js';
 
 const PLAYBACK_KEY = 'playback';
 const SETTINGS_KEY = 'settings';
@@ -11,6 +12,14 @@ const SAVE_DELAY = 1000;
 const REPEAT_VALUES = new Set(['off', 'all', 'one']);
 const LANGUAGE_VALUES = new Set(['auto', 'zh-CN', 'zh-TW', 'ja', 'en']);
 const DEFAULT_LANGUAGE = 'auto';
+
+/** One list of allowed cache limits, owned by the cache module. */
+export const DEFAULT_CACHE_LIMIT_BYTES = DEFAULT_CACHE_LIMIT;
+export const CACHE_LIMIT_VALUES = CACHE_LIMIT_OPTIONS;
+
+function isCacheLimit(bytes) {
+  return Number.isFinite(bytes) && CACHE_LIMIT_OPTIONS.includes(bytes);
+}
 
 let pending = null;
 let timer = null;
@@ -73,10 +82,16 @@ export async function loadSettings(db) {
   const value = await getMeta(db, SETTINGS_KEY);
   return {
     language: LANGUAGE_VALUES.has(value?.language) ? value.language : DEFAULT_LANGUAGE,
+    cacheLimitBytes: isCacheLimit(value?.cacheLimitBytes)
+      ? value.cacheLimitBytes
+      : DEFAULT_CACHE_LIMIT_BYTES,
   };
 }
 
 export async function saveSettings(db, settings) {
   const language = LANGUAGE_VALUES.has(settings?.language) ? settings.language : DEFAULT_LANGUAGE;
-  await setMeta(db, SETTINGS_KEY, { language });
+  const cacheLimitBytes = isCacheLimit(settings?.cacheLimitBytes)
+    ? settings.cacheLimitBytes
+    : DEFAULT_CACHE_LIMIT_BYTES;
+  await setMeta(db, SETTINGS_KEY, { language, cacheLimitBytes });
 }
