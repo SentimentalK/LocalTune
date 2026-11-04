@@ -250,6 +250,9 @@ export class OpfsSource {
   }
 
   async #importEntries(entries, rootName, { signal } = {}) {
+    if (!entries.some((entry) => isAudioFile(entry.path))) {
+      throw abortError(t('error.source.noAudio'));
+    }
     this.name = rootName;
     if (this.#db) await setMeta(this.#db, ROOT_NAME_KEY, rootName);
     const root = await this.#root();
