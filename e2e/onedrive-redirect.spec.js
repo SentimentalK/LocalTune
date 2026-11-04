@@ -41,6 +41,7 @@ test('a redirect caught by a new browsing context completes and opens the picker
 
   await expect(returned.locator('[data-testid="settings-section-library"]')).toBeVisible();
   await expect(returned.locator('[data-testid="onedrive-picker"]')).toBeVisible();
+  await expect(returned.locator('[data-testid="settings-onedrive-hint"]')).toBeVisible();
   await expect(returned.locator('[data-testid="onedrive-folder"]').first()).toHaveText('Music');
 });
 
@@ -54,5 +55,6 @@ test('a mismatched state shows the cloud account error and never exchanges the c
   const error = returned.locator('[data-testid="source-row-onedrive"] .settings-error');
   await expect(error).toBeVisible();
   await expect(error).not.toHaveText('');
+  await expect(returned.locator('[data-testid="settings-onedrive-retry"]')).toBeVisible();
   expect(mock.tokenRequests ?? []).toHaveLength(0);
 });
