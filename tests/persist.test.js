@@ -157,6 +157,22 @@ test('the YouTube key and playlist proxy survive a save/load round trip', async 
   assert.deepEqual(await loadSettings(db), saved);
 });
 
+test('the playlist proxy keeps a same-origin path', async () => {
+  const { db } = createDb();
+
+  const saved = await saveSettings(db, { playlistProxyUrl: '  /api/resolve  ' });
+  assert.equal(saved.playlistProxyUrl, '/api/resolve');
+  assert.equal((await loadSettings(db)).playlistProxyUrl, '/api/resolve');
+});
+
+test('the playlist proxy rejects protocol-relative and non-HTTPS values', async () => {
+  const { db } = createDb();
+
+  const saved = await saveSettings(db, { playlistProxyUrl: '//evil.example/x' });
+  assert.equal(saved.playlistProxyUrl, '');
+  assert.equal((await loadSettings(db)).playlistProxyUrl, '');
+});
+
 test('the YouTube key and playlist proxy are cleaned when invalid', async () => {
   const { db } = createDb();
   const cleaned = {

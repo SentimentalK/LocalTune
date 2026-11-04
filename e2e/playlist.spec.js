@@ -204,3 +204,70 @@ test('imports a text playlist, persists it and writes a m3u8', async ({ page }) 
   await page.locator('#tab-playlists').click();
   await expect(page.locator('[data-testid="playlist-row"]')).toHaveCount(1);
 });
+
+// The service worker is cache-first and its fetches bypass page.route, so the
+// resolver request must reach Playwright's router directly.
+test.describe('same-origin proxy', () => {
+  test.use({ serviceWorkers: 'block' });
+
+  test('imports a playlist through the same-origin /api/resolve proxy', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    // Force the OPFS import source: the directory picker would need a real grant.
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'showDirectoryPicker', {
+        configurable: true,
+        value: undefined,
+      });
+    });
+
+    const playlistUrl = 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M';
+    const requested = [];
+    let served = false;
+    await page.route('**/api/resolve**', async (route) => {
+      requested.push(route.request().url());
+      if (served) {
+        await route.abort();
+        return;
+      }
+      served = true;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          source: 'spotify',
+          name: 'E2E 代理歌单',
+          items: [
+            { title: '夜に駆ける', artist: 'YOASOBI', durationMs: 2000, coverUrl: null },
+            { title: '不存在的代理歌', artist: 'Nobody', durationMs: 2000, coverUrl: null },
+          ],
+          truncated: false,
+        }),
+      });
+    });
+
+    await page.goto('/');
+    await expect(page.locator('#app h1')).toBeVisible();
+
+    await seedLibrary(page);
+    await page.reload();
+    await expect(page.locator('li.row .row-hit')).toHaveCount(7);
+
+    await page.locator('[data-testid="import-open"]').click();
+    await expect(page.locator('[data-testid="import-dialog"]')).toBeVisible();
+    await page.locator('[data-testid="import-name"]').fill('E2E 代理歌单');
+    await page.locator('[data-testid="import-url"]').fill(playlistUrl);
+    await page.locator('[data-testid="import-submit"]').click();
+
+    await expect(
+      page.locator('[data-testid="result-matched"] [data-testid="result-row"]'),
+    ).toHaveCount(1);
+    await expect(
+      page.locator('[data-testid="result-missing"] [data-testid="result-row"]'),
+    ).toHaveCount(1);
+
+    expect(requested).toEqual([
+      `http://127.0.0.1:4173/api/resolve?url=${encodeURIComponent(playlistUrl)}`,
+    ]);
+  });
+});

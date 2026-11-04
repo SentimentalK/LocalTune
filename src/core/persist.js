@@ -5,6 +5,7 @@
 
 import { getMeta, setMeta } from './db.js';
 import { CACHE_LIMIT_OPTIONS, DEFAULT_CACHE_LIMIT } from './cache/audioCache.js';
+import { normalizeProxyUrl } from './playlist/sources/proxy.js';
 
 const PLAYBACK_KEY = 'playback';
 const SETTINGS_KEY = 'settings';
@@ -13,8 +14,6 @@ const REPEAT_VALUES = new Set(['off', 'all', 'one']);
 const LANGUAGE_VALUES = new Set(['auto', 'zh-CN', 'zh-TW', 'ja', 'en']);
 const DEFAULT_LANGUAGE = 'auto';
 const MAX_API_KEY = 200;
-const MAX_PROXY_URL = 300;
-const HTTPS_URL_RE = /^https:\/\//;
 
 /** One list of allowed cache limits, owned by the cache module. */
 export const DEFAULT_CACHE_LIMIT_BYTES = DEFAULT_CACHE_LIMIT;
@@ -31,10 +30,7 @@ function cleanApiKey(value) {
 }
 
 function cleanProxyUrl(value) {
-  if (typeof value !== 'string') return '';
-  const text = value.trim();
-  if (text.length > MAX_PROXY_URL || !HTTPS_URL_RE.test(text)) return '';
-  return text;
+  return normalizeProxyUrl(value);
 }
 
 let pending = null;

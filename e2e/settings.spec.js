@@ -16,6 +16,12 @@ test('settings view covers library, storage, language and about', async ({ page 
   // Build version is the 10-char source hash injected by the build.
   await expect(page.locator('[data-testid="about-version"]')).toHaveText(/^[0-9a-f]{10}$/);
 
+  // The empty proxy field advertises the same-origin default.
+  await expect(page.locator('[data-testid="setting-proxy-url"]')).toHaveAttribute(
+    'placeholder',
+    '/api/resolve',
+  );
+
   // No audio responses are cached in a fresh profile: the toast still reports 0 B.
   page.once('dialog', (dialog) => dialog.accept());
   await page.locator('[data-testid="clear-cache"]').click();
