@@ -436,7 +436,7 @@ export function createSettingsView(store, sw) {
       state.updateReady ? t('settings.about.updateReady') : t('settings.about.upToDate'),
     );
 
-    scheduleStorage();
+    if (state.view === 'settings') scheduleStorage();
   }
 
   return { node, render };
