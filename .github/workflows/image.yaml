@@ -20,7 +20,7 @@ jobs:
     name: Build, Smoke-test & Publish
     runs-on: ubuntu-latest
     outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
+      image_tag: ${{ steps.tag.outputs.tag }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -119,6 +119,20 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Resolve image tag
+        id: tag
+        if: github.event_name != 'pull_request'
+        env:
+          TAG_NAMES: ${{ steps.meta.outputs.tag-names }}
+        run: |
+          set -euo pipefail
+          TAG=$(printf '%s\n' "$TAG_NAMES" | grep -m1 '^sha-[0-9a-f]\{7\}$' || true)
+          if [ -z "$TAG" ]; then
+            echo "no sha-<7 hex> tag among generated tags"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Print Published Image
         if: github.event_name != 'pull_request'
