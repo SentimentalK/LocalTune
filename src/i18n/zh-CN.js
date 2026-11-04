@@ -169,7 +169,7 @@ export default {
   'settings.about.youtubeKey': 'YouTube API key',
   'settings.about.youtubeKeyHint': '用于 YouTube 歌单链接，仅保存在此浏览器。',
   'settings.about.proxyUrl': '歌单代理地址',
-  'settings.about.proxyUrlHint': '用于 Spotify / 网易云 / QQ 音乐链接的 HTTPS 地址或同域路径，留空使用 /api/resolve。',
+  'settings.about.proxyUrlHint': 'Spotify / 网易云 / QQ 链接：HTTPS 地址或同域路径，留空用 /api/resolve。',
   'settings.about.saved': '已保存',
   'settings.about.version': '版本',
   'settings.about.updateState': '更新',

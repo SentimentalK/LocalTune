@@ -178,7 +178,7 @@ export default {
   'settings.about.youtubeKey': 'YouTube API key',
   'settings.about.youtubeKeyHint': 'Used for YouTube playlist links. Stored only in this browser.',
   'settings.about.proxyUrl': 'Playlist proxy URL',
-  'settings.about.proxyUrlHint': 'HTTPS endpoint or same-origin path for Spotify / NetEase / QQ Music links. Empty uses /api/resolve.',
+  'settings.about.proxyUrlHint': 'Spotify / NetEase / QQ links: HTTPS URL or same-origin path. Empty uses /api/resolve.',
   'settings.about.saved': 'Saved',
   'settings.about.version': 'Version',
   'settings.about.updateState': 'Update',
