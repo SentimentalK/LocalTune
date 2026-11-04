@@ -9,6 +9,7 @@ import { groupByAlbum, groupByArtist, formatTime } from '../core/selectors.js';
 import { groupByFolder } from '../core/folders.js';
 import { el, icon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
 import { createSettingsView } from './settings.js';
+import { createImportDialog, createPlaylistView } from './playlist.js';
 import { openTagInfo } from './diagnostics.js';
 import { applyDocumentLang, getLocale, resolveLanguage, setLocale, t } from '../i18n/index.js';
 
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'albums', labelKey: 'tabs.albums' },
   { id: 'artists', labelKey: 'tabs.artists' },
   { id: 'folders', labelKey: 'tabs.folders' },
+  { id: 'playlists', labelKey: 'tabs.playlists' },
   { id: 'queue', labelKey: 'tabs.queue' },
 ];
 
@@ -452,9 +454,22 @@ function createShell(store, sw) {
       onclick: () => store.setView(id),
     }),
   );
-  const tabs = el('div', { class: 'tabs', role: 'tablist', 'aria-label': t('aria.libraryViews') }, tabButtons);
+  const tabs = el('div', { class: 'tabs', role: 'tablist', 'aria-label': t('aria.libraryViews') }, [
+    ...tabButtons,
+    el('button', {
+      class: 'btn-pill tabs-import',
+      type: 'button',
+      'data-testid': 'import-open',
+      text: t('playlists.import'),
+      onclick: () => importDialog.open(),
+    }),
+  ]);
   const panel = el('div', { id: 'view-panel', role: 'tabpanel', tabindex: '-1' });
   const library = el('section', { class: 'library', 'aria-label': t('aria.library') }, [tabs, panel]);
+
+  // ---- playlists ----
+  const playlistView = createPlaylistView(store);
+  const importDialog = createImportDialog(store);
 
   // ---- settings view ----
   const settingsView = createSettingsView(store, sw);
@@ -485,6 +500,7 @@ function createShell(store, sw) {
     el('main', { class: 'layout' }, [defaultView, settingsHost]),
     updateBanner,
     toast,
+    importDialog.node,
   ]);
 
   return {
@@ -514,6 +530,8 @@ function createShell(store, sw) {
     settingsButton,
     settingsView,
     settingsHost,
+    playlistView,
+    importDialog,
     defaultView,
     tabButtons,
     panel,
@@ -540,6 +558,7 @@ export function mountUi(root, store, sw) {
     permissions: null,
     installable: false,
     pins: null,
+    playlists: null,
   };
 
   // A rebuilt shell has an empty panel, so the view cache must forget
@@ -554,6 +573,7 @@ export function mountUi(root, store, sw) {
     last.permissions = null;
     last.installable = false;
     last.pins = null;
+    last.playlists = null;
   }
 
   function showToast(text) {
@@ -624,6 +644,12 @@ export function mountUi(root, store, sw) {
       store.setView(prevView || 'tracks');
     });
     ui.settingsView.node.addEventListener('toast', (event) => {
+      showToast(event.detail?.text ?? '');
+    });
+    ui.playlistView.node.addEventListener('toast', (event) => {
+      showToast(event.detail?.text ?? '');
+    });
+    ui.importDialog.node.addEventListener('toast', (event) => {
       showToast(event.detail?.text ?? '');
     });
   }
@@ -806,6 +832,7 @@ export function mountUi(root, store, sw) {
       installPromptSeen !== last.installable ||
       currentId !== last.currentId ||
       state.pins !== last.pins ||
+      state.playlists !== last.playlists ||
       (queueView &&
         (state.queue.tracks !== last.queueTracks || state.queue.index !== last.queueIndex));
 
@@ -817,10 +844,17 @@ export function mountUi(root, store, sw) {
     last.installable = installPromptSeen;
     last.currentId = currentId;
     last.pins = state.pins;
+    last.playlists = state.playlists;
     last.queueTracks = state.queue.tracks;
     last.queueIndex = state.queue.index;
 
     syncCoverCache(state.tracks.map((track) => track.cover).filter(Boolean));
+
+    if (state.view === 'playlists') {
+      ui.playlistView.render(state);
+      ui.panel.replaceChildren(ui.playlistView.node);
+      return;
+    }
 
     if (!(state.sources ?? []).some((row) => row.permission === 'granted')) {
       ui.panel.replaceChildren(renderEmpty(state));

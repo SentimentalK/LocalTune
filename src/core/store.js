@@ -65,7 +65,7 @@ import {
 import { installMediaSession, syncMediaSession } from './mediaSession.js';
 import { t } from '../i18n/index.js';
 
-const VIEWS = new Set(['tracks', 'albums', 'artists', 'folders', 'queue', 'settings']);
+const VIEWS = new Set(['tracks', 'albums', 'artists', 'folders', 'playlists', 'queue', 'settings']);
 const MEDIA_SYNC_INTERVAL = 1000;
 const SOURCE_KINDS = ['local', 'onedrive'];
 const TRACK_SOURCE = { local: 'fsa', onedrive: 'onedrive' };
