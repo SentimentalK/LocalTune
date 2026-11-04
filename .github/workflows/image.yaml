@@ -19,6 +19,8 @@ jobs:
   build-and-push:
     name: Build, Smoke-test & Publish
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -115,3 +117,67 @@ jobs:
           echo "Image digest: ${{ steps.docker_build.outputs.digest }}"
           echo "Tags:"
           echo "${{ steps.meta.outputs.tags }}"
+
+  deploy:
+    name: Write image tag back to k3s-homelab
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check write-back token
+        id: check
+        env:
+          K3S_HOMELAB_TOKEN: ${{ secrets.K3S_HOMELAB_TOKEN }}
+        run: |
+          if [ -z "$K3S_HOMELAB_TOKEN" ]; then
+            echo "::notice::K3S_HOMELAB_TOKEN not set, skipping GitOps write-back"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out k3s-homelab
+        if: steps.check.outputs.ok == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: SentimentalK/k3s-homelab
+          ref: master
+          token: ${{ secrets.K3S_HOMELAB_TOKEN }}
+          path: k3s
+
+      - name: Bump image tag
+        id: bump
+        if: steps.check.outputs.ok == 'true'
+        working-directory: k3s
+        env:
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          case "$IMAGE_TAG" in
+            sha-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+            *) echo "unexpected image tag: '$IMAGE_TAG'"; exit 1 ;;
+          esac
+          FILE=apps/localtune/kustomization.yaml
+          grep -q 'newTag:' "$FILE"
+          CURRENT=$(sed -n 's/^[[:space:]]*newTag:[[:space:]]*//p' "$FILE" | head -n 1)
+          if [ "$CURRENT" = "$IMAGE_TAG" ]; then
+            echo "::notice::k3s-homelab already at $IMAGE_TAG, nothing to do"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sed -i "s|^\([[:space:]]*newTag:\).*|\1 $IMAGE_TAG|" "$FILE"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          git diff -- "$FILE"
+
+      - name: Commit and push
+        if: steps.check.outputs.ok == 'true' && steps.bump.outputs.changed == 'true'
+        working-directory: k3s
+        env:
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "localtune-ci"
+          git config user.email "ci@users.noreply.github.com"
+          git add apps/localtune/kustomization.yaml
+          git commit -m "deploy(localtune): $IMAGE_TAG"
+          git push origin master || { git pull --rebase && git push origin master; }
