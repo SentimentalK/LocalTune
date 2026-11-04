@@ -6,7 +6,7 @@
 import { t } from '../i18n/index.js';
 
 export const DB_NAME = 'localtune';
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 
 export const TRACKS_STORE = 'tracks';
 export const META_STORE = 'meta';
@@ -15,6 +15,7 @@ export const PINS_STORE = 'pins';
 export const PLAYLOG_STORE = 'playlog';
 export const OPFS_INDEX_STORE = 'opfsIndex';
 export const PLAYLISTS_STORE = 'playlists';
+export const STATS_STORE = 'stats';
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -64,6 +65,9 @@ export function openDb() {
       if (!db.objectStoreNames.contains(PLAYLISTS_STORE)) {
         const store = db.createObjectStore(PLAYLISTS_STORE, { keyPath: 'id' });
         store.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STATS_STORE)) {
+        db.createObjectStore(STATS_STORE, { keyPath: 'id' });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -142,5 +146,34 @@ export function setMeta(db, key, value) {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error ?? new Error(t('error.db.writeMeta')));
     tx.onabort = () => reject(tx.error ?? new Error(t('error.db.writeMetaAborted')));
+  });
+}
+
+export function getAllStats(db) {
+  const tx = db.transaction(STATS_STORE, 'readonly');
+  const request = tx.objectStore(STATS_STORE).getAll();
+  return requestResult(request).then((rows) => (Array.isArray(rows) ? rows : []));
+}
+
+export function putStat(db, row) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STATS_STORE, 'readwrite');
+    tx.objectStore(STATS_STORE).put(row);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error(t('error.db.writeStats')));
+    tx.onabort = () => reject(tx.error ?? new Error(t('error.db.writeStats')));
+  });
+}
+
+export function putStats(db, rows) {
+  const list = Array.from(rows ?? []);
+  if (!list.length) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STATS_STORE, 'readwrite');
+    const store = tx.objectStore(STATS_STORE);
+    for (const row of list) store.put(row);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error(t('error.db.writeStats')));
+    tx.onabort = () => reject(tx.error ?? new Error(t('error.db.writeStats')));
   });
 }

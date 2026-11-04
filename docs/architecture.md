@@ -50,7 +50,7 @@ Dockerfile, nginx.conf, .github/workflows/image.yaml   # Build Worker
  */
 ```
 
-IndexedDB（`localtune`，version 4）：
+IndexedDB（`localtune`，version 5）：
 
 - `tracks`：keyPath `id`；index `album`（`album`）、`artist`（`artist`）。
 - `meta`：keyPath `key`；键 `dirHandle`、`localMode`（`'import'|'reference'`）、`opfsRootName`、`lastScanBySource`（`{local?: {at,added,updated,removed}, onedrive?: {at,added,updated,removed}}`）、`lastBuildVersion`（最近一次乱码标签迁移针对的 `BUILD_VERSION` 字符串）、`playback`、`settings`、`onedriveToken`、`onedriveRoot`（`{driveId,itemId,path,name}`）、`onedriveItems`（`{ [相对路径]: itemId }`）、`onedriveAuthAt`。
@@ -59,6 +59,7 @@ IndexedDB（`localtune`，version 4）：
 - `playlog`：keyPath `id`，`autoIncrement`；`{ id, t, type, detail }`，环形保留最新 500 条（见 `src/core/playlog.js`）。
 - `opfsIndex`：keyPath `path`；`{ path, size, mtime }`，记录已导入 OPFS 的文件（见 `src/core/sources/opfs/index.js`）。
 - `playlists`：keyPath `id`；index `createdAt`（`createdAt`，非唯一）。行即 `Playlist`：`{ id, name, source, sourceUrl, items, createdAt }`；`id` 为 `pl_<毫秒时间戳>_<6 位 hex>`，`items[]` 为 `{ title, artist, durationMs, matchedTrackId, status, reasons, coverUrl }`（见 `src/core/playlist/model.js`）。
+- `stats`：keyPath `id`（即 `Track.id`）；`{ id, plays, lastPlayedAt, addedAt }`，`lastPlayedAt` 未播放过为 `null`（见 `src/core/stats.js`）。
 
 ## 模块契约
 
@@ -663,3 +664,21 @@ UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.
 
 - `Dockerfile`：多阶段，`node:22-alpine` build → `nginx:stable-alpine`；非 root（`USER nginx`，uid 101）；8080；`/healthz` 200；`nginx.conf` 中 `/assets/` immutable，`/index.html`、`/sw.js`、`/manifest.webmanifest` no-cache（且 manifest 为 `application/manifest+json`），其余 `try_files $uri $uri/ /index.html`。
 - CI：push 任意分支 → amd64 load + curl 冒烟（`/healthz`、`/`、`/manifest.webmanifest`、`/sw.js`；`sw.js` 头含 `no-cache`；一个 `/assets/*.js` 含 `immutable`）；非 PR 推 `linux/amd64,linux/arm64` 到 `ghcr.io/sentimentalk/localtune`，tag `sha-<short>` 与分支名，main 更新 `latest`。
+
+### stats 与自动列表（APP-001-F1）
+
+`src/core/stats.js` 全是纯函数（不碰 DOM/IDB，不取时钟），store 与 UI 各自接线。`stats` store 的 row 结构：
+
+```js
+{ id: string, plays: number, lastPlayedAt: number|null, addedAt: number }
+```
+
+`plays` 为累计播放次数；`lastPlayedAt` 是最近一次计数的时间戳，从未播放为 `null`；`addedAt` 首次入库时写入（`mtime`，缺失时退化为当前时间），之后不再变。`applyPlay(stats, { id, now })` 返回新 map（不改入参），`ensureAdded(stats, tracks, …)` 为没有行的曲目补零行并返回新增的 id。
+
+计数规则：一次播放会话（`createPlayCounter()` 的 `start` → 计数 → `pause`/结束）在听到 `min(30 s, duration / 2)` 后计一次，duration 未知按 30 s。`update(position)` 只累计 `0 < delta ≤ 5` 的正向增量，更大的跳跃视为 seek 不计时；`pause`/`resume` 保留已听时长，同一次会话只返回一次 `{ justCounted: true }`。
+
+三个选择器都返回 `Track[]`，只读入参、不修改：
+
+- `recentlyAdded`：按 `addedAt` 降序（缺行按 0），同值按 `path` 升序，取前 `limit`（默认 50）。
+- `mostPlayed`：只保留 `plays > 0`，按 `plays` 降序、`lastPlayedAt` 降序（`null` 按 0）、`path` 升序，取前 `limit`（默认 50）。
+- `neverPlayed`：`plays` 为 0 或没有行，按 `path` 升序，无上限。
