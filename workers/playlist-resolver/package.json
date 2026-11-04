@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Playlist metadata resolver Worker for LocalTune (Spotify / NetEase / QQ)",
   "scripts": {
+    "start": "node server.mjs",
     "test": "node --test test/*.test.js"
   }
 }
