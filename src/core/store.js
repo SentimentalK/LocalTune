@@ -9,7 +9,9 @@
  */
 
 import { openDb, putTracks, deleteTracksById, getAllTracks, getMeta, setMeta } from './db.js';
-import { createSource } from './source.js';
+import { createSource, hasDirectoryPicker } from './source.js';
+import { OpfsSource } from './sources/opfs/source.js';
+import { defaultLocalMode } from './sources/opfs/mode.js';
 import { OneDriveSource } from './sources/onedrive/source.js';
 import { AudioCache } from './cache/audioCache.js';
 import { createCacheIndex, createPinStore } from './cache/index.js';
@@ -46,6 +48,7 @@ const VIEWS = new Set(['tracks', 'albums', 'artists', 'folders', 'queue', 'setti
 const MEDIA_SYNC_INTERVAL = 1000;
 const SOURCE_KINDS = ['local', 'onedrive'];
 const TRACK_SOURCE = { local: 'fsa', onedrive: 'onedrive' };
+const LOCAL_MODE_KEY = 'localMode';
 const ONEDRIVE_SYNC_INTERVAL = 60 * 60 * 1000;
 
 function trackSourceOf(kind) {
@@ -121,7 +124,10 @@ export class Store extends EventTarget {
   constructor(db) {
     super();
     this.db = db;
-    this.local = createSource(db);
+    this.reference = createSource(db);
+    this.opfs = new OpfsSource({ db });
+    this.localMode = 'reference';
+    this.local = this.reference;
     this.pinStore = createPinStore(db);
     this.cache = new AudioCache({
       index: createCacheIndex(db),
@@ -225,6 +231,17 @@ export class Store extends EventTarget {
     } catch {
       // A failed exchange leaves the source signed out; restore() decides.
     }
+
+    const savedMode = await getMeta(this.db, LOCAL_MODE_KEY).catch(() => null);
+    this.localMode =
+      savedMode === 'import' || savedMode === 'reference'
+        ? savedMode
+        : defaultLocalMode({
+            userAgent: globalThis.navigator?.userAgent ?? '',
+            hasPicker: hasDirectoryPicker(),
+          });
+    this.local = this.localMode === 'import' ? this.opfs : this.reference;
+    this.sources.local = this.local;
 
     try {
       await this.local.restore();
@@ -346,7 +363,7 @@ export class Store extends EventTarget {
   }
 
   _countTracks(kind) {
-    const trackSource = trackSourceOf(kind);
+    const trackSource = kind === 'local' ? this.local.trackSource ?? 'fsa' : trackSourceOf(kind);
     return this._state.tracks.filter((track) => track.source === trackSource).length;
   }
 
@@ -366,12 +383,15 @@ export class Store extends EventTarget {
       permission,
       trackCount: this._countTracks(kind),
       root: kind === 'onedrive' ? adapter.root()?.path ?? null : null,
+      ...(kind === 'local' ? { mode: this.localMode } : {}),
       ...patch,
     });
   }
 
   _adapterForTrack(track) {
-    return track?.source === 'onedrive' ? this.onedrive : this.local;
+    if (track?.source === 'onedrive') return this.onedrive;
+    if (track?.source === 'opfs') return this.opfs;
+    return this.reference;
   }
 
   /**
@@ -403,7 +423,7 @@ export class Store extends EventTarget {
           const groupGarbled = list.filter(isGarbledTrack).length;
           const { changed: groupChanged } = await migrateGarbledTracks({
             tracks: list,
-            getFile: (path) => this.sources[kind].getFile(path),
+            getFile: (path) => (kind === 'local' ? this.local : this.sources[kind]).getFile(path),
             readMetadata,
             onProgress: ({ done }) => {
               this._state.migration = { ...this._state.migration, done: base + done, total };
@@ -436,6 +456,12 @@ export class Store extends EventTarget {
     this._patchSource('local', { error: null });
     this._emit();
     try {
+      if (this.localMode === 'import') {
+        this.local.onProgress = (progress) => {
+          this._patchSource('local', { progress });
+          this._emit();
+        };
+      }
       await this.local.connect();
       this._refreshSource('local');
       this._emit();
@@ -551,7 +577,7 @@ export class Store extends EventTarget {
     });
     this._emit();
 
-    const trackSource = trackSourceOf(kind);
+    const trackSource = adapter.trackSource ?? trackSourceOf(kind);
     try {
       const entries = [];
       for await (const entry of adapter.scan()) {
@@ -733,6 +759,50 @@ export class Store extends EventTarget {
     this._emit();
   }
 
+  /**
+   * Switch the local source between a referenced folder and an OPFS import.
+   * Tracks of the old strategy are dropped; imported files are never deleted.
+   */
+  async setLocalMode(mode) {
+    if (mode !== 'import' && mode !== 'reference') return;
+    if (mode === this.localMode) return;
+
+    await setMeta(this.db, LOCAL_MODE_KEY, mode);
+    const previousSource = this.local.trackSource ?? 'fsa';
+    this.localMode = mode;
+    this.local = mode === 'import' ? this.opfs : this.reference;
+    this.sources.local = this.local;
+
+    const nextSource = this.local.trackSource ?? 'fsa';
+    const removedIds = this._state.tracks
+      .filter((track) => track.source === previousSource && track.source !== nextSource)
+      .map((track) => track.id);
+    if (removedIds.length) {
+      await deleteTracksById(this.db, removedIds);
+      const removed = new Set(removedIds);
+      this._state.tracks = this._state.tracks.filter((track) => !removed.has(track.id));
+    }
+    this._reconcileQueue(removedIds);
+
+    await this.local.restore().catch(() => {});
+    this._refreshSource('local');
+    this._emit();
+  }
+
+  /** Drop the imported OPFS folder and the tracks it produced. */
+  async clearImported() {
+    await this.opfs.clear();
+    const removedIds = this._state.tracks
+      .filter((track) => track.source === 'opfs')
+      .map((track) => track.id);
+    if (removedIds.length) await deleteTracksById(this.db, removedIds);
+    const removed = new Set(removedIds);
+    this._state.tracks = this._state.tracks.filter((track) => !removed.has(track.id));
+    this._reconcileQueue(removedIds);
+    this._refreshSource('local');
+    this._emit();
+  }
+
   /** Delete every indexed track, stop playback and persist the empty state. */
   async clearLibrary() {
     const ids = this._state.tracks.map((track) => track.id);
@@ -758,6 +828,7 @@ export class Store extends EventTarget {
   async storageEstimate() {
     const { indexBytes, coverBytes } = await estimateLibrary(this._state.tracks);
     const audioBytes = await this.cache.total().catch(() => 0);
+    const imported = await this.opfs.usage().catch(() => ({ bytes: 0, count: 0 }));
     let usage = null;
     let quota = null;
     try {
@@ -775,6 +846,8 @@ export class Store extends EventTarget {
       quota,
       limitBytes: this.cache.limit,
       pinnedCount: this._state.pins.length,
+      importBytes: imported.bytes,
+      importCount: imported.count,
     };
   }
 

@@ -19,3 +19,5 @@ import './onedrive-graph.test.js';
 import './onedrive-source.test.js';
 import './audio-cache.test.js';
 import './persist.test.js';
+import './opfs-import.test.js';
+import './opfs-mode.test.js';
