@@ -8,6 +8,8 @@
 import { groupByAlbum, groupByArtist, formatTime } from '../core/selectors.js';
 import { groupByFolder } from '../core/folders.js';
 import { el, icon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
+import { createSettingsView } from './settings.js';
+import { openTagInfo } from './diagnostics.js';
 import { applyDocumentLang, getLocale, resolveLanguage, setLocale, t } from '../i18n/index.js';
 
 const TABS = [
@@ -47,7 +49,9 @@ function run(result) {
 }
 
 // Tracks stored before the empty-string defaults may still hold a sentinel.
-const UNKNOWN = new Set(['', '未知歌手', '未知专辑']);
+// Legacy sentinels stored by pre-i18n builds; never rendered, escaped to keep
+// the UI free of literal CJK copy outside the language names.
+const UNKNOWN = new Set(['', '\u672a\u77e5\u6b4c\u624b', '\u672a\u77e5\u4e13\u8f91']);
 const artistLabel = (value) => (UNKNOWN.has(value ?? '') ? t('common.unknownArtist') : value);
 const albumLabel = (value) => (UNKNOWN.has(value ?? '') ? t('common.unknownAlbum') : value);
 
@@ -78,7 +82,71 @@ function emptyState({ title, text, actionLabel, onAction, note }) {
   return el('section', { class: 'card empty' }, children);
 }
 
-function trackRow(track, { now, onActivate }) {
+const LONG_PRESS_MS = 500;
+
+function bindRowMenu(row, track, anchor, onMore) {
+  if (!onMore) return;
+  let timer = 0;
+  let fired = false;
+
+  const cancel = () => {
+    clearTimeout(timer);
+    timer = 0;
+  };
+
+  row.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    if (event.target.closest?.('.row-more, .row-x, .row-add')) return;
+    cancel();
+    fired = false;
+    timer = setTimeout(() => {
+      timer = 0;
+      fired = true;
+      onMore(track, anchor);
+    }, LONG_PRESS_MS);
+  });
+  row.addEventListener('pointerup', cancel);
+  row.addEventListener('pointerleave', cancel);
+  row.addEventListener('pointercancel', cancel);
+  row.addEventListener('pointermove', cancel);
+
+  // The long press must not also count as a tap on the row.
+  row.addEventListener(
+    'click',
+    (event) => {
+      if (!fired) return;
+      fired = false;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    true,
+  );
+
+  row.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    onMore(track, anchor);
+  });
+}
+
+function moreButton(track, onMore) {
+  const button = el(
+    'button',
+    {
+      class: 'row-more',
+      type: 'button',
+      'data-testid': 'row-more',
+      'aria-label': t('aria.more', { title: track.title }),
+      onclick: (event) => {
+        event.stopPropagation();
+        onMore?.(track, button);
+      },
+    },
+    [icon('more')],
+  );
+  return button;
+}
+
+function trackRow(track, { now, onActivate, onMore }) {
   const hit = el(
     'button',
     {
@@ -96,10 +164,13 @@ function trackRow(track, { now, onActivate }) {
       el('time', { text: formatTime(track.duration) }),
     ],
   );
-  return el('li', { class: now ? 'row now' : 'row' }, hit);
+  const more = moreButton(track, onMore);
+  const row = el('li', { class: now ? 'row now' : 'row' }, [hit, more]);
+  bindRowMenu(row, track, more, onMore);
+  return row;
 }
 
-function queueRow(track, index, { now, onActivate, onRemove }) {
+function queueRow(track, index, { now, onActivate, onRemove, onMore }) {
   const hit = el(
     'button',
     {
@@ -125,7 +196,10 @@ function queueRow(track, index, { now, onActivate, onRemove }) {
     'aria-label': t('aria.removeFromQueue', { title: track.title }),
     onclick: onRemove,
   });
-  return el('li', { class: now ? 'row queue now' : 'row queue' }, [hit, remove]);
+  const more = moreButton(track, onMore);
+  const row = el('li', { class: now ? 'row queue now' : 'row queue' }, [hit, remove, more]);
+  bindRowMenu(row, track, more, onMore);
+  return row;
 }
 
 function folderRow(group, { onPlay, onEnqueue }) {
@@ -205,9 +279,20 @@ function createShell(store, sw) {
   ]);
   const errorBox = el('p', { class: 'alert', role: 'alert' });
 
+  const settingsButton = el(
+    'button',
+    {
+      class: 'icon-btn',
+      type: 'button',
+      'data-testid': 'settings-open',
+      'aria-label': t('settings.open'),
+    },
+    [icon('gear')],
+  );
+
   const header = el('header', { class: 'top' }, [
     el('div', { class: 'brand' }, [el('h1', { text: 'LocalTune' }), status]),
-    el('div', { class: 'top-right' }, [count, sourceName, authButton]),
+    el('div', { class: 'top-right' }, [count, sourceName, authButton, settingsButton]),
   ]);
 
   // ---- player card ----
@@ -283,35 +368,6 @@ function createShell(store, sw) {
     controls,
   ]);
 
-  // ---- settings ----
-  const spinToggle = el('input', {
-    class: 'toggle',
-    type: 'checkbox',
-    id: 'vinyl-spin',
-    checked: true,
-    onchange: () => store.setSetting('vinylSpin', spinToggle.checked),
-  });
-  const rescanButton = el('button', {
-    class: 'btn-pill ghost',
-    type: 'button',
-    text: t('settings.rescan'),
-    onclick: () => run(store.rescan()),
-  });
-  const rescanTagsButton = el('button', {
-    class: 'btn-pill ghost',
-    type: 'button',
-    text: t('settings.rescanTags'),
-    onclick: () => run(store.rescanTags()),
-  });
-  const settings = el('section', { class: 'card settings', 'aria-label': t('aria.settings') }, [
-    el('label', { class: 'option', for: 'vinyl-spin' }, [
-      spinToggle,
-      el('span', { text: t('settings.vinylSpin') }),
-    ]),
-    rescanButton,
-    rescanTagsButton,
-  ]);
-
   // ---- library ----
   const tabButtons = TABS.map(({ id, labelKey }) =>
     el('button', {
@@ -328,27 +384,35 @@ function createShell(store, sw) {
   const panel = el('div', { id: 'view-panel', role: 'tabpanel', tabindex: '-1' });
   const library = el('section', { class: 'library', 'aria-label': t('aria.library') }, [tabs, panel]);
 
+  // ---- settings view ----
+  const settingsView = createSettingsView(store, sw);
+  const settingsHost = el('div', { class: 'settings-host' }, settingsView.node);
+  const defaultView = el('div', { class: 'default-view' }, [
+    el('div', { class: 'player-col' }, [player]),
+    library,
+  ]);
+
   const updateBanner = el('div', { class: 'update-banner', role: 'status', hidden: true }, [
-    el('span', { text: t('common.updateAvailable') }),
+    el('span', { text: t('update.available') }),
     el('button', {
       class: 'btn-pill',
       type: 'button',
-      text: t('common.update'),
+      text: t('update.apply'),
       'data-testid': 'update-apply',
       onclick: () => sw?.applyUpdate?.(),
     }),
   ]);
+
+  const toast = el('div', { class: 'toast', role: 'status', hidden: true });
 
   const app = el('div', { class: 'app' }, [
     header,
     errorBox,
     scan,
     deniedHint,
-    el('main', { class: 'layout' }, [
-      el('div', { class: 'player-col' }, [player, settings]),
-      library,
-    ]),
+    el('main', { class: 'layout' }, [defaultView, settingsHost]),
     updateBanner,
+    toast,
   ]);
 
   return {
@@ -375,16 +439,23 @@ function createShell(store, sw) {
     shuffleButton,
     repeatButton,
     repeatBadge,
-    spinToggle,
-    rescanButton,
-    rescanTagsButton,
+    settingsButton,
+    settingsView,
+    settingsHost,
+    defaultView,
     tabButtons,
     panel,
     updateBanner,
+    toast,
   };
 }
 
 export function mountUi(root, store, sw) {
+  let prevView = 'tracks';
+  let menuNode = null;
+  let menuCleanup = null;
+  let toastTimer = null;
+  let renderedView = null;
   let ui = createShell(store, sw);
 
   const last = {
@@ -411,9 +482,87 @@ export function mountUi(root, store, sw) {
     last.installable = false;
   }
 
+  function showToast(text) {
+    setText(ui.toast, text);
+    setHidden(ui.toast, false);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toastTimer = null;
+      setHidden(ui.toast, true);
+    }, 3000);
+  }
+
+  function closeMenu() {
+    if (menuCleanup) menuCleanup();
+    menuCleanup = null;
+    menuNode?.remove();
+    menuNode = null;
+  }
+
+  function openTrackMenu(track, anchor) {
+    closeMenu();
+    const menu = el('div', { class: 'menu', role: 'menu' }, [
+      el('button', {
+        class: 'menu-item',
+        type: 'button',
+        role: 'menuitem',
+        text: t('diagnostics.title'),
+        onclick: () => {
+          closeMenu();
+          openTagInfo(track, { loadReport: () => store.describeTrackTags(track.id) });
+        },
+      }),
+    ]);
+    menuNode = menu;
+    document.body.append(menu);
+
+    const rect = anchor?.getBoundingClientRect?.() ?? { top: 0, bottom: 0, right: 0 };
+    const width = menu.offsetWidth;
+    const height = menu.offsetHeight;
+    const left = Math.min(Math.max(rect.right - width, 8), window.innerWidth - width - 8);
+    const below = rect.bottom + 6;
+    const top = below + height > window.innerHeight - 8 ? rect.top - height - 6 : below;
+    menu.style.left = `${Math.max(left, 8)}px`;
+    menu.style.top = `${Math.max(top, 8)}px`;
+
+    const onPointerDown = (event) => {
+      if (!menu.contains(event.target)) closeMenu();
+    };
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeMenu();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    menuCleanup = () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }
+
+  function bindShellEvents() {
+    ui.settingsButton.addEventListener('click', () => {
+      if (store.state.view !== 'settings') prevView = store.state.view;
+      store.setView('settings');
+    });
+    ui.settingsView.node.addEventListener('settings-back', () => {
+      store.setView(prevView || 'tracks');
+    });
+    ui.settingsView.node.addEventListener('toast', (event) => {
+      showToast(event.detail?.text ?? '');
+    });
+  }
+
   function renderHeader(state) {
     const { source } = state;
-    if (source.scanning) {
+    const migration = state.migration;
+    if (migration?.running) {
+      setText(
+        ui.status,
+        t('migration.progress', { done: migration.done ?? 0, total: migration.total ?? 0 }),
+      );
+    } else if (source.scanning) {
       const { done, total } = source.progress ?? { done: 0, total: 0 };
       setText(
         ui.status,
@@ -468,7 +617,6 @@ export function mountUi(root, store, sw) {
     const playing = Boolean(track) && current.playing;
 
     ui.player.classList.toggle('playing', playing);
-    ui.player.classList.toggle('no-spin', state.settings.vinylSpin === false);
 
     const cover = track?.cover ?? null;
     if (cover !== last.cover) {
@@ -509,19 +657,15 @@ export function mountUi(root, store, sw) {
     setText(ui.repeatBadge, REPEAT_BADGE[queue.repeat] ?? '');
   }
 
-  function renderSettings(state) {
-    ui.spinToggle.checked = state.settings.vinylSpin !== false;
-    ui.rescanButton.disabled = state.source.scanning || state.source.permission === 'none';
-    ui.rescanTagsButton.disabled = state.source.scanning || state.source.permission === 'none';
-  }
-
   function renderTabs(state) {
+    const selectedView = state.view === 'settings' ? null : state.view;
     ui.tabButtons.forEach((button, index) => {
-      const selected = TABS[index].id === state.view;
+      const selected = TABS[index].id === selectedView;
       button.setAttribute('aria-selected', String(selected));
       button.classList.toggle('is-active', selected);
     });
-    ui.panel.setAttribute('aria-labelledby', `tab-${state.view}`);
+    if (selectedView) ui.panel.setAttribute('aria-labelledby', `tab-${selectedView}`);
+    else ui.panel.removeAttribute('aria-labelledby');
   }
 
   function renderEmpty(state) {
@@ -561,6 +705,7 @@ export function mountUi(root, store, sw) {
   }
 
   function renderView(state) {
+    if (state.view === 'settings') return;
     const currentId = state.current.track?.id ?? null;
     const queueView = state.view === 'queue';
     const rebuild =
@@ -680,6 +825,7 @@ export function mountUi(root, store, sw) {
           now: index === state.queue.index,
           onActivate: () => run(store.jumpTo(index)),
           onRemove: () => store.removeQueueAt(index),
+          onMore: openTrackMenu,
         }),
       );
       ui.panel.replaceChildren(
@@ -696,6 +842,7 @@ export function mountUi(root, store, sw) {
       trackRow(track, {
         now: track.id === currentId,
         onActivate: () => run(store.playTrack(track.id)),
+        onMore: openTrackMenu,
       }),
     );
     ui.panel.replaceChildren(
@@ -715,17 +862,29 @@ export function mountUi(root, store, sw) {
       remount();
       return;
     }
+    if (renderedView !== state.view) {
+      renderedView = state.view;
+      closeMenu();
+    }
     renderHeader(state);
     renderPlayer(state);
-    renderSettings(state);
     renderTabs(state);
     renderView(state);
+    ui.settingsView.render(state);
+    const settings = state.view === 'settings';
+    setHidden(ui.defaultView, settings);
+    setHidden(ui.settingsHost, !settings);
+    setHidden(ui.settingsButton, settings);
     setHidden(ui.updateBanner, !state.updateReady);
   }
 
   function remount() {
+    closeMenu();
+    clearTimeout(toastTimer);
+    toastTimer = null;
     ui = createShell(store, sw);
     resetCache();
+    bindShellEvents();
     bindSeek();
     root.replaceChildren(ui.app);
     render(store.state);
@@ -761,6 +920,7 @@ export function mountUi(root, store, sw) {
     ui.bar.addEventListener('keydown', seekFromKeyboard);
   }
 
+  bindShellEvents();
   bindSeek();
   root.replaceChildren(ui.app);
   render(store.state);

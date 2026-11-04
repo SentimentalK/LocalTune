@@ -114,6 +114,15 @@ export class FsaSource {
     return this.#permission;
   }
 
+  /** Drop the remembered directory and its permission; the stored handle goes too. */
+  async forget() {
+    this.#root = null;
+    this.#permission = 'none';
+    this.name = '';
+    this.#dirs = new Map();
+    if (this.#db) await setMeta(this.#db, DIR_HANDLE_KEY, null);
+  }
+
   async ensurePermission() {
     if (!this.#root) {
       this.#permission = 'none';
@@ -277,6 +286,14 @@ export class FileListSource {
 
   permission() {
     return this.#files.size ? 'granted' : 'none';
+  }
+
+  /** Drop the remembered file list and clear the persisted selection. */
+  async forget() {
+    this.#files = new Map();
+    this.#permission = 'none';
+    this.name = '';
+    if (this.#db) await setMeta(this.#db, FILE_LIST_KEY, null);
   }
 
   async ensurePermission() {

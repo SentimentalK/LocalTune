@@ -72,13 +72,11 @@ export async function loadPlayback(db) {
 export async function loadSettings(db) {
   const value = await getMeta(db, SETTINGS_KEY);
   return {
-    vinylSpin: typeof value?.vinylSpin === 'boolean' ? value.vinylSpin : true,
     language: LANGUAGE_VALUES.has(value?.language) ? value.language : DEFAULT_LANGUAGE,
   };
 }
 
 export async function saveSettings(db, settings) {
-  const vinylSpin = typeof settings?.vinylSpin === 'boolean' ? settings.vinylSpin : true;
   const language = LANGUAGE_VALUES.has(settings?.language) ? settings.language : DEFAULT_LANGUAGE;
-  await setMeta(db, SETTINGS_KEY, { vinylSpin, language });
+  await setMeta(db, SETTINGS_KEY, { language });
 }

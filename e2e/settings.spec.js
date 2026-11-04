@@ -1,0 +1,43 @@
+import { expect, test } from '@playwright/test';
+
+test('settings view covers library, storage, language and about', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+
+  await page.locator('[data-testid="settings-open"]').click();
+
+  for (const section of ['library', 'storage', 'language', 'about']) {
+    await expect(page.locator(`[data-testid="settings-section-${section}"]`)).toBeVisible();
+  }
+
+  // The old inline settings card (and its spin toggle) is gone.
+  await expect(page.locator('#vinyl-spin')).toHaveCount(0);
+
+  // Build version is the 10-char source hash injected by the build.
+  await expect(page.locator('[data-testid="about-version"]')).toHaveText(/^[0-9a-f]{10}$/);
+
+  // No audio responses are cached in a fresh profile: the toast still reports 0 B.
+  await page.locator('[data-testid="clear-cache"]').click();
+  await expect(page.locator('.toast')).toContainText('0 B');
+
+  // Language switch rebuilds the shell without leaving the settings view.
+  await page.locator('[data-testid="language-en"]').click();
+  await expect(page.locator('.settings-head h2')).toHaveText('Settings');
+  await page.locator('[data-testid="settings-back"]').click();
+
+  await expect(page.locator('[data-testid="settings-section-library"]')).toBeHidden();
+  await expect(page.locator('#tab-tracks')).toBeVisible();
+  await expect(page.locator('#tab-tracks')).toHaveText('Songs');
+  expect(await page.evaluate(() => document.documentElement.lang)).toBe('en');
+
+  // Switch back to the configured Chinese locale for the remaining suite.
+  await page.locator('[data-testid="settings-open"]').click();
+  await page.locator('[data-testid="language-zh-CN"]').click();
+  await expect(page.locator('.settings-head h2')).toHaveText('设置');
+  await page.locator('[data-testid="settings-back"]').click();
+
+  await expect(page.locator('[data-testid="settings-section-library"]')).toBeHidden();
+  await expect(page.locator('#tab-tracks')).toBeVisible();
+  await expect(page.locator('#tab-tracks')).toHaveText('歌曲');
+  expect(await page.evaluate(() => document.documentElement.lang)).toBe('zh-CN');
+});
