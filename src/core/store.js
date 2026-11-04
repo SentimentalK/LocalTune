@@ -31,6 +31,9 @@ import {
   removeAt as removeAtState,
 } from './queue.js';
 import { AudioPlayer } from './player.js';
+import { PlayLog } from './playlog.js';
+import { Prefetcher } from './prefetch.js';
+import { initInstall } from './install.js';
 import {
   loadPlayback,
   savePlayback,
@@ -137,8 +140,20 @@ export class Store extends EventTarget {
     this.sources = { local: this.local, onedrive: this.onedrive };
 
     this.audio = typeof Audio === 'function' ? new Audio() : null;
+    if (this.audio && typeof document !== 'undefined' && document?.body) {
+      // One media element for the whole app, attached so it is the only
+      // `audio` in the document (no per-track elements are created).
+      this.audio.setAttribute('aria-hidden', 'true');
+      document.body.append(this.audio);
+    }
     this.player = this.audio ? new AudioPlayer(this.audio) : null;
     this.queue = createQueue([]);
+    this.playlog = new PlayLog(db);
+    this.prefetcher = new Prefetcher({
+      load: (track) => this._adapterForTrack(track).getFile(track.path),
+    });
+    this.install = initInstall();
+    this.install.onChange(() => this._emit());
 
     this._scanning = new Set();
     this._migrating = false;
@@ -163,6 +178,7 @@ export class Store extends EventTarget {
     };
 
     this.#bindPlayer();
+    this.#bindDiagnostics();
   }
 
   get state() {
@@ -173,6 +189,8 @@ export class Store extends EventTarget {
     const player = this.player;
     if (!player) return;
 
+    const note = (type, detail = {}) =>
+      this.log(`audio:${type}`, { position: player.position ?? 0, ...detail });
     player.addEventListener('timeupdate', (event) => {
       const detail = event.detail ?? {};
       const position = Number(detail.position) || 0;
@@ -192,10 +210,13 @@ export class Store extends EventTarget {
     });
 
     player.addEventListener('ended', () => {
+      // Log before advancing so the row order shows ended → trackchange.
+      note('ended');
       void this._handleEnded();
     });
 
     player.addEventListener('play', () => {
+      note('play');
       this._state.current.playing = true;
       this._emit();
       this._syncMediaSession(true);
@@ -203,6 +224,7 @@ export class Store extends EventTarget {
     });
 
     player.addEventListener('pause', () => {
+      note('pause');
       if (this._loading) return;
       this._state.current.playing = false;
       this._emit();
@@ -210,13 +232,42 @@ export class Store extends EventTarget {
       this._savePlayback();
     });
 
+    for (const type of ['waiting', 'stalled', 'suspend']) {
+      player.addEventListener(type, () => note(type));
+    }
+
     player.addEventListener('error', (event) => {
       const error = event.detail?.error ?? new Error(t('error.store.playFailed'));
+      note('error', { error: String(error?.name ?? error) });
       const track = this._state.current.track;
       if (track) this._patchSource(kindOfTrack(track), { error: errorMessage(error) });
       this._state.current.playing = false;
       this._emit();
     });
+  }
+
+  #bindDiagnostics() {
+    if (typeof document !== 'undefined' && typeof document?.addEventListener === 'function') {
+      document.addEventListener('visibilitychange', () => {
+        // Visibility is recorded only; backgrounding must never pause playback.
+        this.log('visibility', { state: document.visibilityState });
+      });
+    }
+    if (typeof window !== 'undefined' && typeof window?.addEventListener === 'function') {
+      window.addEventListener('online', () => this.log('network', { online: true }));
+      window.addEventListener('offline', () => this.log('network', { online: false }));
+    }
+  }
+
+  /** Best-effort diagnostic row; never throws into the playback path. */
+  log(type, detail = {}) {
+    try {
+      const trackId = this._state?.current?.track?.id ?? null;
+      const online = globalThis.navigator?.onLine ?? true;
+      void this.playlog?.record(type, { ...detail, trackId, online });
+    } catch {
+      // Diagnostics must never break playback.
+    }
   }
 
   async init() {
@@ -867,13 +918,13 @@ export class Store extends EventTarget {
     return formatTagReport(described);
   }
 
-  async playTrack(trackId) {
+  async playTrack(trackId, source = 'user') {
     const tracks = this._state.tracks;
     if (!tracks.some((track) => track.id === trackId)) return;
-    await this.playQueue(tracks, trackId);
+    await this.playQueue(tracks, trackId, source);
   }
 
-  async playQueue(tracks, startId) {
+  async playQueue(tracks, startId, source = 'user') {
     const list = Array.from(tracks ?? []);
     if (!list.length) return;
     let startIndex = list.findIndex((track) => track.id === startId);
@@ -881,7 +932,7 @@ export class Store extends EventTarget {
     this.queue = setQueue(this.queue, list, startIndex);
     this._reflectQueue();
     this._emit();
-    await this._loadTrack(currentTrack(this.queue), { play: true });
+    await this._loadTrack(currentTrack(this.queue), { play: true, source });
     this._savePlayback();
     this._syncMediaSession(true);
   }
@@ -901,6 +952,7 @@ export class Store extends EventTarget {
 
   toggle() {
     if (!this.player) return;
+    this.log('control', { action: 'toggle' });
     if (this._state.current.playing) {
       this.player.pause();
       return;
@@ -918,7 +970,51 @@ export class Store extends EventTarget {
     });
   }
 
-  async next() {
+  /** Resume the already-loaded track without toggling playback state. */
+  resume() {
+    const track = this._state.current.track;
+    if (!track || !this.player) return;
+    this.log('control', { action: 'resume' });
+    const blocked = (error) => {
+      this._state.current.playing = false;
+      this.log('playblocked', { error: String(error?.name ?? error) });
+      this._emit();
+    };
+    try {
+      this.player
+        .playNow()
+        .then(() => {
+          this._state.current.playing = true;
+          this._syncMediaSession();
+        })
+        .catch(blocked);
+    } catch (error) {
+      blocked(error);
+    }
+  }
+
+  /** Pause unconditionally; used by the media-session pause action. */
+  pause() {
+    if (!this.player) return;
+    this.player.pause();
+    this.log('control', { action: 'pause' });
+  }
+
+  async playLog() {
+    return this.playlog.list();
+  }
+
+  async clearPlayLog() {
+    await this.playlog.clear();
+    this._emit();
+  }
+
+  async playLogText() {
+    const rows = await this.playlog.list();
+    return PlayLog.format(rows, { userAgent: globalThis.navigator?.userAgent ?? '' });
+  }
+
+  async next(source = 'user') {
     const before = this.queue;
     const { state } = advance(before, { auto: false });
     if (state === before) {
@@ -928,12 +1024,12 @@ export class Store extends EventTarget {
     this.queue = state;
     this._reflectQueue();
     this._emit();
-    await this._loadTrack(currentTrack(this.queue), { play: true });
+    await this._loadTrack(currentTrack(this.queue), { play: true, source });
     this._savePlayback();
     this._syncMediaSession(true);
   }
 
-  async prev() {
+  async prev(source = 'user') {
     const before = this.queue;
     const { state } = back(before);
     if (state === before) {
@@ -943,7 +1039,7 @@ export class Store extends EventTarget {
     this.queue = state;
     this._reflectQueue();
     this._emit();
-    await this._loadTrack(currentTrack(this.queue), { play: true });
+    await this._loadTrack(currentTrack(this.queue), { play: true, source });
     this._savePlayback();
     this._syncMediaSession(true);
   }
@@ -1039,6 +1135,7 @@ export class Store extends EventTarget {
   }
 
   _emit() {
+    this._state.install = this.install ? this.install.state() : null;
     this.dispatchEvent(new Event('change'));
   }
 
@@ -1163,7 +1260,26 @@ export class Store extends EventTarget {
     }
   }
 
-  async _loadTrack(track, { play = true, position = 0 } = {}) {
+  /**
+   * Warm the prefetch slot with the track after the current one. Repeat-one
+   * keeps the same track, so the current track is the next one there.
+   */
+  async _primeNext() {
+    if (!this.prefetcher) return;
+    const { state } = advance(this.queue, { auto: true });
+    const next = currentTrack(state);
+    if (!next) return;
+    if (kindOfTrack(next) !== 'local') {
+      // Remote sources fetch a whole file per read; eager prefetch would
+      // double the network traffic for tracks that may never play.
+      this.log('prefetch', { id: next.id, ok: false, skipped: 'remote' });
+      return;
+    }
+    const result = await this.prefetcher.prime(next);
+    this.log('prefetch', { id: next.id, ok: Boolean(result) });
+  }
+
+  async _loadTrack(track, { play = true, position = 0, source = 'user' } = {}) {
     if (!track || !this.player) return false;
     this._loading = true;
     this._state.current.playing = Boolean(play);
@@ -1182,6 +1298,8 @@ export class Store extends EventTarget {
         this._pendingSeek = null;
       }
       if (play) await this.player.play();
+      this.log('trackchange', { source });
+      void this._primeNext();
       return true;
     } catch (error) {
       this._patchSource(kindOfTrack(track), { error: errorMessage(error) });
@@ -1208,23 +1326,70 @@ export class Store extends EventTarget {
         return;
       }
       // repeat === 'one': replay the same track
+      this.log('trackchange', { source: 'auto', repeat: 'one' });
       this._state.current.position = 0;
+      this._state.current.playing = true;
+      const blocked = (error) => {
+        this._state.current.playing = false;
+        this.log('playblocked', { error: String(error?.name ?? error) });
+        this._emit();
+      };
       try {
         this.player?.seek(0);
-        await this.player?.play();
-      } catch {
-        this._state.current.playing = false;
-        this._emit();
+        this.player?.playNow().catch(blocked);
+      } catch (error) {
+        blocked(error);
       }
+      this._emit();
       this._savePlayback();
       this._syncMediaSession(true);
       return;
     }
 
+    const next = currentTrack(state);
+    if (!next) {
+      this._state.current.playing = false;
+      this._emit();
+      return;
+    }
+    const hit = this.prefetcher?.take(next.id) ?? null;
+
+    // Update the synchronous state before touching the element so the
+    // resulting play/pause events see the new track.
     this.queue = state;
     this._reflectQueue();
-    this._emit();
-    await this._loadTrack(currentTrack(this.queue), { play: true });
+    this._state.current = {
+      ...this._state.current,
+      track: next,
+      playing: true,
+      position: 0,
+      duration: next.duration || 0,
+    };
+    this._loadedId = next.id;
+    this.log('trackchange', { source: 'auto' });
+
+    if (hit) {
+      // No await before loadUrl/playNow: the user gesture's activation is still live.
+      const blocked = (error) => {
+        this._state.current.playing = false;
+        this.log('playblocked', { error: String(error?.name ?? error) });
+        this._emit();
+      };
+      try {
+        this.player.loadUrl(hit.url);
+        this.player.playNow().catch(blocked);
+      } catch (error) {
+        blocked(error);
+      }
+      this._emit();
+      this._savePlayback();
+      this._syncMediaSession(true);
+      void this._primeNext();
+      return;
+    }
+
+    this.log('prefetch', { id: next.id, ok: false });
+    await this._loadTrack(next, { play: true, source: 'auto' });
     this._savePlayback();
     this._syncMediaSession(true);
   }

@@ -19,3 +19,6 @@ import './onedrive-graph.test.js';
 import './onedrive-source.test.js';
 import './audio-cache.test.js';
 import './persist.test.js';
+import './playlog.test.js';
+import './prefetch.test.js';
+import './install.test.js';

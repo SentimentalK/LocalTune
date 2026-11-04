@@ -41,25 +41,38 @@ export function installMediaSession(store) {
 
   const handlers = {
     play: () => {
-      if (!store.state.current.playing) store.toggle();
+      store.log('mediasession', { action: 'play' });
+      store.resume();
     },
     pause: () => {
-      if (store.state.current.playing) store.toggle();
+      store.log('mediasession', { action: 'pause' });
+      store.pause();
     },
     previoustrack: () => {
-      void store.prev();
+      store.log('mediasession', { action: 'previoustrack' });
+      void store.prev('notification');
     },
     nexttrack: () => {
-      void store.next();
+      store.log('mediasession', { action: 'nexttrack' });
+      void store.next('notification');
     },
     seekto: (details) => {
+      store.log('mediasession', { action: 'seekto', seekTime: details?.seekTime ?? null });
       if (typeof details?.seekTime === 'number') void store.seek(details.seekTime);
     },
     seekforward: (details) => {
+      store.log('mediasession', {
+        action: 'seekforward',
+        offset: details?.seekOffset ?? SEEK_STEP,
+      });
       const offset = typeof details?.seekOffset === 'number' ? details.seekOffset : SEEK_STEP;
       void store.seek((store.state.current.position ?? 0) + offset);
     },
     seekbackward: (details) => {
+      store.log('mediasession', {
+        action: 'seekbackward',
+        offset: details?.seekOffset ?? SEEK_STEP,
+      });
       const offset = typeof details?.seekOffset === 'number' ? details.seekOffset : SEEK_STEP;
       void store.seek((store.state.current.position ?? 0) - offset);
     },
