@@ -45,17 +45,19 @@ Dockerfile, nginx.conf, .github/workflows/image.yaml   # Build Worker
  * @property {number} mtime         // File.lastModified
  * @property {number} size          // bytes
  * @property {Blob|null} cover
- * @property {'fsa'|'onedrive'} source
+ * @property {'fsa'|'opfs'|'onedrive'} source
  * @property {Object<string,string>} externalIds  // onedrive: { onedrive: itemId }；本地为空对象
  */
 ```
 
-IndexedDB（`localtune`，version 2）：
+IndexedDB（`localtune`，version 3）：
 
 - `tracks`：keyPath `id`；index `album`（`album`）、`artist`（`artist`）。
-- `meta`：keyPath `key`；键 `dirHandle`、`lastScanBySource`（`{local?: {at,added,updated,removed}, onedrive?: {at,added,updated,removed}}`）、`lastBuildVersion`（最近一次乱码标签迁移针对的 `BUILD_VERSION` 字符串）、`playback`、`settings`、`onedriveToken`、`onedriveRoot`（`{driveId,itemId,path,name}`）、`onedriveItems`（`{ [相对路径]: itemId }`）、`onedriveAuthAt`。
+- `meta`：keyPath `key`；键 `dirHandle`、`localMode`（`'import'|'reference'`）、`opfsRootName`、`lastScanBySource`（`{local?: {at,added,updated,removed}, onedrive?: {at,added,updated,removed}}`）、`lastBuildVersion`（最近一次乱码标签迁移针对的 `BUILD_VERSION` 字符串）、`playback`、`settings`、`onedriveToken`、`onedriveRoot`（`{driveId,itemId,path,name}`）、`onedriveItems`（`{ [相对路径]: itemId }`）、`onedriveAuthAt`。
 - `cacheIndex`：keyPath `key`；`{ key, source, path, size, lastAccess }`（音频缓存 LRU，细节归 D2）。
 - `pins`：keyPath `id`；固定（免驱逐）条目（细节归 D2）。
+- `playlog`：keyPath `id`，`autoIncrement`；`{ id, t, type, detail }`，环形保留最新 500 条（见 `src/core/playlog.js`）。
+- `opfsIndex`：keyPath `path`；`{ path, size, mtime }`，记录已导入 OPFS 的文件（见 `src/core/sources/opfs/index.js`）。
 
 ## 模块契约
 
@@ -144,7 +146,21 @@ export class OneDriveSource {
 
 `createGraphClient({ fetchImpl, getToken })` 只做 HTTP，不存 token：分页走 `@odata.nextLink`；`listChildren` 默认 `$top=200` 并显式 `$select`（含 `@microsoft.graph.downloadUrl`）；`getDownloadUrl` 从 item 注解取临时下载 URL；`fetchRange(url,start,end)` 发 `Range: bytes=start-end` 且不带 `Authorization`。downloadUrl 会过期，调用方在失败时重取 item。
 
-iOS / 未来来源只需实现同一组方法（`connect/restore/permission/ensurePermission/scan/getFile`），`store` 不改。`state.sources[].kind` 为 `'fsa' | 'files' | 'onedrive'`。
+### `src/core/sources/opfs/{source,import,index,mode}.js` — 导入式本地来源
+
+Android Chrome 无法跨启动保留 File System Access 授权，因此提供“导入”模式：一次选择目录，把音频复制进同源的 origin private file system（OPFS），之后启动只需读 OPFS，不再授权、可离线播放。
+
+- `OpfsSource`：`kind = 'opfs'`、`trackSource = 'opfs'`、`mode = 'import'`。实现与本地/OneDrive 相同的 `connect/restore/permission/ensurePermission/scan/getFile`：
+  - `connect({ signal })` 用隐藏的 `<input type=file webkitdirectory multiple>` 取得文件列表（`cancel` 事件 → `AbortError`），再调 `importFiles()`；`importHandle(dirHandle)` 供目录句柄调用方复用。
+  - `restore()` 只打开 OPFS 的 `music/` 与 `meta.opfsRootName`、`opfsIndex`；`permission()` 为 `opfsIndex` 有行时 `'granted'`，否则 `'none'`。不弹窗。
+  - `scan()` 递归产出 `{ path, file, mtime, size }`，跳过点开头目录/文件、按扩展名过滤。
+  - `getFile(path)` 按路径段从 `music/` 取 `File`，失败抛 `error.source.fileMissing`。
+  - `usage()` 递归统计 `music/` 的 `bytes/count`（存储卡）；`clear()` 递归删除 `music/`、清空 `opfsIndex`、`meta.opfsRootName = null`；`forget()` 只清索引与名称，**不删已导入文件**。
+- OPFS 目录固定为 `music/`；文件保持选择目录内的相对路径。`meta.opfsRootName` 记住所选根目录名用于显示。`meta.localMode` 持久化 `'import'|'reference'`，`defaultLocalMode()`：UA 含 `Android` → 导入；否则有 `showDirectoryPicker` → 引用，否则导入。
+- `opfsIndex` 行结构：`{ path, size, mtime }`（keyPath `path`）。增量规则：`path` 相同且 `size` + `mtime` 都相同视为未变（`skipped`）；新路径或任一字段变化则重新复制；索引有而本次选择没有的路径删除 OPFS 文件与索引行。每个文件复制完成后立即写索引，中止/崩溃留下可续传的前缀。
+- 进度回调形状（`onProgress`，导入期间写入 `state.sources[local].progress`）：`{ phase: 'copy'|'remove'|'done', copied, total, removed, removedTotal, bytes, bytesTotal, skipped }`；`bytes` 为已复制字节。设置页只在 `copy`/`remove` 阶段显示进度行。
+
+iOS / 未来来源只需实现同一组方法（`connect/restore/permission/ensurePermission/scan/getFile`），`store` 不改。`state.sources[].kind` 为 `'fsa' | 'files' | 'opfs' | 'onedrive'`。
 
 ### `src/core/metadata/{index,id3,mp4}.js`
 
@@ -267,6 +283,8 @@ export function removeAt(state, index)                    // 移除后保持当�
 export class AudioPlayer extends EventTarget {
   constructor(audio: HTMLAudioElement)
   async load(file)     // 释放旧 objectURL，set src，等待 canplay
+  loadUrl(url)         // 同步设 src；调用方拥有该 objectURL，旧 URL 在这里 revoke
+  playNow()            // 同步调用 audio.play()，返回 Promise；不做加载等待
   async play(); pause()
   seek(seconds); setVolume(v /*0..1*/)
   get position(); get duration(); get playing()
@@ -276,12 +294,47 @@ export class AudioPlayer extends EventTarget {
 //         | 'loaded' {duration} | 'error' {error}
 ```
 
-`load` 内部负责 `URL.createObjectURL(file)` 与 `revokeObjectURL`，其他模块不接触 object URL。
+`load` 内部负责 `URL.createObjectURL(file)` 与 `revokeObjectURL`。`loadUrl` 只接受已经创建好的 URL，所有权转给播放器（下一次 `loadUrl`/`destroy` 时 revoke）；预取路径用 `loadUrl` + `playNow`，避免 `await` 丢掉用户手势。
+
+### `src/core/prefetch.js` — 单槽预取
+
+```js
+export class Prefetcher {
+  constructor({ load, createUrl?, revokeUrl? })
+  get state()                 // {status:'idle'|'priming'|'ready'|'taken'|'cleared', id, url}
+  async prime(track)          // → {id,url}|null；同 id 已就绪直接返回
+  take(id)                    // → {id,url}|null；把 URL 所有权交给调用方
+  clear()                     // 丢弃槽位；未取走的 URL 在这里 revoke
+}
+```
+
+- 状态机：`idle → priming → ready → taken`；任意状态可 `clear()` 到 `cleared`。并发 `prime()` 以 token 丢弃旧结果并 revoke 旧 URL；失败回到 `idle` 并返回 null。
+- `store._primeNext()` 在每次成功切歌后预热队列里的下一首；远程来源（onedrive）整文件读取成本高，跳过并记 `prefetch {ok:false, skipped:'remote'}`。
+- 自然播完时 `_handleEnded()` 先 `advance(auto)` 得到下一首，`prefetcher.take(id)` 命中就同步 `loadUrl` + `playNow`（不 await），未命中才走原来的异步 `_loadTrack`。`ended` 事件里发出的 `trackchange` 标记 `source:'auto'`，`prefetch` 行记录命中与否。
+
+### `src/core/playlog.js` — 播放诊断环形日志
+
+```js
+export const PLAYLOG_LIMIT = 500;
+export class PlayLog {
+  constructor(db, { limit = PLAYLOG_LIMIT, now? })
+  async record(type, detail = {})   // put 一行后 trim；任何错误吞掉
+  async list({ limit? })            // 按 id 升序，返回最新 limit 条
+  async trim()                      // 删除超出 limit 的最旧行
+  async clear()
+  static format(rows, { userAgent }) // 纯文本：头两行 + 每行 ISO 时间/type/JSON detail
+}
+```
+
+- 存储：IDB v3 的 `playlog`，keyPath `id` + `autoIncrement`，环形保留 500 条。写入失败（磁盘满、升级被阻塞）不得影响播放。
+- 事件类型：`audio:*`（`play/pause/ended/waiting/stalled/suspend/error`，带 `position` 等）、`control`（`toggle/resume/pause`）、`trackchange`（`source:'user'|'auto'`，repeat-one 带 `repeat:'one'`）、`prefetch`（`{id, ok, skipped?}`）、`playblocked`（`{error}`）、`visibility`（`{state}`）、`network`（`{online}`）。每行 detail 统一附加 `trackId` 与 `online`。
+- `PlayLog.format()` 输出 `LocalTune play log`、`UA: …`，随后每行 `${ISO(t)} ${type} ${JSON.stringify(detail)}`；detail 不能序列化时退化为 `String(detail)`。
+- store：`log(type, detail)`（best-effort）、`playLog()`（行数组）、`playLogText()`（格式化文本）、`clearPlayLog()`（清空后 emit）。
 
 ### `src/core/db.js`
 
 ```js
-export const DB_NAME = 'localtune', DB_VERSION = 1;
+export const DB_NAME = 'localtune', DB_VERSION = 3;
 export function openDb()                         // Promise<IDBDatabase>
 export function putTracks(db, tracks)            // 单事务覆盖写
 export function deleteTracksById(db, ids)
@@ -307,6 +360,31 @@ export async function saveSettings(db, settings) // 只写 language；非法/缺
 export function installMediaSession(store)   // 绑定 play/pause/previoustrack/nexttrack/seekto/seekforward/seekbackward
 export function syncMediaSession(state)      // metadata + playbackState + positionState（duration>0 才设）
 ```
+
+### `src/core/install.js` — PWA 安装状态
+
+```js
+export function classifyInstall({ displayMode='browser', canPrompt=false, installed=false })
+// 已安装（standalone/fullscreen/minimal-ui/installed）→ 'installed'；
+// 否则 canPrompt → 'installable'；否则 'browser'
+export function initInstall({ window = globalThis.window })
+// → { state(): {status, canPrompt}, prompt(): Promise<{outcome}>, onChange(fn), destroy() }
+```
+
+`initInstall` 只监听 `beforeinstallprompt`（`preventDefault()` 后保存事件）与 `appinstalled`；`prompt()` 只在有事件时调用，并清空事件。页面从不自动 `prompt()`。store 持有实例（`store.install`），`_emit()` 把 `state()` 镜像到 `state.install`，所以 UI 只需读状态。
+
+### `src/core/battery.js` — Android 电池优化指引
+
+```js
+export const BATTERY_BRANDS = ['samsung','xiaomi','huawei','stock'];
+export function batteryTarget({ userAgent = '', model = '' }) // → 品牌
+export const BATTERY_INTENT_URL = null;
+export const BATTERY_STEP_KEYS = { samsung: [3 个 i18n key], xiaomi: [...], huawei: [...], stock: [...] };
+```
+
+- `batteryTarget` 优先 UA-CH `model`（Chrome 精简 UA 已不含机型）：`SM-`/`SAMSUNG` → samsung；`M\d{4}`/`2\d{3}`/`POCO`/`Redmi`/`MI ` → xiaomi；`ELS|ANA|NOH|ALN-`/`HUAWEI`/`HarmonyOS` → huawei。`model` 为空或不匹配时才用 UA 关键词（`SamsungBrowser|SM-`、`MIUI|Xiaomi|Redmi|POCO|HyperOS`、`HuaweiBrowser|EMUI|HarmonyOS`），其余 `stock`。
+- `BATTERY_INTENT_URL` 固定 `null`：`intent:` 只在 Android 14+ AOSP 声明了 `BROWSABLE`，Android 12/13 必然失败且 OEM 行为不可验证，所以 UI 只做分品牌指引；常量保留供未来渐进增强。
+- `BATTERY_STEP_KEYS` 每个品牌恰好三个 key，UI 用 `t(key)` 渲染步骤列表。
 
 ### `src/i18n/*` — 文案与语言
 
@@ -337,8 +415,12 @@ export async function createApp()  // → Store（已 init）
 export class Store extends EventTarget {
   get state()                      // 只读快照，见下
   local; onedrive; sources         // adapters: { local, onedrive }
+  localMode                        // 'import'|'reference'（meta.localMode）
+  install                          // initInstall() 实例：state()/prompt()/onChange()
   cache                            // AudioCache（Cache Storage + cacheIndex/pins）
-  async connectSource()            // 本地来源：首次授权 / 重新授权（目录选择器）
+  async connectSource()            // 本地来源：当前模式选择目录（reference）或导入（import）
+  async setLocalMode(mode)         // 切模式：写 meta、换 adapter、丢弃旧策略的曲目索引（不删导入文件）
+  async clearImported()            // opfs.clear() + 删除 source === 'opfs' 的曲目索引
   async requestSourcePermission()  // 本地 'prompt' 时只调 requestPermission；granted 后 rescan('local')
   async connectOneDrive()          // onedrive.startLogin()（整页跳转）
   async browseOneDrive(path = '')  // 打开 picker 并列出子文件夹；失败写入 onedrive 行 error
@@ -350,7 +432,8 @@ export class Store extends EventTarget {
   async rescanTags()               // 遍历 permission === 'granted' 的来源；按 track.source 选 adapter
   async removeSource(kind = 'local') // adapter.forget()；该行复位，保留已索引曲目
   async clearLibrary()             // 删除全部曲目索引，暂停播放并清空队列/current，不动授权与 settings
-  async storageEstimate()          // → {indexBytes, coverBytes, audioBytes, usage, quota, limitBytes, pinnedCount}；audioBytes = cache.total()
+  async storageEstimate()          // → {indexBytes, coverBytes, audioBytes, importBytes, importCount, usage, quota, limitBytes, pinnedCount}
+                                   // audioBytes = cache.total()；import* = opfs.usage()
   async clearAudioCache()          // cache.clear() + 删除全部 pins → 释放字节数
   async pinFolder({ source, dir, trackIds })  // 记录 pin 后按序拉取每首（并发 1）写入缓存；已存在同 id 直接返回
   async unpinFolder(id)            // 只删 pin，不删缓存
@@ -368,6 +451,8 @@ export class Store extends EventTarget {
   setSetting(key, value)           // 'language' 与 'cacheLimitBytes'（后者校验合法值、写 meta、更新 cache.limit 并 enforceLimit）
   async jumpTo(index)              // 队列内跳转
   removeQueueAt(index)
+  log(type, detail = {})           // 播放诊断行（best-effort，见 playlog）
+  async playLog(); async playLogText(); async clearPlayLog()
   setUpdateReady(flag)             // SW 检测到新版本
 }
 // 每次 state 变化 dispatch Event('change')；UI 每帧自行节流（requestAnimationFrame）。
@@ -383,9 +468,12 @@ export class Store extends EventTarget {
   queue: { tracks: Track[], index: number, shuffle: boolean, repeat: 'off'|'all'|'one' },
   current: { track: Track|null, playing: boolean, position: 0, duration: 0, volume: 1 },
   sources: [ // 固定两行，顺序 local、onedrive
-    { id: 'local'|'onedrive', kind: 'fsa'|'files'|'onedrive', name: string,
+    { id: 'local'|'onedrive', kind: 'fsa'|'files'|'opfs'|'onedrive', name: string,
       connected: boolean, permission: 'none'|'granted'|'prompt'|'denied',
-      trackCount: number, scanning: boolean, progress: { done: 0, total: 0 },
+      trackCount: number, scanning: boolean,
+      progress: { done: 0, total: 0 } | { phase:'copy'|'remove'|'done', copied, total,
+                 removed, removedTotal, bytes, bytesTotal, skipped }, // import 模式
+      mode: 'import'|'reference',  // 仅 local 行
       error: string|null, sync: null|{ at, added, updated, removed }, root: string|null }
   ],
   onedrivePicker: { open: boolean, path: string, items: [{id,name,path,isFolder}],
@@ -396,13 +484,15 @@ export class Store extends EventTarget {
       running: boolean, done: number, total: number, error: string|null }
   ],
   updateReady: false,
+  install: { status: 'installed'|'installable'|'browser', canPrompt: boolean } | null,
   migration: { running: false, done: 0, total: 0, error: null }
 }
 ```
 
 轨道来源与 id：
 
-- `local` → `track.source = 'fsa'`，`id = 'fsa:' + path`（与旧库一致，不迁移）。
+- `local` 引用模式 → `track.source = 'fsa'`，`id = 'fsa:' + path`（与旧库一致，不迁移）。
+- `local` 导入模式 → `track.source = 'opfs'`，`id = 'opfs:' + path`，`path` 相对所选根。
 - `onedrive` → `track.source = 'onedrive'`，`id = 'onedrive:' + path`，`path` 相对所选根，`externalIds = { onedrive: itemId }`。
 - `state.sources[].trackCount` 按 `track.source` 统计；`syncSource` 只替换该来源的轨道，`removedIds` 也只影响该来源。
 
@@ -451,12 +541,13 @@ export function openTagInfo(track, { loadReport }) // 标签信息弹层；loadR
 设置视图是全屏视图（`state.view === 'settings'`），不重建壳：
 
 - 头部右上角齿轮（`data-testid="settings-open"`）进入设置并隐藏自身；UI 局部变量记录进入前的 view（默认 `'tracks'`），`settings-back` 恢复该 view。齿轮/曲目行菜单/返回都走事件委托，`createSettingsView` 只持有 `store` 与 `sw`。
-- 四张卡（`settings-section-library|storage|language|about`）只创建一次；`render(state)` 只改文本、数值、chip 与 disabled，不重建节点。
-- 曲库卡：固定两行来源（`data-testid="source-row-local|onedrive"`；类型图标、名称、曲目数、授权 chip、该行 `error`）。每行动作：同步（`settings-sync-<id>`，运行中禁用并显示 `settings.source.syncing`，完成后 toast `settings.source.syncResult`）、更换（本地 `settings-source-change` / OneDrive `settings-onedrive-change` 重新打开 picker）、移除（`settings-source-remove` / `settings-onedrive-remove`，确认后调 `store.removeSource(id)`）。添加来源：本地文件夹；OneDrive 按钮（`settings-source-onedrive`）按状态显示 `settings.source.onedriveSignIn` / `onedrivePick` / `onedriveChange`，`permission === 'prompt'` 时显示 `settings.source.onedriveReauth` 并调 `store.reauthenticateOneDrive()`。另有重新读取标签。扫描中禁用动作并显示正在扫描那一行的 `progress`。
+- 六张卡（`settings-section-library|background|storage|language|about`，OneDrive picker 另有独立 card）只创建一次；`render(state)` 只改文本、数值、chip 与 disabled，不重建节点。顺序固定为曲库 → picker → 后台播放 → 存储 → 语言 → 关于。
+- 曲库卡：固定两行来源（`data-testid="source-row-local|onedrive"`；类型图标、名称、曲目数、授权 chip、该行 `error`）。本地行后跟模式分段控件（`data-testid="local-mode"`，按钮 `local-mode-reference|local-mode-import`，当前值 `aria-pressed` + `.is-active`）：点击 `store.setLocalMode(mode)`，`import` 后立即 `store.connectSource()` 打开目录选择。导入期间显示 `data-testid="import-progress"`：`copy` 阶段用 `settings.library.importProgress`（`{copied,total,bytes}`，`formatBytes`），`remove` 阶段用 `settings.library.importRemoving`（`{removed,removedTotal}`），`done` 或空闲时隐藏。每行动作：同步（`settings-sync-<id>`，运行中禁用并显示 `settings.source.syncing`，完成后 toast `settings.source.syncResult`）、更换（本地 `settings-source-change` / OneDrive `settings-onedrive-change` 重新打开 picker；import 模式下本地按钮文案为 `settings.library.import`）、移除（`settings-source-remove` / `settings-onedrive-remove`，确认后调 `store.removeSource(id)`）。添加来源：本地文件夹；OneDrive 按钮（`settings-source-onedrive`）按状态显示 `settings.source.onedriveSignIn` / `onedrivePick` / `onedriveChange`，`permission === 'prompt'` 时显示 `settings.source.onedriveReauth` 并调 `store.reauthenticateOneDrive()`。另有重新读取标签。扫描中禁用动作并显示正在扫描那一行的 `progress`。
+- 后台播放卡（`settings-section-background`，位于曲库卡与存储卡之间）：标题/说明 `settings.background.title|hint`；`data-testid="install-status"` 按 `state.install.status` 显示 `settings.background.installed|installable|browserMode`；`install-button` 只在 `installable` 时出现，点击 `store.install.prompt()`，状态随 store `change` 更新，安装后隐藏说明与按钮。Android（UA 含 `Android`）显示 `battery-button`（`settings.background.batteryOpen`），点击打开 `battery-guide` 弹层：品牌 tab `battery-brand-samsung|xiaomi|huawei|stock`（`aria-pressed`），步骤列表 `battery-steps` 渲染 `BATTERY_STEP_KEYS[brand]` 的三个 key；默认品牌先按 UA 渲染，再异步用 `navigator.userAgentData.getHighEntropyValues(['model'])` + `batteryTarget()` 校正；`battery-guide-close` 关闭。桌面不渲染按钮，只显示 `settings.background.batteryDesktop`。
 - OneDrive 目录选择器：`state.onedrivePicker.open` 时作为独立 card 渲染在曲库卡下方（`data-testid="onedrive-picker"`）：面包屑（`settings.onedrive.root` + 已进入的路径段）、上一级（`onedrive-picker-up`，根层禁用）、文件夹列表（`onedrive-folder`）、选择此文件夹（`onedrive-picker-choose`，根层或没有记录当前项时禁用）、取消（`onedrive-picker-cancel`）。加载中显示 `settings.onedrive.loading`，空目录显示 `settings.onedrive.empty`；当前目录项（`{id,name,path}`）记在 `state.onedrivePicker.current`。
-- 存储卡：上限分段控件（`data-testid="cache-limit"`，`0.5 GB / 1 GB / 2 GB / 5 GB / 不限`，当前值 `aria-pressed` + `.is-active`，点击 `store.setSetting('cacheLimitBytes', value)`）、索引/封面/缓存音乐/固定条目数四行（`formatBytes`；固定行用 `settings.storage.pinnedCount` + `state.pins.length`），挂载后及每次 store change 异步调 `store.storageEstimate()`（1s 节流，失败忽略）；`usage/quota` 都可用时显示「已用/可用」。清除缓存的音乐先 `confirm(settings.storage.clearConfirmCache)`，再调 `store.clearAudioCache()`，toast `settings.storage.cacheCleared`；清空曲库同样 `confirm`，完成后由 app 的 toast 提示。
+- 存储卡：上限分段控件（`data-testid="cache-limit"`，`0.5 GB / 1 GB / 2 GB / 5 GB / 不限`，当前值 `aria-pressed` + `.is-active`，点击 `store.setSetting('cacheLimitBytes', value)`）、索引/封面/缓存音乐/导入文件/固定条目数五行（`formatBytes`；导入行 `storage-import` 显示 `formatBytes(importBytes)` + `settings.storage.importCount`（`{count}`），按钮 `storage-clear-import` 先 `confirm(settings.storage.clearImportConfirm)` 再 `store.clearImported()`，toast `settings.storage.importCleared`；固定行用 `settings.storage.pinnedCount` + `state.pins.length`），挂载后及每次 store change 异步调 `store.storageEstimate()`（1s 节流，失败忽略）；`usage/quota` 都可用时显示「已用/可用」。清除缓存的音乐先 `confirm(settings.storage.clearConfirmCache)`，再调 `store.clearAudioCache()`，toast `settings.storage.cacheCleared`；清空曲库同样 `confirm`，完成后由 app 的 toast 提示。
 - 语言卡：五个 `segmented` 选项（`data-testid="language-auto|zh-CN|zh-TW|ja|en"`），点击 `store.setSetting('language', value)`；除 `auto` 外显示各语言本地名。
-- 关于卡：`BUILD_VERSION`（`data-testid="about-version"`）、检查更新（`sw.checkForUpdate()`，waiting 时 `store.setUpdateReady(true)`）、更新状态行（`state.updateReady` 时给出「立即更新」→ `sw.applyUpdate()`）与重新加载。
+- 关于卡：`BUILD_VERSION`（`data-testid="about-version"`）、检查更新（`sw.checkForUpdate()`，waiting 时 `store.setUpdateReady(true)`）、更新状态行（`state.updateReady` 时给出「立即更新」→ `sw.applyUpdate()`）、重新加载与播放日志（`playlog-open`）。日志弹层 `playlog-panel`：`<pre data-testid="playlog-text">` 内容来自 `store.playLogText()`；`playlog-copy` 优先 `navigator.clipboard.writeText`，失败用隐藏 textarea + `document.execCommand('copy')`，成功后 toast `settings.about.playLogCopied`；`playlog-clear` 调 `store.clearPlayLog()` 并清空文本；`playlog-close`/Esc/遮罩关闭。
 - 更新 banner 固定在底部，文案 `update.available` + `update.apply`，`data-testid="update-apply"` 保留。
 - 曲目/队列行尾「⋯」（`data-testid="row-more"`）、长按 500ms、右键都打开同一菜单（一项「标签信息」）；点击后 `openTagInfo(track, { loadReport: () => store.describeTrackTags(track.id) })`。弹层 `role="dialog" aria-modal="true"`（`data-testid="tag-info-modal"`），Esc/遮罩/关闭按钮关闭；复制失败时选中 `<pre>` 文本。数据全部来自 store，UI 不读文件。
 - toast 固定在底部一条，`role="status"`，3 秒后消失。
