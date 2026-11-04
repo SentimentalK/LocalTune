@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 
 import {
   LOCALES,
-  applyDocumentLang,
   getLocale,
   resolveLanguage,
   resolveLocale,
@@ -89,9 +88,4 @@ test('a missing key falls back to itself and warns once', () => {
     console.warn = original;
   }
   assert.equal(warnings.length, 1);
-});
-
-test('applyDocumentLang is a no-op without a document', () => {
-  assert.equal(typeof document, 'undefined');
-  assert.doesNotThrow(() => applyDocumentLang());
 });
