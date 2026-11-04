@@ -80,6 +80,7 @@ export class FsaSource {
   async connect()                  // showDirectoryPicker({mode:'read'})，句柄写进 meta.dirHandle；
                                    // 同一手势内补一次 requestPermission()（best-effort，SecurityError 忽略）
   async restore()                  // 读句柄并 queryPermission；不再弹窗、不调用 requestPermission
+  async forget()                   // 清空 root/dirs/permission/name，并把 meta.dirHandle 写为 null
   permission()                     // 'granted' | 'prompt' | 'denied' | 'none'
   async ensurePermission()         // 'prompt' 时 requestPermission，返回 boolean；不打开选择器
   async *scan()                    // 递归产出 SourceEntry；跳过隐藏目录；按扩展名过滤
@@ -91,6 +92,7 @@ export class FileListSource {
   name = '';                       // 所选根目录名（webkitRelativePath 的第一段）
   async connect()                  // 隐藏 <input type="file" webkitdirectory multiple>，File 按 path 存 meta.fileList
   async restore()                  // 从 meta.fileList 读回 File；无选择器、无权限弹窗
+  async forget()                   // 清空内存文件表，并把 meta.fileList 写为 null
   permission()                     // 有文件时 'granted'，否则 'none'
   async ensurePermission()         // 有文件即 true
   async *scan()                    // 产出 { path, file, mtime, size }
@@ -139,6 +141,19 @@ export function formatTagReport(described) // describeTags 的结果 → 多行�
 ```
 
 报告至少含：`ID3v2` 版本（无标签时 `ID3v2: none`）；每个帧的 id、`enc=<n>`、raw hex、decoded、按 score 降序的候选（`label score(2位小数) text`）；ID3v1 的 title/artist/album；chosen 的 title/artist/album。
+
+### `src/core/storage.js` — 存储占用与音频缓存
+
+```js
+export function formatBytes(bytes)   // 0 → '0 B'；<1024 → 'N B'；KB/MB/GB 保留 1 位小数（整数省略 .0）
+export async function estimateLibrary(tracks)      // → { indexBytes, coverBytes }
+export async function estimateAudioCache(cachesImpl = globalThis.caches)  // → number
+export async function clearAudioCache(cachesImpl = globalThis.caches)     // 删除音频条目 → 释放字节数
+```
+
+- `indexBytes`：每首曲目去掉 `cover` 后单独 `JSON.stringify` 的 UTF-8 字节和；`coverBytes`：所有 `track.cover?.size` 之和。
+- 音频条目判定：请求 URL pathname 以 `.mp3/.m4a/.flac/.ogg/.oga/.wav/.webm` 结尾，或响应 `content-type` 以 `audio/` 开头；只处理同源条目，遍历全部 Cache，单条 `match`/`blob` 失败跳过。
+- `clearAudioCache` 先累加命中响应 blob 的 size，再删除对应条目，返回总和；无命中返回 0。`cachesImpl` 可注入内存替身（`tests/storage.test.js`）。
 
 ### `src/core/migrate.js` — 乱码标签迁移
 
@@ -225,11 +240,11 @@ export function setMeta(db, key, value)
 ```js
 export async function loadPlayback(db)   // meta.playback → {trackId,position,queueIds,queueIndex,repeat,shuffle,volume}|null
 export function savePlayback(db, snapshot) // 1s 防抖；调用 stop() 可 flush（模块内导出 savePlayback.flush）
-export async function loadSettings(db)   // {vinylSpin:boolean, language:'auto'|'zh-CN'|'zh-TW'|'ja'|'en'}
-export async function saveSettings(db, settings) // 非法/缺失的 language 落盘为 'auto'
+export async function loadSettings(db)   // {language:'auto'|'zh-CN'|'zh-TW'|'ja'|'en'}
+export async function saveSettings(db, settings) // 只写 language；非法/缺失落盘为 'auto'
 ```
 
-`meta.settings.language` 缺省 `'auto'`：`'auto'` 表示跟随 `navigator.languages`，其余为显式语言。老的 `{vinylSpin}` 记录读上来时自动补 `language: 'auto'`。
+`meta.settings.language` 缺省 `'auto'`：`'auto'` 表示跟随 `navigator.languages`，其余为显式语言。旧库残留的 `vinylSpin` 字段读取时忽略，下次保存后消失。
 
 ### `src/core/mediaSession.js`
 
@@ -252,7 +267,7 @@ export function t(key, params = {})                // 当前表 → 缺 key 回�
 export function applyDocumentLang()                // 有 document 时写 documentElement.lang
 ```
 
-四张表 `src/i18n/{en,zh-CN,zh-TW,ja}.js` 都是默认导出的扁平对象，key 为点分命名（`common.*`、`tabs.*`、`player.*`、`empty.*`、`settings.*`、`aria.*`、`error.*`、`fatal.*`），四张表 key 集合必须完全一致（`tests/i18n.test.js` 断言），en 是唯一兜底表。
+四张表 `src/i18n/{en,zh-CN,zh-TW,ja}.js` 都是默认导出的扁平对象，key 为点分命名（`common.*`、`tabs.*`、`player.*`、`empty.*`、`settings.*`、`update.*`、`migration.*`、`diagnostics.*`、`aria.*`、`error.*`、`fatal.*`），四张表 key 集合必须完全一致（`tests/i18n.test.js` 断言），en 是唯一兜底表。
 
 - 模块加载时默认 locale = `resolveLocale(navigator.languages ?? [navigator.language])`（无 `navigator` 时 `'en'`）；导入不访问 DOM，Node 测试可直接 import。
 - `src/main.js` 在 `createApp()` 之后、`mountUi()` 之前用 `store.state.settings.language` 调 `setLocale(resolveLanguage(...))` + `applyDocumentLang()`；fatal 页文案也走 `t('fatal.*')`。
@@ -270,7 +285,12 @@ export class Store extends EventTarget {
   async requestSourcePermission()  // 'prompt' 时只调 requestPermission，不打开选择器；granted 后 rescan
   async rescan()                   // 扫描 + diff + 元数据 + 写库 + 刷新 state
   async rescanTags()               // 对已索引曲目重新读取标签（不重新扫描目录），保留 duration
-  setView(view)                    // 'tracks'|'albums'|'artists'|'folders'|'queue'
+  async removeSource()             // source.forget()；state.source 复位为未连接，保留已索引曲目
+  async clearLibrary()             // 删除全部曲目索引，暂停播放并清空队列/current，不动授权与 settings
+  async storageEstimate()          // → {indexBytes, coverBytes, audioBytes, usage, quota}；无 quota API 时后两项 null
+  async clearAudioCache()          // 删除 Cache Storage 音频条目 → 释放字节数
+  async describeTrackTags(trackId) // getFile → describeTags → formatTagReport，返回多行报告；异常抛给 UI
+  setView(view)                    // 'tracks'|'albums'|'artists'|'folders'|'queue'|'settings'
   async playTrack(trackId)         // 以全部歌曲为队列，从该曲开始
   async playQueue(tracks, startId) // 以给定列表为队列
   appendQueue(tracks)              // 追加到队列末尾，不切歌、不自动播放
@@ -279,7 +299,7 @@ export class Store extends EventTarget {
   async seek(seconds)
   setVolume(v)
   toggleShuffle(); cycleRepeat()
-  setSetting(key, value)           // 'vinylSpin' | 'language'
+  setSetting(key, value)           // 仅 'language'
   async jumpTo(index)              // 队列内跳转
   removeQueueAt(index)
   setUpdateReady(flag)             // SW 检测到新版本
@@ -292,19 +312,19 @@ export class Store extends EventTarget {
 ```js
 {
   ready: boolean,
-  view: 'tracks'|'albums'|'artists'|'folders'|'queue',
+  view: 'tracks'|'albums'|'artists'|'folders'|'queue'|'settings',
   tracks: Track[],
   queue: { tracks: Track[], index: number, shuffle: boolean, repeat: 'off'|'all'|'one' },
   current: { track: Track|null, playing: boolean, position: 0, duration: 0, volume: 1 },
   source: { kind:'fsa'|'files', connected: false, permission:'none'|'granted'|'prompt'|'denied',
             name: '', error: null, scanning: false, progress: { done: 0, total: 0 } },
-  settings: { vinylSpin: boolean, language: 'auto'|'zh-CN'|'zh-TW'|'ja'|'en' },
+  settings: { language: 'auto'|'zh-CN'|'zh-TW'|'ja'|'en' },
   updateReady: false,
   migration: { running: false, done: 0, total: 0, error: null }
 }
 ```
 
-`init()` 末尾以 `void this._maybeMigrateTags()` 启动后台迁移，**不 await**，不阻塞播放。触发条件：`meta.lastBuildVersion !== BUILD_VERSION` 且 `source.permission() === 'granted'`。迁移对可疑曲目重读标签（不可疑的不读文件），把字段实际变化的曲目 `putTracks` 写库并用同 id 覆盖 `state.tracks`（`sortTracks` 后），再 `_reconcileQueue([])`；每 5 首或最后一首 emit 一次进度。成功后写 `meta.lastBuildVersion = BUILD_VERSION`（可疑曲目为 0 也写）；任何异常写 `state.migration.error` 且**不写版本号**，下次启动重试；权限未授予时直接跳过且不写版本号。finally 里 `running = false` 并 emit。
+`init()` 末尾以 `void this._maybeMigrateTags()` 启动后台迁移，**不 await**，不阻塞播放。触发条件：`meta.lastBuildVersion !== BUILD_VERSION` 且 `source.permission() === 'granted'`。迁移对可疑曲目重读标签（不可疑的不读文件），把字段实际变化的曲目 `putTracks` 写库并用同 id 覆盖 `state.tracks`（`sortTracks` 后），再 `_reconcileQueue([])`；每 5 首或最后一首 emit 一次进度。成功后写 `meta.lastBuildVersion = BUILD_VERSION`（可疑曲目为 0 也写）；任何异常写 `state.migration.error` 且**不写版本号**，下次启动重试；权限未授予时直接跳过且不写版本号。finally 里 `running = false` 并 emit。`running` 期间顶部状态栏显示 `t('migration.progress', { done, total })`，优先于扫描/就绪文案；`error` 在设置视图曲库卡显示一行 muted 文案。
 
 ### `src/core/selectors.js`
 
@@ -334,15 +354,33 @@ mountUi(document.getElementById('app'), store, sw);
 
 // src/ui/app.js
 export function mountUi(root, store, sw)  // 首次渲染 + store.on('change') 重渲染
+
+// src/ui/settings.js
+export function createSettingsView(store, sw) // → { node, render(state) }
+
+// src/ui/diagnostics.js
+export function openTagInfo(track, { loadReport }) // 标签信息弹层；loadReport: () => Promise<string>
 ```
 
 `sw` 是 `registerServiceWorker()` 的返回值（`{ applyUpdate, checkForUpdate }`），UI 只通过它触发更新，不直接碰 `navigator.serviceWorker`。
+
+设置视图是全屏视图（`state.view === 'settings'`），不重建壳：
+
+- 头部右上角齿轮（`data-testid="settings-open"`）进入设置并隐藏自身；UI 局部变量记录进入前的 view（默认 `'tracks'`），`settings-back` 恢复该 view。齿轮/曲目行菜单/返回都走事件委托，`createSettingsView` 只持有 `store` 与 `sw`。
+- 四张卡（`settings-section-library|storage|language|about`）只创建一次；`render(state)` 只改文本、数值、chip 与 disabled，不重建节点。
+- 曲库卡：来源行（类型图标、名称、曲目数、授权 chip）、重新扫描/更换/移除、添加来源（本地文件夹；OneDrive 禁用并标注「即将支持」）、重新读取标签；扫描中禁用动作并显示 `state.source.progress`。`removeSource()` 的确认文案走 `t('settings.source.removeConfirm')`；`state.migration.error` 在本卡显示一行。
+- 存储卡：索引/封面/缓存音乐三行（`formatBytes`），挂载后及每次 store change 异步调 `store.storageEstimate()`（1s 节流，失败忽略）；`usage/quota` 都可用时显示「已用/可用」。清除缓存与清空曲库都经 `confirm`，完成后由 app 的 toast 提示。
+- 语言卡：五个 `segmented` 选项（`data-testid="language-auto|zh-CN|zh-TW|ja|en"`），点击 `store.setSetting('language', value)`；除 `auto` 外显示各语言本地名。
+- 关于卡：`BUILD_VERSION`（`data-testid="about-version"`）、检查更新（`sw.checkForUpdate()`，waiting 时 `store.setUpdateReady(true)`）、更新状态行（`state.updateReady` 时给出「立即更新」→ `sw.applyUpdate()`）与重新加载。
+- 更新 banner 固定在底部，文案 `update.available` + `update.apply`，`data-testid="update-apply"` 保留。
+- 曲目/队列行尾「⋯」（`data-testid="row-more"`）、长按 500ms、右键都打开同一菜单（一项「标签信息」）；点击后 `openTagInfo(track, { loadReport: () => store.describeTrackTags(track.id) })`。弹层 `role="dialog" aria-modal="true"`（`data-testid="tag-info-modal"`），Esc/遮罩/关闭按钮关闭；复制失败时选中 `<pre>` 文本。数据全部来自 store，UI 不读文件。
+- toast 固定在底部一条，`role="status"`，3 秒后消失。
 
 语言切换即时生效：`render(state)` 开头比较 `resolveLanguage(state.settings.language, navigator.languages)` 与 `getLocale()`，不同则 `setLocale()` + `applyDocumentLang()` + 用 `createShell` 重建整个壳（重新绑定进度条事件、`root.replaceChildren(ui.app)`、清空视图缓存后重渲染）。**不得用 `location.reload()` 切换语言**；`store` 的 `change` 监听只绑一次。
 
 UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.mediaSession`；全部经 Store。
 
-视图：歌曲 / 专辑 / 歌手 / 文件夹 / 队列。设置区：唱片旋转、重新扫描、重新读取标签。文件夹视图整行点击 = 以该目录曲目替换队列并播放；行尾「加入队列」= 追加到队列末尾。
+视图：歌曲 / 专辑 / 歌手 / 文件夹 / 队列 / 设置（全屏）。设置区不再有唱片旋转开关；来源、存储、语言、关于都在设置视图。文件夹视图整行点击 = 以该目录曲目替换队列并播放；行尾「加入队列」= 追加到队列末尾。
 
 ## 构建与 SW
 

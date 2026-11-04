@@ -13,3 +13,4 @@ import './diagnostics.test.js';
 import './garbled.test.js';
 import './migrate.test.js';
 import './i18n.test.js';
+import './storage.test.js';

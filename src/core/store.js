@@ -6,7 +6,9 @@
 
 import { openDb, putTracks, deleteTracksById, getAllTracks, getMeta, setMeta } from './db.js';
 import { createSource } from './source.js';
-import { readMetadata } from './metadata/index.js';
+import { readMetadata, describeTags } from './metadata/index.js';
+import { formatTagReport } from './metadata/diagnostics.js';
+import { estimateLibrary, estimateAudioCache, clearAudioCache as clearCachedAudio } from './storage.js';
 import { isGarbledTrack } from './metadata/garbled.js';
 import { BUILD_VERSION } from './version.js';
 import { migrateGarbledTracks } from './migrate.js';
@@ -26,7 +28,7 @@ import { loadPlayback, savePlayback, loadSettings, saveSettings } from './persis
 import { installMediaSession, syncMediaSession } from './mediaSession.js';
 import { t } from '../i18n/index.js';
 
-const VIEWS = new Set(['tracks', 'albums', 'artists', 'folders', 'queue']);
+const VIEWS = new Set(['tracks', 'albums', 'artists', 'folders', 'queue', 'settings']);
 const MEDIA_SYNC_INTERVAL = 1000;
 
 function sortTracks(tracks) {
@@ -104,7 +106,7 @@ export class Store extends EventTarget {
         scanning: false,
         progress: { done: 0, total: 0 },
       },
-      settings: { vinylSpin: true, language: 'auto' },
+      settings: { language: 'auto' },
       updateReady: false,
       migration: { running: false, done: 0, total: 0, error: null },
     };
@@ -176,12 +178,11 @@ export class Store extends EventTarget {
     const tracks = sortTracks(await getAllTracks(this.db).catch(() => []));
     const playback = await loadPlayback(this.db).catch(() => null);
     const settings = await loadSettings(this.db).catch(() => ({
-      vinylSpin: true,
       language: 'auto',
     }));
 
     this._state.tracks = tracks;
-    this._state.settings = { vinylSpin: true, language: 'auto', ...settings };
+    this._state.settings = { language: 'auto', ...settings };
     this._state.source = {
       ...this._state.source,
       kind: this.source.kind,
@@ -530,6 +531,69 @@ export class Store extends EventTarget {
     if (!VIEWS.has(view)) return;
     this._state.view = view;
     this._emit();
+  }
+
+  /** Disconnect the source and forget its grant; indexed tracks stay. */
+  async removeSource() {
+    await this.source.forget().catch(() => {});
+    this._state.source = {
+      ...this._state.source,
+      connected: false,
+      permission: 'none',
+      name: '',
+      error: null,
+    };
+    this._emit();
+  }
+
+  /** Delete every indexed track, stop playback and persist the empty state. */
+  async clearLibrary() {
+    const ids = this._state.tracks.map((track) => track.id);
+    await deleteTracksById(this.db, ids);
+    this.player?.pause();
+    this._loadedId = null;
+    this._state.tracks = [];
+    this.queue = createQueue([]);
+    this._reflectQueue();
+    this._state.current = {
+      ...this._state.current,
+      track: null,
+      playing: false,
+      position: 0,
+      duration: 0,
+    };
+    this._emit();
+    this._savePlayback();
+  }
+
+  /** Index, cover, cached-audio and browser quota figures for the settings view. */
+  async storageEstimate() {
+    const { indexBytes, coverBytes } = await estimateLibrary(this._state.tracks);
+    const audioBytes = await estimateAudioCache().catch(() => 0);
+    let usage = null;
+    let quota = null;
+    try {
+      const estimate = await globalThis.navigator?.storage?.estimate?.();
+      if (Number.isFinite(estimate?.usage)) usage = estimate.usage;
+      if (Number.isFinite(estimate?.quota)) quota = estimate.quota;
+    } catch {
+      // Quota is optional; the two library figures still render.
+    }
+    return { indexBytes, coverBytes, audioBytes, usage, quota };
+  }
+
+  /** Drop cached audio responses; returns the bytes released. */
+  async clearAudioCache() {
+    return clearCachedAudio();
+  }
+
+  /** Multi-line tag report for one track; errors are left for the dialog. */
+  async describeTrackTags(trackId) {
+    const track = this._state.tracks.find((item) => item.id === trackId);
+    if (!track) throw new Error(t('error.store.trackMissing'));
+    const file = await this.source.getFile(track.path);
+    const described = await describeTags(file);
+    return formatTagReport(described);
   }
 
   async playTrack(trackId) {
