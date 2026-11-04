@@ -663,3 +663,11 @@ UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.
 
 - `Dockerfile`：多阶段，`node:22-alpine` build → `nginx:stable-alpine`；非 root（`USER nginx`，uid 101）；8080；`/healthz` 200；`nginx.conf` 中 `/assets/` immutable，`/index.html`、`/sw.js`、`/manifest.webmanifest` no-cache（且 manifest 为 `application/manifest+json`），其余 `try_files $uri $uri/ /index.html`。
 - CI：push 任意分支 → amd64 load + curl 冒烟（`/healthz`、`/`、`/manifest.webmanifest`、`/sw.js`；`sw.js` 头含 `no-cache`；一个 `/assets/*.js` 含 `immutable`）；非 PR 推 `linux/amd64,linux/arm64` 到 `ghcr.io/sentimentalk/localtune`，tag `sha-<short>` 与分支名，main 更新 `latest`。
+
+### search 模块（APP-001-F1）
+
+- `normalizeQuery(value)`：直接返回 `normalizeText(value)`；非字符串或空串返回 `''`。
+- `searchGroup(track, query)`：对 `title`、`artist`、`album`、文件名（`track.path` 的 basename，保留扩展名）逐个规范化后做子串匹配，按 title → artist → album → fileName 返回首个命中的分组，全不命中返回 `null`。
+- `searchTracks(tracks, query, { limit = 200 } = {})`：同步搜索，返回 `{ items: [{ track, group }], counts: { title, artist, album, fileName }, total }`；`items` 先按分组优先级、组内按输入顺序排列并截断到 `limit`，`total` 与 `counts` 统计全部命中（不受 `limit` 影响）；query 规范化后为空时返回空结果。
+- `runSearch(tracks, query, options = {})`：先 `await ensureNormalizer()` 再调用 `searchTracks`；繁简表加载失败时返回空结果，不向 UI 抛错。
+- 规范化规则：`title`/`album`/文件名走 `normalizeText`（NFKC、全角转半角、繁→简、小写、去版本标签）；`artist` 走 `splitArtists(track.artist).join(' ')`，保留 feat 合作者以便按合作者搜索；模块顶层只静态导入 `./playlist/match.js`，繁简表仍由其内部 `import()` 懒加载。
