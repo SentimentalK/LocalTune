@@ -10,25 +10,16 @@ const QQ_PATH = /^\/(?:n\/ryqq\/)?playlist\/([A-Za-z0-9]+)/;
 /** Same-origin resolver endpoint, served by the deployment's own origin. */
 export const DEFAULT_PROXY_URL = '/api/resolve';
 
-const MAX_PROXY_URL = 300;
-const HTTPS_PROXY_RE = /^https:\/\/\S+$/i;
-const SAME_ORIGIN_PATH_RE = /^\/(?!\/)\S*$/;
+const SAME_ORIGIN_PROXY_RE = /^(?:https:\/\/\S+|\/(?!\/)\S*)$/i;
 
-/**
- * Accepts an absolute HTTPS URL or a same-origin path; anything else becomes ''.
- * '' is valid and means "use DEFAULT_PROXY_URL".
- */
+/** Accepts an absolute HTTPS URL or a same-origin path; anything else becomes ''. */
 export function normalizeProxyUrl(value) {
-  if (typeof value !== 'string') return '';
-  const text = value.trim();
-  if (text === '' || text.length > MAX_PROXY_URL) return '';
-  if (HTTPS_PROXY_RE.test(text) || SAME_ORIGIN_PATH_RE.test(text)) return text;
-  return '';
+  const text = typeof value === 'string' ? value.trim() : '';
+  return text.length < 301 && SAME_ORIGIN_PROXY_RE.test(text) ? text : '';
 }
 
 function endpointOf(proxyBase) {
-  const value = normalizeProxyUrl(proxyBase) || DEFAULT_PROXY_URL;
-  return value.endsWith('/resolve') ? value : value.replace(/\/+$/, '') + '/resolve';
+  return `${(normalizeProxyUrl(proxyBase) || DEFAULT_PROXY_URL).replace(/\/resolve$|\/+$/, '')}/resolve`;
 }
 
 function toUrl(value) {

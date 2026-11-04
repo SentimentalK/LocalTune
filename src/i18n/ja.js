@@ -179,7 +179,7 @@ export default {
   'settings.about.youtubeKey': 'YouTube API キー',
   'settings.about.youtubeKeyHint': 'YouTube プレイリストのリンクに使います。このブラウザーにのみ保存されます。',
   'settings.about.proxyUrl': 'プレイリストプロキシ URL',
-  'settings.about.proxyUrlHint': 'Spotify / NetEase / QQ Music リンク用の HTTPS URL または同一オリジンのパス。空欄なら /api/resolve を使用。',
+  'settings.about.proxyUrlHint': 'Spotify / NetEase / QQ リンク：HTTPS URL か同一オリジンのパス。空欄は /api/resolve。',
   'settings.about.saved': '保存しました',
   'settings.about.version': 'バージョン',
   'settings.about.updateState': '更新',
