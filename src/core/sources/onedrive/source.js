@@ -203,8 +203,9 @@ export class OneDriveSource {
   }
 
   /**
-   * List folders under `path` (relative to the chosen root). Only folders are
-   * returned, sorted by name.
+   * List folders under `path`. `path` is relative to the **drive** root
+   * (`browse('')` lists `/drives/{id}/root/children`), not to the chosen
+   * library root; the picker navigates the whole drive.
    */
   async browse(path = '') {
     if (!(await this.ensurePermission())) {
@@ -215,7 +216,7 @@ export class OneDriveSource {
     const children =
       clean === ''
         ? this._rootChildren(driveId)
-        : this.client.listChildren(driveId, await this._resolveItemId(driveId, clean, { folder: true }), {
+        : this.client.listChildren(driveId, await this._browseItemId(driveId, clean), {
             select: ITEM_SELECT,
             top: 200,
           });
@@ -232,6 +233,13 @@ export class OneDriveSource {
     }
     folders.sort((a, b) => a.name.localeCompare(b.name));
     return folders;
+  }
+
+  /** Drive-relative item lookup; never consults the root-relative item map. */
+  async _browseItemId(driveId, path) {
+    const item = await this.client.getJson(`/drives/${driveId}/root:/${encodePath(path)}:`);
+    if (!item?.id) throw new Error(t('error.onedrive.fetchFailed'));
+    return item.id;
   }
 
   async *_rootChildren(driveId) {
