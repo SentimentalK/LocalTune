@@ -5,7 +5,7 @@ import { createHandler } from '../src/index.js';
 import * as spotify from '../src/providers/spotify.js';
 import * as netease from '../src/providers/netease.js';
 import * as qq from '../src/providers/qq.js';
-import { UpstreamChangedError, safeFetch } from '../src/providers/shared.js';
+import { UpstreamChangedError, isAllowedHost, safeFetch } from '../src/providers/shared.js';
 
 const SPOTIFY_URL = 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M';
 const NETEASE_URL = 'https://music.163.com/playlist?id=3778678';
@@ -386,4 +386,11 @@ test('handler normalizes QQ seconds to milliseconds end-to-end', async () => {
   const body = await response.json();
   assert.equal(body.source, 'qq');
   assert.equal(body.items[0].durationMs, 231000);
+});
+
+test('isAllowedHost accepts whitelisted hosts and their subdomains only', () => {
+  assert.equal(isAllowedHost('c.y.qq.com'), true);
+  assert.equal(isAllowedHost('m.open.spotify.com'), true);
+  assert.equal(isAllowedHost('open.spotify.com.evil.com'), false);
+  assert.equal(isAllowedHost('example.com'), false);
 });

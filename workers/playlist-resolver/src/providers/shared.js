@@ -27,6 +27,17 @@ export const ALLOWED_HOSTS = new Set([
 ]);
 
 /**
+ * True when the hostname is whitelisted or a subdomain of a whitelisted host.
+ */
+export function isAllowedHost(hostname) {
+  const host = String(hostname ?? '').toLowerCase();
+  for (const allowed of ALLOWED_HOSTS) {
+    if (host === allowed || host.endsWith(`.${allowed}`)) return true;
+  }
+  return false;
+}
+
+/**
  * Fetch with an SSRF guard: https only, host whitelist, and the post-redirect
  * URL must still be whitelisted.
  */
@@ -37,7 +48,7 @@ export async function safeFetch(fetchImpl, url, init = {}) {
   } catch {
     throw new UpstreamChangedError();
   }
-  if (target.protocol !== 'https:' || !ALLOWED_HOSTS.has(target.hostname)) {
+  if (target.protocol !== 'https:' || !isAllowedHost(target.hostname)) {
     throw new UpstreamChangedError();
   }
 
@@ -50,7 +61,7 @@ export async function safeFetch(fetchImpl, url, init = {}) {
     } catch {
       finalUrl = null;
     }
-    if (!finalUrl || finalUrl.protocol !== 'https:' || !ALLOWED_HOSTS.has(finalUrl.hostname)) {
+    if (!finalUrl || finalUrl.protocol !== 'https:' || !isAllowedHost(finalUrl.hostname)) {
       throw new UpstreamChangedError();
     }
   }
