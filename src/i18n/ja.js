@@ -84,6 +84,8 @@ export default {
   'settings.library.import': 'フォルダーを取り込む',
   'settings.library.importProgress': '取り込み中 {copied} / {total} · {bytes}',
   'settings.library.importRemoving': '削除中 {removed} / {removedTotal}',
+  'settings.library.localGroup': 'ローカル',
+  'settings.library.cloudGroup': 'クラウド · OneDrive',
   'settings.source.change': '変更',
   'settings.source.remove': '削除',
   'settings.source.removeConfirm': 'このソースを削除しますか？索引済みの曲は残ります。',
@@ -100,6 +102,7 @@ export default {
   'settings.source.sync': '同期',
   'settings.source.syncing': '同期中…',
   'settings.source.syncResult': '+{added} / -{removed}',
+  'settings.source.retry': '再試行',
   'settings.source.trackCount': '{count} 曲',
   'settings.onedrive.title': 'OneDrive フォルダーを選択',
   'settings.onedrive.up': '上へ',
@@ -108,6 +111,10 @@ export default {
   'settings.onedrive.empty': 'サブフォルダーはありません',
   'settings.onedrive.loading': 'フォルダーを読み込み中…',
   'settings.onedrive.root': 'OneDrive',
+  'settings.onedrive.connectedHint':
+    'OneDrive に接続しました。音楽フォルダーを選択してください',
+  'settings.onedrive.authFailed':
+    'OneDrive のサインインが完了しませんでした。もう一度お試しください。',
   'settings.background.title': 'バックグラウンド再生',
   'settings.background.hint':
     'アプリとしてインストールし、バッテリー最適化から除外すると、画面オフでも再生が途切れにくくなります。',

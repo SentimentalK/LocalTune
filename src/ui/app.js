@@ -1375,6 +1375,20 @@ export function mountUi(root, store, sw) {
     renderTabs(state);
     renderView(state);
     ui.settingsView.render(state);
+    if (state.pendingView) {
+      const pending = state.pendingView;
+      if (pending.view === 'settings') {
+        const section = ui.settingsView.node.querySelector(
+          '[data-testid="settings-section-library"]',
+        );
+        section?.scrollIntoView({ block: 'start' });
+        if (pending.picker === 'onedrive') {
+          const picker = ui.settingsView.node.querySelector('[data-testid="onedrive-picker"]');
+          if (picker) picker.focus({ preventScroll: true });
+        }
+      }
+      store.clearPendingView();
+    }
     if (state.view === 'lyrics') {
       // A track change inside the lyrics view resolves once; the store sets
       // `lyrics.trackId` synchronously, so the 4 Hz position updates do not
