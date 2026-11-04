@@ -3,6 +3,8 @@
  * Pure functions over Uint8Array; no DOM, no I/O.
  */
 
+import { parseGainDb, parseItunNorm } from '../gain.js';
+
 const TEXT_IDS = new Map([
   ['TIT2', 'title'],
   ['TPE1', 'artist'],
@@ -578,4 +580,99 @@ export function describeId3(bytes, { fileSize = bytes?.byteLength ?? 0, tail } =
     };
   }
   return described;
+}
+
+/** TXXX descriptions we care about, upper-cased. */
+const REPLAYGAIN_KEYS = new Map([
+  ['REPLAYGAIN_TRACK_GAIN', 'trackGainDb'],
+  ['REPLAYGAIN_TRACK_PEAK', 'trackPeak'],
+  ['REPLAYGAIN_ALBUM_GAIN', 'albumGainDb'],
+  ['ITUNNORM', 'itunNorm'],
+]);
+
+const GAIN_NUMBER = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
+
+function parsePeak(value) {
+  const text = value.trim();
+  if (!GAIN_NUMBER.test(text)) return null;
+  const peak = Number.parseFloat(text);
+  return Number.isFinite(peak) ? peak : null;
+}
+
+/** Read one TXXX frame payload into the result (first match wins). */
+function readUserText(bytes, dataStart, dataEnd, result) {
+  const encoding = bytes[dataStart];
+  const term = encoding === 1 || encoding === 2 ? 2 : 1;
+  const descEnd = stringEnd(bytes, dataStart + 1, dataEnd, encoding);
+  const desc = decodeText(bytes, dataStart + 1, descEnd, encoding).trim().toUpperCase();
+  const key = REPLAYGAIN_KEYS.get(desc);
+  if (!key) return;
+  result.present = true;
+  if (result[key] !== null) return;
+
+  const valueStart = Math.min(descEnd + term, dataEnd);
+  if (valueStart >= dataEnd) return;
+  const value = decodeText(bytes, valueStart, dataEnd, encoding).trim();
+  if (!value) return;
+  if (key === 'itunNorm') result.itunNorm = parseItunNorm(value);
+  else if (key === 'trackPeak') result.trackPeak = parsePeak(value);
+  else result[key] = parseGainDb(value);
+}
+
+/**
+ * Pull ReplayGain values out of the ID3v2.3/v2.4 TXXX frames.
+ * iTunNORM is decoded for diagnostics only and never feeds the gain.
+ *
+ * @param {Uint8Array} bytes
+ * @returns {{present: boolean, trackGainDb: number|null, trackPeak: number|null,
+ *   albumGainDb: number|null, itunNorm: number[]|null}}
+ */
+export function parseReplayGain(bytes) {
+  const result = {
+    present: false,
+    trackGainDb: null,
+    trackPeak: null,
+    albumGainDb: null,
+    itunNorm: null,
+  };
+  if (!bytes || bytes.length < 10) return result;
+  if (bytes[0] !== 0x49 || bytes[1] !== 0x44 || bytes[2] !== 0x33) return result;
+  const version = bytes[3];
+  if (version < 3) return result; // v2.2 frames use a different header
+
+  const flags = bytes[5] ?? 0;
+  const declared = syncsafe(bytes, 6);
+  let framesStart = 10;
+  const framesEnd = Math.min(bytes.length, 10 + declared);
+  if (framesEnd <= framesStart) return result;
+
+  if (flags & 0x40) {
+    if (version >= 4) {
+      const extSize = syncsafe(bytes, 10);
+      framesStart = Math.min(10 + Math.max(extSize, 6), framesEnd);
+    } else {
+      const extSize = uint32(bytes, 10);
+      framesStart = Math.min(10 + 4 + extSize, framesEnd);
+    }
+  }
+
+  let cursor = framesStart;
+  while (cursor + 10 <= framesEnd) {
+    const id = ascii(bytes, cursor, 4);
+    if (!/^[A-Z0-9]{4}$/.test(id)) break;
+    const size = version >= 4 ? syncsafe(bytes, cursor + 4) : uint32(bytes, cursor + 4);
+    const frameFlags = uint16(bytes, cursor + 8);
+    const compressed = version >= 4 ? frameFlags & 0x0008 : frameFlags & 0x0080;
+    let dataStart = cursor + 10;
+    const dataEnd = dataStart + size;
+    if (size <= 0 || dataEnd > framesEnd) break;
+    if (version >= 4 && frameFlags & 0x0001) dataStart += 4; // data length indicator
+    if (compressed || dataStart >= dataEnd) {
+      cursor = dataEnd;
+      continue;
+    }
+    if (id === 'TXXX') readUserText(bytes, dataStart, dataEnd, result);
+    cursor = dataEnd;
+  }
+  return result;
 }

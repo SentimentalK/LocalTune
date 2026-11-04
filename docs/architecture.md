@@ -292,6 +292,11 @@ export class AudioPlayer extends EventTarget {
   async play(); pause()
   seek(seconds); setVolume(v /*0..1*/)
   get position(); get duration(); get playing()
+  async enableLeveling()      // 建 AudioContext + MediaElementSource + GainNode；不可运行返回 false
+  setGain(db)                 // 图未建时先记住，就绪后应用
+  disableLeveling()           // gain 设 1；路由保持连接
+  get levelingReady()         // 增益图是否就绪
+  get canHandOffSynchronously() // 元素已有 src → 可同步交接
   destroy()            // revoke URL、移除监听
 }
 // events: 'timeupdate' {position,duration} | 'ended' | 'play' | 'pause'
@@ -663,3 +668,10 @@ UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.
 
 - `Dockerfile`：多阶段，`node:22-alpine` build → `nginx:stable-alpine`；非 root（`USER nginx`，uid 101）；8080；`/healthz` 200；`nginx.conf` 中 `/assets/` immutable，`/index.html`、`/sw.js`、`/manifest.webmanifest` no-cache（且 manifest 为 `application/manifest+json`），其余 `try_files $uri $uri/ /index.html`。
 - CI：push 任意分支 → amd64 load + curl 冒烟（`/healthz`、`/`、`/manifest.webmanifest`、`/sw.js`；`sw.js` 头含 `no-cache`；一个 `/assets/*.js` 含 `immutable`）；非 PR 推 `linux/amd64,linux/arm64` 到 `ghcr.io/sentimentalk/localtune`，tag `sha-<short>` 与分支名，main 更新 `latest`。
+
+### 播放扩展（APP-001-F2）
+
+- 睡眠定时状态机（`src/core/sleepTimer.js`，纯逻辑，时钟与 `setInterval`/`clearInterval` 全部注入）：`SLEEP_MODES = ['off','15','30','45','60','end']`，`sleepMinutes(mode)` 只对分钟模式返回 `15|30|45|60`。`set(mode)` 非法值按 `'off'`（等价 `cancel()`）；分钟模式 `endsAt = now() + 分钟 * 60000`，每个 `intervalMs`（默认 1000 ms）tick 一次并立即 `onTick(state())`；剩余 `0 < remaining <= fadeMs`（默认 5000 ms）时 `fading = true` 并以 `remaining / fadeMs`（1→0 线性）调 `onFade`；归零时清 interval、复位 `'off'`、`fading = false`，并只调一次 `onStop`。`'end'` 不排 interval，由 `fireEnd()` 在队列结束时调 `onStop`（只生效一次）。`cancel()` 清 interval 但不调 `onStop`；`destroy()` 之后所有动作（含已排的 tick）无效。`state()` → `{ mode, endsAt, remaining, fading }`，`off`/`end` 的 `remaining` 为 `null`。
+- 增益解析（`src/core/gain.js`）：`parseGainDb` 只接受 `-7.25 dB` / `+3.0 dB` / `-7.25` / `7.2 db` 这类单个数值（可带 `dB` 后缀），夹到 ±24 dB，非法或空 → `null`；`gainFactor(db) = 10 ** (db / 20)` 夹到 `[0.1, 4]`，非有限数 → 1；`decideGain` 在 `enabled` 为假时返回 `reason:'off'`，缺少有限 `trackGainDb` 时 `reason:'none'`，否则 `reason:'tag'`。只认 ID3v2.3/v2.4 的 `TXXX` 帧（`REPLAYGAIN_TRACK_GAIN` / `REPLAYGAIN_TRACK_PEAK` / `REPLAYGAIN_ALBUM_GAIN`，描述大小写不敏感，压缩帧跳过）；`iTunNORM` 只解成整数数组供诊断（`parseItunNorm`，少于四个 8 位十六进制词即 `null`），**不参与增益**。
+- GainNode 启用（`AudioPlayer.enableLeveling()`）：上下文优先用注入的 `createAudioContext`，否则用全局 `AudioContext`/`webkitAudioContext`，两者都没有则返回 `false`。必须先 `await ctx.resume()` 且 `ctx.state === 'running'` 才建 `createMediaElementSource → createGain → destination`；状态不是 running 时 `ctx.close()` 并返回 `false`——**绝不在不可运行的上下文里建图**，否则元素被路由后静音（iOS 上 `resume()` 需要用户手势）。重复调用只 `resume()` 并返回 `true`；任何异常都返回 `false`，不抛。`setGain(db)` 在图未建时只记住数值，`levelingReady` 报告图是否就绪，`disableLeveling()` 把 gain 设回 1 并保持连接（Web Audio 无法断开已接的路由）。
+- `get canHandOffSynchronously()`：`true` 当且仅当元素已有 `src`，即 `playNow()` 不会因「未加载」抛错；store 据此判断能否不 `await` 直接交接下一首（避免等待丢掉用户手势）。

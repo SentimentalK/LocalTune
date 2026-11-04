@@ -4,17 +4,33 @@
  */
 
 import { t } from '../i18n/index.js';
+import { gainFactor } from './gain.js';
+
+async function closeContext(ctx) {
+  try {
+    if (ctx && typeof ctx.close === 'function') await ctx.close();
+  } catch {
+    // a context that refuses to close cannot be cleaned up further
+  }
+}
 
 export class AudioPlayer extends EventTarget {
   #audio;
   #url = null;
   #handlers = [];
   #destroyed = false;
+  #createAudioContext;
+  #ctx = null;
+  #sourceNode = null;
+  #gainNode = null;
+  #pendingGainDb = null;
 
-  constructor(audio) {
+  constructor(audio, { createAudioContext } = {}) {
     super();
     if (!audio) throw new Error(t('error.player.noElement'));
     this.#audio = audio;
+    this.#createAudioContext =
+      typeof createAudioContext === 'function' ? createAudioContext : null;
     this.#audio.preload = 'auto';
     this.#listen('timeupdate', () => {
       this.dispatchEvent(
@@ -146,9 +162,94 @@ export class AudioPlayer extends EventTarget {
     return !this.#audio.paused && !this.#audio.ended;
   }
 
+  /**
+   * Build the Web Audio graph that applies ReplayGain. Must only build it
+   * once the context is running: an element routed into a suspended context
+   * goes silent.
+   * @returns {Promise<boolean>} whether the graph is ready
+   */
+  async enableLeveling() {
+    if (this.#destroyed) return false;
+    if (this.#ctx) {
+      try {
+        await this.#ctx.resume();
+      } catch {
+        return false;
+      }
+      return true;
+    }
+
+    const Ctor = globalThis.AudioContext ?? globalThis.webkitAudioContext ?? null;
+    if (!this.#createAudioContext && !Ctor) return false;
+
+    let ctx = null;
+    try {
+      ctx = this.#createAudioContext ? this.#createAudioContext() : new Ctor();
+      if (!ctx) return false;
+      await ctx.resume();
+      if (ctx.state !== 'running') {
+        await closeContext(ctx);
+        return false;
+      }
+      const sourceNode = ctx.createMediaElementSource(this.#audio);
+      const gainNode = ctx.createGain();
+      sourceNode.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      this.#ctx = ctx;
+      this.#sourceNode = sourceNode;
+      this.#gainNode = gainNode;
+      if (this.#pendingGainDb !== null) {
+        gainNode.gain.value = gainFactor(this.#pendingGainDb);
+        this.#pendingGainDb = null;
+      }
+      return true;
+    } catch {
+      if (ctx) await closeContext(ctx);
+      return false;
+    }
+  }
+
+  /** Apply a ReplayGain value; remembered until the graph exists. */
+  setGain(db) {
+    if (this.#gainNode) {
+      this.#gainNode.gain.value = gainFactor(db);
+      return;
+    }
+    this.#pendingGainDb = Number.isFinite(db) ? db : null;
+  }
+
+  /** Unity gain. Web Audio cannot unwire the route, so it stays connected. */
+  disableLeveling() {
+    try {
+      if (this.#gainNode) this.#gainNode.gain.value = 1;
+    } catch {
+      // a node that refuses the write is already neutral
+    }
+  }
+
+  get levelingReady() {
+    return this.#gainNode !== null;
+  }
+
+  /** True when `playNow()` cannot throw for a missing source. */
+  get canHandOffSynchronously() {
+    return Boolean(this.#audio.src);
+  }
+
   destroy() {
     if (this.#destroyed) return;
     this.#destroyed = true;
+    const ctx = this.#ctx;
+    this.#ctx = null;
+    this.#gainNode = null;
+    this.#sourceNode = null;
+    if (ctx && typeof ctx.close === 'function') {
+      try {
+        void ctx.close()?.catch(() => {});
+      } catch {
+        // ignore
+      }
+    }
     try {
       this.#audio.pause();
     } catch {
