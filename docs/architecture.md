@@ -663,3 +663,42 @@ UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.
 
 - `Dockerfile`：多阶段，`node:22-alpine` build → `nginx:stable-alpine`；非 root（`USER nginx`，uid 101）；8080；`/healthz` 200；`nginx.conf` 中 `/assets/` immutable，`/index.html`、`/sw.js`、`/manifest.webmanifest` no-cache（且 manifest 为 `application/manifest+json`），其余 `try_files $uri $uri/ /index.html`。
 - CI：push 任意分支 → amd64 load + curl 冒烟（`/healthz`、`/`、`/manifest.webmanifest`、`/sw.js`；`sw.js` 头含 `no-cache`；一个 `/assets/*.js` 含 `immutable`）；非 PR 推 `linux/amd64,linux/arm64` 到 `ghcr.io/sentimentalk/localtune`，tag `sha-<short>` 与分支名，main 更新 `latest`。
+
+### lyrics 模块（APP-001-F1）
+
+歌词数据层是纯模块，不访问 DOM/IndexedDB，也不 import 任何 adapter；来源文件统一由调用方注入的 `getFile(path)` 读取。
+
+```js
+// src/core/lyrics/lrc.js
+export function parseLrc(text)
+// → { offset: number, lines: Array<{ time: number, text: string }>, plain: string }
+
+export function activeLineIndex(lines, position)
+// → number：最后一个 time <= position 的下标；空数组或 position 小于首行时为 -1
+
+export function decodeLyricsBytes(bytes)
+// → string：去 UTF-8 BOM；UTF-8（fatal）失败时按 decodeLegacyText 回退；异常返回 ''
+
+export function sidecarCandidates(path)
+// → ['<dir>/<base>.lrc', '<dir>/<base>.LRC']；去掉最后一个扩展名，base 为空时返回 []
+```
+
+`parseLrc` 支持 `[m:ss]`、`[mm:ss]`、`[h:mm:ss.xx]`（毫秒 1–3 位）、一行多时间标签、`[offset:±N]`（毫秒，文件内全局生效并夹到 0）、增强格式 `<m:ss.xx>` 剥离；`[ar|ti|al|by|offset|length|re|ve|tool:]` 不产生歌词行。结果按时间升序稳定排序；没有任何带时间的行时，所有非空、非元数据行以 `\n` 拼进 `plain`，否则 `plain` 为 `''`。
+
+```js
+// src/core/lyrics/embedded.js
+export async function readEmbeddedLyrics(file)
+// → { synced: Array<{ time: number, text: string }>, plain: string }
+// 仅按文件名扩展名处理 mp3/m4a；其余扩展名或任何解析异常返回空结果
+```
+
+mp3 直接读 ID3v2 头与不超过 4 MiB 的 tag，遍历 v2.3（uint32 帧长）/v2.4（syncsafe 帧长）帧，跳过 compressed 帧：`USLT` 进 `plain`（多帧按出现顺序以 `\n` 拼接），`SYLT` 时间格式 2（毫秒）进 `synced` 并按时间排序，格式 1 整帧忽略。m4a 沿 `moov → udta → meta（跳过 4 字节 version/flags）→ ilst → ©lyr → data` 取 UTF-8 文本进 `plain`。
+
+```js
+// src/core/lyrics/index.js
+export async function resolveLyrics({ track, getFile, readEmbedded = readEmbeddedLyrics })
+// → { source: 'lrc'|'lrc-plain'|'sylt'|'uslt'|'lyr'|'none',
+//     lines: Array<{ time: number, text: string }>, plain: string }
+```
+
+优先级：同目录 `.lrc` > `.LRC` > 内嵌 SYLT > 内嵌 USLT（mp3）/©lyr（m4a）。sidecar 依次经 `getFile` → `decodeLyricsBytes` → `parseLrc`，有行返回 `lrc`，否则有 `plain` 返回 `lrc-plain`；sidecar 全部缺失/为空/失败后对 `track.path` 调用一次 `getFile` 交给 `readEmbedded`，有 `synced` 返回 `sylt`，否则按扩展名返回 `uslt` 或 `lyr`；全失败返回 `none`。OPFS 导入保留 `.lrc` sidecar（扩展名大小写不敏感），但 `scan()` 仍只产出音频。
