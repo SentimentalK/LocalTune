@@ -21,3 +21,6 @@ import './audio-cache.test.js';
 import './persist.test.js';
 import './opfs-import.test.js';
 import './opfs-mode.test.js';
+import './playlog.test.js';
+import './prefetch.test.js';
+import './install.test.js';
