@@ -13,6 +13,9 @@ import {
   putTracks,
   deleteTracksById,
   getAllTracks,
+  getAllStats,
+  putStat,
+  putStats,
   getMeta,
   setMeta,
   putPlaylist,
@@ -54,6 +57,11 @@ import { AudioPlayer } from './player.js';
 import { PlayLog } from './playlog.js';
 import { Prefetcher } from './prefetch.js';
 import { initInstall } from './install.js';
+import { createPlayCounter, applyPlay, ensureAdded } from './stats.js';
+import { createSleepTimer } from './sleepTimer.js';
+import { decideGain } from './gain.js';
+import { parseReplayGain } from './metadata/id3.js';
+import { resolveLyrics } from './lyrics/index.js';
 import {
   loadPlayback,
   savePlayback,
@@ -66,8 +74,10 @@ import { installMediaSession, syncMediaSession } from './mediaSession.js';
 import { normalizeProxyUrl } from './playlist/sources/proxy.js';
 import { t } from '../i18n/index.js';
 
-const VIEWS = new Set(['tracks', 'albums', 'artists', 'folders', 'playlists', 'queue', 'settings']);
+const VIEWS = new Set(['tracks', 'albums', 'artists', 'folders', 'playlists', 'queue', 'settings', 'lyrics']);
 const MEDIA_SYNC_INTERVAL = 1000;
+const LYRICS_CACHE_LIMIT = 20;
+const REPLAYGAIN_HEAD_BYTES = 1 << 19;
 const SOURCE_KINDS = ['local', 'onedrive'];
 const TRACK_SOURCE = { local: 'fsa', onedrive: 'onedrive' };
 const LOCAL_MODE_KEY = 'localMode';
@@ -192,6 +202,10 @@ export class Store extends EventTarget {
     this._pendingSeek = null;
     this._lastSyncAt = 0;
     this._pickerIndex = new Map();
+    this._playCounter = createPlayCounter();
+    this._lyricsCache = new Map();
+    this._sleep = null;
+    this._fadeFactor = 1;
 
     this._state = {
       ready: false,
@@ -203,11 +217,16 @@ export class Store extends EventTarget {
       onedrivePicker: { open: false, path: '', items: [], loading: false, current: null },
       playlists: [],
       rematch: null,
+      stats: {},
+      sleep: { mode: 'off', endsAt: null, remaining: null, fading: false },
+      lyrics: { trackId: null, loading: false, lines: [], plain: '', source: 'none', error: null },
       settings: {
         language: 'auto',
         cacheLimitBytes: DEFAULT_CACHE_LIMIT_BYTES,
         youtubeApiKey: '',
         playlistProxyUrl: '',
+        leveling: false,
+        gapless: true,
       },
       pins: [],
       updateReady: false,
@@ -234,6 +253,8 @@ export class Store extends EventTarget {
       const duration = Number(detail.duration) || 0;
       this._state.current.position = position;
       if (duration > 0) this._state.current.duration = duration;
+      const counted = this._playCounter?.update(position);
+      if (counted?.justCounted) this._recordPlay(this._playCounter.trackId);
       this._emit();
       this._syncMediaSession();
       this._savePlayback();
@@ -255,6 +276,7 @@ export class Store extends EventTarget {
     player.addEventListener('play', () => {
       note('play');
       this._state.current.playing = true;
+      this._playCounter?.resume(this._state.current.position);
       this._emit();
       this._syncMediaSession(true);
       this._savePlayback();
@@ -264,6 +286,7 @@ export class Store extends EventTarget {
       note('pause');
       if (this._loading) return;
       this._state.current.playing = false;
+      this._playCounter?.pause();
       this._emit();
       this._syncMediaSession(true);
       this._savePlayback();
@@ -364,13 +387,44 @@ export class Store extends EventTarget {
       cacheLimitBytes: DEFAULT_CACHE_LIMIT_BYTES,
       youtubeApiKey: '',
       playlistProxyUrl: '',
+      leveling: false,
+      gapless: true,
     }));
     const pins = await this.pinStore.all().catch(() => []);
+    const storedStats = await getAllStats(this.db).catch(() => []);
+
+    this._playCounter = createPlayCounter();
+    this._lyricsCache = new Map();
+    this._sleep = createSleepTimer({
+      now: Date.now,
+      onTick: (sleep) => {
+        this._state.sleep = sleep;
+        this._emit();
+      },
+      onFade: (factor) => this._applyFade(factor),
+      onStop: () => this._stopForSleep(),
+    });
 
     this.cache.limit = settings.cacheLimitBytes;
     this._state.tracks = tracks;
     this._state.playlists = playlists;
-    this._state.settings = { language: 'auto', ...settings };
+    this._state.settings = {
+      language: 'auto',
+      leveling: false,
+      gapless: true,
+      ...settings,
+    };
+    const statsMap = {};
+    for (const row of storedStats ?? []) {
+      if (!row || typeof row.id !== 'string') continue;
+      const { id, ...values } = row;
+      statsMap[id] = values;
+    }
+    const { stats: nextStats, added } = ensureAdded(statsMap, tracks);
+    this._state.stats = nextStats;
+    if (added.length) {
+      void putStats(this.db, added.map((id) => ({ id, ...nextStats[id] }))).catch(() => {});
+    }
     this._state.pins = Array.from(pins ?? [])
       .filter((pin) => pin && typeof pin.id === 'string')
       .map((pin) => ({
@@ -703,6 +757,7 @@ export class Store extends EventTarget {
 
       const others = this._state.tracks.filter((track) => track.source !== trackSource);
       this._state.tracks = sortTracks([...others, ...byId.values()]);
+      this._syncStats();
 
       const summary = {
         at: Date.now(),
@@ -921,6 +976,7 @@ export class Store extends EventTarget {
     this.player?.pause();
     this._loadedId = null;
     this._state.tracks = [];
+    this._state.stats = {};
     this.queue = createQueue([]);
     this._reflectQueue();
     this._state.current = {
@@ -1054,6 +1110,7 @@ export class Store extends EventTarget {
   async playTrack(trackId, source = 'user') {
     const tracks = this._state.tracks;
     if (!tracks.some((track) => track.id === trackId)) return;
+    if (this._state.settings.leveling) this._promoteLeveling();
     await this.playQueue(tracks, trackId, source);
   }
 
@@ -1065,7 +1122,9 @@ export class Store extends EventTarget {
     this.queue = setQueue(this.queue, list, startIndex);
     this._reflectQueue();
     this._emit();
+    if (this._state.settings.leveling) this._promoteLeveling();
     await this._loadTrack(currentTrack(this.queue), { play: true, source });
+    this._resetLyrics();
     this._savePlayback();
     this._syncMediaSession(true);
   }
@@ -1096,6 +1155,7 @@ export class Store extends EventTarget {
       void this._loadTrack(track, { play: true, position: this._state.current.position || 0 });
       return;
     }
+    if (this._state.settings.leveling) this._promoteLeveling();
     this.player.play().catch((error) => {
       this._patchSource(kindOfTrack(track), { error: errorMessage(error) });
       this._state.current.playing = false;
@@ -1114,6 +1174,7 @@ export class Store extends EventTarget {
       this._emit();
     };
     try {
+      if (this._state.settings.leveling) this._promoteLeveling();
       this.player
         .playNow()
         .then(() => {
@@ -1211,6 +1272,17 @@ export class Store extends EventTarget {
   }
 
   async setSetting(key, value) {
+    if (key === 'leveling' || key === 'gapless') {
+      if (typeof value !== 'boolean') return;
+      this._state.settings = { ...this._state.settings, [key]: value };
+      void saveSettings(this.db, this._state.settings).catch(() => {});
+      if (key === 'leveling') {
+        if (value) this._promoteLeveling();
+        else this.player?.disableLeveling();
+      }
+      this._emit();
+      return;
+    }
     if (key === 'cacheLimitBytes') {
       if (!Number.isFinite(value) || !CACHE_LIMIT_VALUES.includes(value)) return;
       const settings = { ...this._state.settings, cacheLimitBytes: value };
@@ -1234,6 +1306,79 @@ export class Store extends EventTarget {
     if (!(key in this._state.settings)) return;
     this._state.settings = { ...this._state.settings, [key]: value };
     void saveSettings(this.db, this._state.settings).catch(() => {});
+    this._emit();
+  }
+
+  /**
+   * Resolve lyrics for one track, sidecar `.lrc` first, then embedded tags.
+   * Remote or unreadable files end at `source: 'none'`; playback never waits.
+   */
+  async loadLyrics(trackId) {
+    const track = this._state.tracks.find((item) => item.id === trackId) ?? null;
+    if (!track) {
+      this._state.lyrics = {
+        trackId,
+        loading: false,
+        lines: [],
+        plain: '',
+        source: 'none',
+        error: t('error.store.trackMissing'),
+      };
+      this._emit();
+      return;
+    }
+
+    const cached = this._lyricsCache?.get(trackId);
+    if (cached) {
+      this._lyricsCache.delete(trackId);
+      this._lyricsCache.set(trackId, cached);
+      this._state.lyrics = { ...cached, trackId, loading: false, error: null };
+      this._emit();
+      return;
+    }
+
+    this._state.lyrics = {
+      trackId,
+      loading: true,
+      lines: [],
+      plain: '',
+      source: 'none',
+      error: null,
+    };
+    this._emit();
+
+    let resolved = { source: 'none', lines: [], plain: '' };
+    try {
+      const getFile = (path) => this._adapterForTrack(track).getFile(path);
+      resolved = await resolveLyrics({ track, getFile });
+    } catch (error) {
+      // A missing OneDrive copy or an unreadable file is not an error the UI
+      // shows: the track keeps playing without lyrics.
+      this.log('lyrics', { error: String(error) });
+      resolved = { source: 'none', lines: [], plain: '' };
+    }
+
+    const entry = {
+      trackId,
+      loading: false,
+      lines: Array.isArray(resolved?.lines) ? resolved.lines : [],
+      plain: typeof resolved?.plain === 'string' ? resolved.plain : '',
+      source: resolved?.source ?? 'none',
+      error: null,
+    };
+    this._rememberLyrics(trackId, entry);
+    if (this._state.lyrics.trackId === trackId) {
+      this._state.lyrics = entry;
+      this._emit();
+    }
+  }
+
+  setSleepMode(mode) {
+    if (!this._sleep) return;
+    this._sleep.set(mode);
+    const sleep = this._sleep.state();
+    this._state.sleep = sleep;
+    if (sleep.mode === 'off') this._applyFade(1);
     this._emit();
   }
 
@@ -1422,6 +1567,118 @@ export class Store extends EventTarget {
     };
   }
 
+  /** Add zeroed rows for newly indexed tracks and persist only the additions. */
+  _syncStats() {
+    try {
+      const { stats, added } = ensureAdded(this._state.stats, this._state.tracks);
+      this._state.stats = stats;
+      if (added.length) {
+        void putStats(this.db, added.map((id) => ({ id, ...stats[id] }))).catch(() => {});
+      }
+    } catch {
+      // A stats failure must never fail a scan.
+    }
+  }
+
+  _recordPlay(id) {
+    if (!id) return;
+    try {
+      const row = this._state.stats[id];
+      const now = Date.now();
+      const play = {
+        id,
+        plays: (row?.plays ?? 0) + 1,
+        lastPlayedAt: now,
+        addedAt: row?.addedAt ?? now,
+      };
+      this._state.stats = applyPlay(this._state.stats, { id, now });
+      void putStat(this.db, play).catch(() => {});
+      this.log('stats', { id, plays: play.plays });
+      this._emit();
+    } catch {
+      // Counting is best-effort.
+    }
+  }
+
+  _startPlaySession(track, position = 0) {
+    try {
+      this._playCounter?.start(track, position);
+    } catch {
+      // Counting is best-effort.
+    }
+  }
+
+  _resetLyrics() {
+    this._state.lyrics = {
+      trackId: null,
+      loading: false,
+      lines: [],
+      plain: '',
+      source: 'none',
+      error: null,
+    };
+  }
+
+  _rememberLyrics(trackId, entry) {
+    const cache = this._lyricsCache;
+    if (!cache) return;
+    cache.delete(trackId);
+    cache.set(trackId, entry);
+    while (cache.size > LYRICS_CACHE_LIMIT) {
+      const oldest = cache.keys().next().value;
+      cache.delete(oldest);
+    }
+  }
+
+  _promoteLeveling() {
+    try {
+      void this.player?.enableLeveling()?.catch(() => {});
+    } catch {
+      // No gesture or no Web Audio: unity gain stays, playback continues.
+    }
+  }
+
+  /** ReplayGain for one track; every failure falls back to unity gain. */
+  async _applyGainForTrack(track) {
+    if (!this._state.settings.leveling || !this.player || track?.source === 'onedrive') {
+      this.player?.setGain(null);
+      return;
+    }
+    try {
+      const file = await this._adapterForTrack(track).getFile(track.path);
+      const size = Math.min(Number(file?.size) || 0, REPLAYGAIN_HEAD_BYTES);
+      const head = new Uint8Array(await file.slice(0, size).arrayBuffer());
+      const tags = parseReplayGain(head);
+      const { db } = decideGain(tags, { enabled: true });
+      this.player.setGain(db);
+    } catch {
+      this.player?.setGain(null);
+    }
+  }
+
+  _applyFade(factor) {
+    const value = Number.isFinite(factor) ? clamp(factor, 0, 1) : 1;
+    this._fadeFactor = value;
+    try {
+      this.player?.setVolume(clamp(this._state.current.volume * value, 0, 1));
+    } catch {
+      // Volume writes are best-effort.
+    }
+  }
+
+  _stopForSleep() {
+    try {
+      this.player?.pause();
+    } catch {
+      // Already stopped.
+    }
+    if (this._sleep) this._state.sleep = this._sleep.state();
+    this._state.current.playing = false;
+    this._applyFade(1);
+    this.log('sleep', { stopped: true });
+    this._emit();
+  }
+
   _reflectQueue() {
     const queue = this.queue;
     this._state.queue = {
@@ -1555,6 +1812,9 @@ export class Store extends EventTarget {
       }
       if (play) await this.player.play();
       this.log('trackchange', { source });
+      this._startPlaySession(track, this._state.current.position);
+      this._resetLyrics();
+      void this._applyGainForTrack(track);
       void this._primeNext();
       return true;
     } catch (error) {
@@ -1569,6 +1829,12 @@ export class Store extends EventTarget {
   }
 
   async _handleEnded() {
+    if (this._sleep?.state().mode === 'end') {
+      // "End of current track" sleep: this is that end; do not advance.
+      this._sleep.fireEnd();
+      this._savePlayback();
+      return;
+    }
     const before = this.queue;
     const { state, ended } = advance(before, { auto: true });
 
@@ -1585,6 +1851,7 @@ export class Store extends EventTarget {
       this.log('trackchange', { source: 'auto', repeat: 'one' });
       this._state.current.position = 0;
       this._state.current.playing = true;
+      this._startPlaySession(this._state.current.track, 0);
       const blocked = (error) => {
         this._state.current.playing = false;
         this.log('playblocked', { error: String(error?.name ?? error) });
@@ -1608,7 +1875,7 @@ export class Store extends EventTarget {
       this._emit();
       return;
     }
-    const hit = this.prefetcher?.take(next.id) ?? null;
+    const hit = this._state.settings.gapless ? this.prefetcher?.take(next.id) ?? null : null;
 
     // Update the synchronous state before touching the element so the
     // resulting play/pause events see the new track.
@@ -1625,6 +1892,9 @@ export class Store extends EventTarget {
     this.log('trackchange', { source: 'auto' });
 
     if (hit) {
+      this._startPlaySession(next, 0);
+      this._resetLyrics();
+      void this._applyGainForTrack(next);
       // No await before loadUrl/playNow: the user gesture's activation is still live.
       const blocked = (error) => {
         this._state.current.playing = false;

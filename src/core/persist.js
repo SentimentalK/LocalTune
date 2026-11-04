@@ -99,6 +99,8 @@ export async function loadSettings(db) {
       : DEFAULT_CACHE_LIMIT_BYTES,
     youtubeApiKey: cleanApiKey(value?.youtubeApiKey),
     playlistProxyUrl: cleanProxyUrl(value?.playlistProxyUrl),
+    leveling: value?.leveling === true,
+    gapless: value?.gapless !== false,
   };
 }
 
@@ -112,6 +114,8 @@ export async function saveSettings(db, settings) {
     cacheLimitBytes,
     youtubeApiKey: cleanApiKey(settings?.youtubeApiKey),
     playlistProxyUrl: cleanProxyUrl(settings?.playlistProxyUrl),
+    leveling: settings?.leveling === true,
+    gapless: settings?.gapless !== false,
   };
   await setMeta(db, SETTINGS_KEY, stored);
   return stored;

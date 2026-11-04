@@ -499,7 +499,7 @@ export class Store extends EventTarget {
   async exportPlaylistM3u8(id)     // → { name: sanitizeFileName(name) + '.m3u8', text }；不写盘
   async writePlaylistM3u8(id)      // 本地未授权抛 error.playlist.writeUnsupported；写入引用根或 OPFS music/，→ { name, path }
   clearRematchNotice()             // state.rematch = null；emit
-  setView(view)                    // 'tracks'|'albums'|'artists'|'folders'|'queue'|'settings'
+  setView(view)                    // 'tracks'|'albums'|'artists'|'folders'|'playlists'|'queue'|'settings'|'lyrics'
   async playTrack(trackId)         // 以全部歌曲为队列，从该曲开始
   async playQueue(tracks, startId) // 以给定列表为队列
   appendQueue(tracks)              // 追加到队列末尾，不切歌、不自动播放
@@ -508,8 +508,11 @@ export class Store extends EventTarget {
   async seek(seconds)
   setVolume(v)
   toggleShuffle(); cycleRepeat()
+  async loadLyrics(trackId)        // 侧车 .lrc/.LRC → 内嵌 SYLT/USLT(©lyr)；结果写 state.lyrics 并缓存（LRU 20）
+  setSleepMode(mode)               // 'off'|'15'|'30'|'45'|'60'|'end'；非法值回落 'off'；立即写 state.sleep 并 emit
   setSetting(key, value)           // 'language'、'cacheLimitBytes'（校验合法值、写 meta、更新 cache.limit 并 enforceLimit）、
-                                   // 'youtubeApiKey'（trim 截 200）、'playlistProxyUrl'（trim 截 300，非 https:// 或空串则忽略）
+                                   // 'youtubeApiKey'（trim 截 200）、'playlistProxyUrl'（trim 截 300，非 https:// 或空串则忽略）、
+                                   // 'leveling' / 'gapless'（仅接受 boolean；leveling 切换同时 enable/disable Web Audio 增益图）
   async jumpTo(index)              // 队列内跳转
   removeQueueAt(index)
   log(type, detail = {})           // 播放诊断行（best-effort，见 playlog）
@@ -524,7 +527,7 @@ export class Store extends EventTarget {
 ```js
 {
   ready: boolean,
-  view: 'tracks'|'albums'|'artists'|'folders'|'queue'|'settings',
+  view: 'tracks'|'albums'|'artists'|'folders'|'playlists'|'queue'|'settings'|'lyrics',
   tracks: Track[],
   queue: { tracks: Track[], index: number, shuffle: boolean, repeat: 'off'|'all'|'one' },
   current: { track: Track|null, playing: boolean, position: 0, duration: 0, volume: 1 },
@@ -546,8 +549,16 @@ export class Store extends EventTarget {
       createdAt: number }
   ],
   rematch: { added: number } | null, // rescan 后自动补匹配的数量；clearRematchNotice() 清空
+  stats: { [trackId: string]: { plays: number, lastPlayedAt: number|null, addedAt: number } },
+                                     // init 时 getAllStats → ensureAdded 补行（新增行 best-effort putStats）
+  sleep: { mode: 'off'|'15'|'30'|'45'|'60'|'end', endsAt: number|null,
+           remaining: number|null, fading: boolean },  // 由 createSleepTimer 的 onTick 镜像
+  lyrics: { trackId: string|null, loading: boolean,
+            lines: [{ time: number, text: string }], plain: string,
+            source: 'lrc'|'lrc-plain'|'sylt'|'uslt'|'lyr'|'none', error: string|null },
   settings: { language: 'auto'|'zh-CN'|'zh-TW'|'ja'|'en', cacheLimitBytes: number,
-              youtubeApiKey: string, playlistProxyUrl: string },
+              youtubeApiKey: string, playlistProxyUrl: string,
+              leveling: boolean, gapless: boolean }, // leveling 缺省 false，gapless 缺省 true
   pins: [ // 每个来源的目录一条；根目录 dir === ''
     { id: `${source}:${dir}`, source: 'fsa'|'onedrive', dir: string,
       running: boolean, done: number, total: number, error: string|null }
@@ -566,6 +577,14 @@ export class Store extends EventTarget {
 - `state.sources[].trackCount` 按 `track.source` 统计；`syncSource` 只替换该来源的轨道，`removedIds` 也只影响该来源。
 
 `init()` 顺序：`onedrive.handleRedirect()` → restore 两个来源 → 仅在 onedrive 已登录但尚无 root 时进入设置并打开 picker（有 root 的常规启动与重授权回跳都留在曲库）→ onedrive 有 root 且 `permission === 'prompt'` 时 `await onedrive.silentReauth()`（`prompt=none` 顶层跳转，10 分钟 guard，仅 init 调用）→ 读 tracks/playlists/playback/settings/pins，把 `settings.cacheLimitBytes` 写入 `cache.limit` 并构建 `state.sources`/`state.pins`/`state.playlists` → 恢复队列与播放位置 → emit。末尾以 `void this._maybeMigrateTags()` 启动后台迁移，**不 await**；若 onedrive 有 root、已授权且 `meta.lastScanBySource.onedrive.at` 距今超过 1 小时（或缺失），再 `void this.syncSource('onedrive')`。
+
+播放计数：`timeupdate` 每次把位置交给 `createPlayCounter().update(position)`；有效播放累计到 `min(30 s, duration / 2)`（`stats.PLAY_COUNT_SECONDS`，单次向前跳变超过 5 s 不计入）时只触发一次 `_recordPlay(trackId)` → `applyPlay` 生成新 `state.stats`、`putStat` best-effort 落库、记 `stats` 日志并 emit。会话在 `_loadTrack` 成功、无缝 handoff、repeat-one 与 `playQueue` 后由 `_startPlaySession` 重开；`pause`/`play` 只是挂起/恢复累计。`rescan` 新增曲目与 `clearLibrary` 后调用 `_syncStats()`：`ensureAdded` 补零行（新增行 `putStats` best-effort）；`clearLibrary` 只清 `state.stats` 与曲目索引，stats store 的历史行保留（db.js 没有 clear 接口，不为此扩 API）。
+
+歌词：`loadLyrics(trackId)` 命中 20 条 LRU 缓存时直接写 `state.lyrics`；否则先置 `loading: true` 并 emit，再 `resolveLyrics({ track, getFile })`（侧车 `.lrc` → `.LRC` → 内嵌 SYLT → USLT/©lyr）。异常只记 `lyrics` 日志并落到 `source: 'none'`，不写 `state.sources[].error`，也不抛给播放路径。当前曲目变化（`_loadTrack` 成功、无缝 handoff、`playQueue` 之后）把 `state.lyrics` 复位为 `{ trackId: null, loading: false, lines: [], plain: '', source: 'none', error: null }`；缓存保留，且过期请求的 resolve 不会覆盖新曲目的歌词。
+
+睡眠定时：`setSleepMode(mode)` 交给 `createSleepTimer.set`（非法值回落 `'off'`）并把 `state.sleep` 立即镜像到 state；`onTick` 更新倒计时，`onFade` 把系数乘到播放器音量上（不改 `state.current.volume`），`onStop` 暂停、恢复音量、记 `sleep { stopped: true }`。`_handleEnded()` 在 `advance` 之前检查 `mode === 'end'`：命中则 `fireEnd()`（停止且不续播）并保存快照。
+
+音量均衡：`leveling` 为真时每次成功加载/无缝 handoff 异步读文件头（≤ 512 KiB），`parseReplayGain` + `decideGain` 得到 dB 后 `player.setGain(db)`；OneDrive 曲目（整文件读取成本高）、无 player、设置关闭或任何异常一律 `setGain(null)`（Unity）。Web Audio 图只在用户手势（`playTrack`/`playQueue`/`toggle`/`resume`）里 `enableLeveling()`，失败静默。`gapless` 只决定 `_handleEnded` 是否 `prefetcher.take(next.id)`：关闭时走原异步 `_loadTrack`，不新增 audio 元素。
 
 `rescan(kind)` 成功分支在写完 `meta.lastScanBySource` 之后、`_reconcileQueue()` 之前，对 `state.playlists` 逐条 `await rematchPlaylist()`（只重跑 missing 行）：有新增才 `repo.save` 并替换 state 中对应项，累计 `added > 0` 时置 `state.rematch = { added }`。rescan 成功后自动 rematch 缺失项，UI 在 `render(state)` 里以 toast（`playlists.rematchAdded`）提示并立即 `clearRematchNotice()` 清空 `state.rematch`。任何异常被吞掉，扫描结果不受影响。首次匹配会懒加载繁简表（数十毫秒），因此重匹配只在扫描路径里做，不进入播放路径。
 
