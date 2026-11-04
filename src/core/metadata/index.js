@@ -3,7 +3,7 @@
  * Parsing failures are swallowed and yield `{}` so callers can fall back.
  */
 
-import { parseId3 } from './id3.js';
+import { parseId3, describeId3 } from './id3.js';
 import { parseMp4 } from './mp4.js';
 
 const ID3_PROBE_BYTES = 32 * 1024;
@@ -41,9 +41,9 @@ async function readSlice(file, start, end) {
   return new Uint8Array(await slice.arrayBuffer());
 }
 
-async function readId3(file) {
+async function readId3Chunks(file) {
   const size = file.size ?? 0;
-  if (!size) return {};
+  if (!size) return null;
   const head = await readSlice(file, 0, Math.min(size, 10));
   let tagSize = 0;
   if (head.length >= 10 && head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33) {
@@ -51,9 +51,20 @@ async function readId3(file) {
     tagSize = 10 + syncsafe(head, 6) + footer;
   }
   const readLength = Math.min(size, tagSize + ID3_PROBE_BYTES);
-  const bytes = tagSize ? await readSlice(file, 0, readLength) : await readSlice(file, 0, Math.min(size, ID3_PROBE_BYTES));
+  const bytes = tagSize
+    ? await readSlice(file, 0, readLength)
+    : await readSlice(file, 0, Math.min(size, ID3_PROBE_BYTES));
   const tail = size >= 128 ? await readSlice(file, size - 128, size) : null;
-  return parseId3(bytes, { fileSize: size, ...(tail ? { tail } : {}) });
+  return { bytes, size, tail };
+}
+
+async function readId3(file) {
+  const chunks = await readId3Chunks(file);
+  if (!chunks) return {};
+  return parseId3(chunks.bytes, {
+    fileSize: chunks.size,
+    ...(chunks.tail ? { tail: chunks.tail } : {}),
+  });
 }
 
 async function readMp4(file) {
@@ -97,4 +108,56 @@ export async function readMetadata(file) {
   } catch {
     return {};
   }
+}
+
+function chosenFields(meta) {
+  return {
+    title: typeof meta?.title === 'string' ? meta.title : '',
+    artist: typeof meta?.artist === 'string' ? meta.artist : '',
+    album: typeof meta?.album === 'string' ? meta.album : '',
+  };
+}
+
+const EMPTY_DESCRIPTION = () => ({
+  id3v2: null,
+  id3v1: null,
+  chosen: { title: '', artist: '', album: '' },
+});
+
+/**
+ * Frame-level diagnostics for the tag fields the player displays. Reads the
+ * same byte ranges as `readMetadata`; `chosen` is that function's final answer.
+ *
+ * @param {File|Blob & {name?:string}} file
+ * @returns {Promise<{
+ *   id3v2: {version:number,frames:Array<object>}|null,
+ *   id3v1: {title:string,artist:string,album:string}|null,
+ *   chosen: {title:string,artist:string,album:string}
+ * }>}
+ */
+export async function describeTags(file) {
+  if (!file || typeof file.slice !== 'function') return EMPTY_DESCRIPTION();
+  const ext = extensionOf(file.name ?? '');
+  if (ext === 'mp3') {
+    const chunks = await readId3Chunks(file);
+    const chosen = chosenFields(await readMetadata(file));
+    if (!chunks) return { id3v2: null, id3v1: null, chosen };
+    const described = describeId3(chunks.bytes, {
+      fileSize: chunks.size,
+      ...(chunks.tail ? { tail: chunks.tail } : {}),
+    });
+    return {
+      id3v2: { version: described.version, frames: described.frames },
+      id3v1: described.id3v1,
+      chosen,
+    };
+  }
+  if (ext === 'm4a') {
+    return { id3v2: null, id3v1: null, chosen: chosenFields(await readMetadata(file)) };
+  }
+  return {
+    id3v2: null,
+    id3v1: null,
+    chosen: { title: '', artist: '', album: '' },
+  };
 }

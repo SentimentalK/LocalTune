@@ -53,7 +53,7 @@ Dockerfile, nginx.conf, .github/workflows/image.yaml   # Build Worker
 IndexedDB（`localtune`，version 1）：
 
 - `tracks`：keyPath `id`；index `album`（`album`）、`artist`（`artist`）。
-- `meta`：keyPath `key`；键 `dirHandle`、`lastScan`（`{at:number, added:number, updated:number, removed:number}`）、`playback`、`settings`。
+- `meta`：keyPath `key`；键 `dirHandle`、`lastScan`（`{at:number, added:number, updated:number, removed:number}`）、`lastBuildVersion`（最近一次乱码标签迁移针对的 `BUILD_VERSION` 字符串）、`playback`、`settings`。
 
 ## 模块契约
 
@@ -106,12 +106,51 @@ iOS / 未来来源只需实现同一组方法（`connect/restore/permission/ensu
 export async function readMetadata(file) // 读文件头（ID3 全标签 + 末尾 128 字节，MP4 至 moov），返回 PartialMeta
 /** @typedef {{title?:string,artist?:string,album?:string,year?:number|null,trackNo?:number|null,duration?:number,cover?:Blob|null}} PartialMeta */
 export function parseId3(bytes, { fileSize, tail } = {}) // Uint8Array → PartialMeta（ID3v2.3/2.4：TIT2 TPE1 TALB TYER/TDRC TRCK APIC；时长由首个 MPEG 帧 + Xing/Info 或比特率估算；ID3v2 缺字段时用末尾 128 字节 ID3v1 补）
+export function describeId3(bytes, { fileSize, tail } = {}) // Uint8Array → { version:3|4|0, frames:[{id,encoding,rawHex32,decoded,candidates}], id3v1:{title,artist,album}|null }；只收录 T* 文本帧与 APIC，compressed 帧跳过；encoding 0 列出 utf-8/shift_jis/gb18030/big5/euc-kr/latin1 全部候选及 legacyScore，其余编码单一候选（utf-16le/utf-16be/utf-8，score 1）
 export function parseId3v1(bytes) // 末尾 128 字节（或整文件）→ {title?,artist?,album?,year?}；文本同样走 decodeLegacyText
 export function decodeLegacyText(bytes) // encoding byte 0 的文本：ASCII 直出；否则 utf-8 → shift_jis → gb18030 → big5 → euc-kr 依次试解，按 CJK/假名/谚文占比打分取最高；都不像才回退 latin1
 export function parseMp4(bytes)   // Uint8Array → PartialMeta（mvhd 时长；ilst：©nam ©ART ©alb ©day trkn covr）
+export async function describeTags(file) // → { id3v2:{version,frames}|null, id3v1:{title,artist,album}|null, chosen:{title,artist,album} }；读法与 readMetadata 相同，chosen 取 readMetadata 的最终结果（缺失为空串）；m4a 与未知扩展名 id3v2/id3v1 均为 null
 ```
 
 `readMetadata` 只读取必要字节（ID3 按 tag size 截取并额外读末尾 128 字节；MP4 只读到 `moov` 结束），不整文件读入。解析异常一律吞掉并返回 `{}`，由调用方回退文件名。
+
+### `src/core/version.js` — 构建版本
+
+```js
+export const BUILD_VERSION = typeof __BUILD_VERSION__ === 'string' ? __BUILD_VERSION__ : 'dev';
+```
+
+`__BUILD_VERSION__` 由 `scripts/build.mjs` 的 esbuild `define` 注入（字符串）。测试、`node -e` 或未注入的构建里 `typeof` 让它安全回退 `'dev'`。
+
+### `src/core/metadata/garbled.js` — 乱码判定
+
+```js
+export function isGarbledText(value) // 非字符串/空串 → false；以下任一命中 → true：
+                                     // 含 U+FFFD；非 ASCII 字符全部落在 U+0080–U+00FF；
+                                     // 半角片假名 U+FF61–U+FF9F 数量 / 非 ASCII 字符总数 ≥ 0.5
+export function isGarbledTrack(track) // title / artist / album 任一 isGarbledText
+```
+
+### `src/core/metadata/diagnostics.js` — 用户可复制的标签报告
+
+```js
+export function formatTagReport(described) // describeTags 的结果 → 多行纯文本
+```
+
+报告至少含：`ID3v2` 版本（无标签时 `ID3v2: none`）；每个帧的 id、`enc=<n>`、raw hex、decoded、按 score 降序的候选（`label score(2位小数) text`）；ID3v1 的 title/artist/album；chosen 的 title/artist/album。
+
+### `src/core/migrate.js` — 乱码标签迁移
+
+```js
+export async function migrateGarbledTracks({ tracks, getFile, readMetadata, onProgress = () => {} })
+// → { changed: Track[], checked: number, failed: number }
+```
+
+- 只对 `isGarbledTrack(track)` 的曲目调用 `getFile(track.path)` + `readMetadata(file)`；`checked` 为可疑曲目数。
+- 单曲 `getFile`/`readMetadata` 抛错计入 `failed`，该曲目原样返回，不中断整体。
+- 合并规则：`title`/`artist`/`album` 新值非空才覆盖；`year`/`trackNo` 新值为有限数才覆盖；`duration` 新值 > 0 才覆盖；`cover` 新值非空才覆盖；`id`/`path`/`mtime`/`size`/`source`/`externalIds` 原样保留。
+- 每首完成调用 `onProgress({ done, total, changed, failed })`，`total` = 可疑曲目数；`changed` 只含字段实际变化的曲目。
 
 ### `src/core/scan.js`
 
@@ -236,9 +275,12 @@ export class Store extends EventTarget {
   source: { kind:'fsa'|'files', connected: false, permission:'none'|'granted'|'prompt'|'denied',
             name: '', error: null, scanning: false, progress: { done: 0, total: 0 } },
   settings: { vinylSpin: boolean },
-  updateReady: false
+  updateReady: false,
+  migration: { running: false, done: 0, total: 0, error: null }
 }
 ```
+
+`init()` 末尾以 `void this._maybeMigrateTags()` 启动后台迁移，**不 await**，不阻塞播放。触发条件：`meta.lastBuildVersion !== BUILD_VERSION` 且 `source.permission() === 'granted'`。迁移对可疑曲目重读标签（不可疑的不读文件），把字段实际变化的曲目 `putTracks` 写库并用同 id 覆盖 `state.tracks`（`sortTracks` 后），再 `_reconcileQueue([])`；每 5 首或最后一首 emit 一次进度。成功后写 `meta.lastBuildVersion = BUILD_VERSION`（可疑曲目为 0 也写）；任何异常写 `state.migration.error` 且**不写版本号**，下次启动重试；权限未授予时直接跳过且不写版本号。finally 里 `running = false` 并 emit。
 
 ### `src/core/selectors.js`
 
