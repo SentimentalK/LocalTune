@@ -60,6 +60,8 @@ test('loadSettings defaults a missing cache limit to 2 GiB', async () => {
     cacheLimitBytes: DEFAULT_LIMIT,
     youtubeApiKey: '',
     playlistProxyUrl: '',
+    leveling: false,
+    gapless: true,
   });
 });
 
@@ -73,12 +75,16 @@ test('every allowed cache limit survives a save/load round trip', async () => {
       cacheLimitBytes: bytes,
       youtubeApiKey: '',
       playlistProxyUrl: '',
+      leveling: false,
+      gapless: true,
     });
     assert.deepEqual(await loadSettings(db), {
       language: 'ja',
       cacheLimitBytes: bytes,
       youtubeApiKey: '',
       playlistProxyUrl: '',
+      leveling: false,
+      gapless: true,
     });
   }
 });
@@ -95,6 +101,8 @@ test('an invalid cache limit falls back to 2 GiB on load and on save', async () 
       cacheLimitBytes: DEFAULT_LIMIT,
       youtubeApiKey: '',
       playlistProxyUrl: '',
+      leveling: false,
+      gapless: true,
     });
     assert.equal((await loadSettings(db)).cacheLimitBytes, DEFAULT_LIMIT);
   }
@@ -106,6 +114,8 @@ test('an invalid cache limit falls back to 2 GiB on load and on save', async () 
       cacheLimitBytes: DEFAULT_LIMIT,
       youtubeApiKey: '',
       playlistProxyUrl: '',
+      leveling: false,
+      gapless: true,
     });
   }
 });
@@ -118,6 +128,8 @@ test('the language field keeps its old validation next to the cache limit', asyn
     cacheLimitBytes: 0,
     youtubeApiKey: '',
     playlistProxyUrl: '',
+    leveling: false,
+    gapless: true,
   });
 
   await saveSettings(db, { language: 'zh-TW', cacheLimitBytes: 512 * 1024 ** 2 });
@@ -126,6 +138,8 @@ test('the language field keeps its old validation next to the cache limit', asyn
     cacheLimitBytes: 512 * 1024 ** 2,
     youtubeApiKey: '',
     playlistProxyUrl: '',
+    leveling: false,
+    gapless: true,
   });
 });
 
@@ -152,6 +166,8 @@ test('the YouTube key and playlist proxy survive a save/load round trip', async 
     cacheLimitBytes: DEFAULT_LIMIT,
     youtubeApiKey: 'AIzaSyExample',
     playlistProxyUrl: 'https://proxy.example.com/playlist',
+    leveling: false,
+    gapless: true,
   });
   assert.deepEqual(storedSettings(rows), saved);
   assert.deepEqual(await loadSettings(db), saved);
@@ -180,6 +196,8 @@ test('the YouTube key and playlist proxy are cleaned when invalid', async () => 
     cacheLimitBytes: DEFAULT_LIMIT,
     youtubeApiKey: '',
     playlistProxyUrl: '',
+    leveling: false,
+    gapless: true,
   };
 
   await saveSettings(db, {
