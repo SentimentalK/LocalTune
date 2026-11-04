@@ -127,8 +127,9 @@ export class Store extends EventTarget {
 
     player.addEventListener('loaded', (event) => {
       const duration = Number(event.detail?.duration) || 0;
-      if (duration > 0) this._state.current.duration = duration;
+      this._adoptTrackDuration(duration);
       this._emit();
+      this._syncMediaSession(true);
     });
 
     player.addEventListener('ended', () => {
@@ -567,6 +568,28 @@ export class Store extends EventTarget {
         duration: track.duration || 0,
       };
     }
+  }
+
+  /**
+   * Write the duration measured by the audio element back onto the active
+   * Track. The same object is shared by state.tracks, queue.tracks and
+   * state.current, and the updated Track is persisted.
+   */
+  _adoptTrackDuration(duration) {
+    if (!(duration > 0)) return;
+    const track = this._state.current.track;
+    if (!track) return;
+    if (track.duration !== 0 && Math.abs(track.duration - duration) < 1) return;
+
+    const updated = { ...track, duration };
+    this._state.tracks = this._state.tracks.map((item) => (item.id === updated.id ? updated : item));
+    this.queue = {
+      ...this.queue,
+      tracks: this.queue.tracks.map((item) => (item.id === updated.id ? updated : item)),
+    };
+    this._state.current.duration = duration;
+    this._reflectQueue();
+    putTracks(this.db, [updated]).catch(() => {});
   }
 
   _reconcileQueue(removedIds = []) {
