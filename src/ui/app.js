@@ -68,11 +68,31 @@ function artNode(cover, className = 'art') {
   return node;
 }
 
-function emptyState({ title, text, actionLabel, onAction, note }) {
+function emptyState({
+  title,
+  text,
+  actionLabel,
+  onAction,
+  secondaryLabel,
+  onSecondary,
+  secondaryTestId,
+  note,
+}) {
   const children = [el('h2', { text: title }), el('p', { text })];
   if (actionLabel) {
     children.push(
       el('button', { class: 'btn-pill', type: 'button', text: actionLabel, onclick: onAction }),
+    );
+  }
+  if (secondaryLabel) {
+    children.push(
+      el('button', {
+        class: 'btn-pill ghost',
+        type: 'button',
+        text: secondaryLabel,
+        'data-testid': secondaryTestId,
+        onclick: onSecondary,
+      }),
     );
   }
   const notes = Array.isArray(note) ? note : note ? [note] : [];
@@ -263,7 +283,8 @@ function createShell(store, sw) {
     type: 'button',
     text: t('common.chooseFolder'),
     onclick: () => {
-      const permission = store.state.source.permission;
+      const local = store.state.sources.find((row) => row.id === 'local');
+      const permission = local?.permission ?? 'none';
       run(permission === 'prompt' ? store.requestSourcePermission() : store.connectSource());
     },
   });
@@ -465,7 +486,7 @@ export function mountUi(root, store, sw) {
     queueTracks: null,
     queueIndex: -1,
     cover: undefined,
-    permission: null,
+    permissions: null,
     installable: false,
   };
 
@@ -478,7 +499,7 @@ export function mountUi(root, store, sw) {
     last.queueTracks = null;
     last.queueIndex = -1;
     last.cover = undefined;
-    last.permission = null;
+    last.permissions = null;
     last.installable = false;
   }
 
@@ -555,15 +576,19 @@ export function mountUi(root, store, sw) {
   }
 
   function renderHeader(state) {
-    const { source } = state;
+    const rows = state.sources ?? [];
+    const local = rows.find((row) => row.id === 'local') ?? { permission: 'none', name: '' };
+    const onedrive = rows.find((row) => row.id === 'onedrive') ?? { permission: 'none', name: '' };
     const migration = state.migration;
+    const scanningRow = rows.find((row) => row.scanning) ?? null;
+
     if (migration?.running) {
       setText(
         ui.status,
         t('migration.progress', { done: migration.done ?? 0, total: migration.total ?? 0 }),
       );
-    } else if (source.scanning) {
-      const { done, total } = source.progress ?? { done: 0, total: 0 };
+    } else if (scanningRow) {
+      const { done, total } = scanningRow.progress ?? { done: 0, total: 0 };
       setText(
         ui.status,
         total > 0
@@ -575,38 +600,43 @@ export function mountUi(root, store, sw) {
     }
 
     setText(ui.count, t('common.trackCount', { count: state.tracks.length }));
-    const permission = source.permission;
-    setText(
-      ui.sourceName,
-      permission === 'granted'
-        ? source.name || t('common.connected')
-        : permission === 'prompt'
-          ? t('common.awaitingPermission')
-          : permission === 'denied'
-            ? t('common.permissionDenied')
-            : t('common.disconnected'),
-    );
-    setHidden(ui.authButton, permission === 'granted');
+
+    const granted = [local, onedrive].find((row) => row.permission === 'granted');
+    let nameText;
+    if (granted) nameText = granted.name || t('common.connected');
+    else if (local.permission === 'denied') nameText = t('common.permissionDenied');
+    else if (local.permission === 'prompt' || onedrive.permission === 'prompt') {
+      nameText = t('common.awaitingPermission');
+    } else nameText = t('common.disconnected');
+    setText(ui.sourceName, nameText);
+
+    setHidden(ui.authButton, local.permission === 'granted');
     setText(
       ui.authButton,
-      permission === 'none'
+      local.permission === 'none'
         ? t('common.chooseFolder')
-        : permission === 'prompt'
-          ? t('common.continueWith', { name: source.name || t('common.musicFolder') })
+        : local.permission === 'prompt'
+          ? t('common.continueWith', { name: local.name || t('common.musicFolder') })
           : t('common.reauthorize'),
     );
-    setHidden(ui.deniedHint, permission !== 'denied');
+    setHidden(ui.deniedHint, local.permission !== 'denied');
 
-    setHidden(ui.scan, !source.scanning);
-    if (source.scanning) {
-      const { done, total } = source.progress ?? { done: 0, total: 0 };
+    setHidden(ui.scan, !scanningRow);
+    if (scanningRow) {
+      const { done, total } = scanningRow.progress ?? { done: 0, total: 0 };
       const ratio = total > 0 ? Math.min(done / total, 1) : 0.12;
       ui.scanBar.style.width = `${Math.round(ratio * 100)}%`;
     }
 
-    const error = source.error;
+    const error = rows.find((row) => row.error)?.error ?? null;
     setHidden(ui.errorBox, !error);
     if (error) setText(ui.errorBox, typeof error === 'string' ? error : error.message ?? String(error));
+  }
+
+  function sourcePermission(state, track) {
+    const kind = track?.source === 'onedrive' ? 'onedrive' : 'local';
+    const row = (state.sources ?? []).find((item) => item.id === kind);
+    return row?.permission ?? 'none';
   }
 
   function renderPlayer(state) {
@@ -644,7 +674,7 @@ export function mountUi(root, store, sw) {
     }
     setHidden(ui.playIcon, playing);
     setHidden(ui.pauseIcon, !playing);
-    ui.playButton.disabled = !track || state.source.permission !== 'granted';
+    ui.playButton.disabled = !track || sourcePermission(state, track) !== 'granted';
 
     ui.shuffleButton.classList.toggle('is-on', queue.shuffle);
     ui.shuffleButton.setAttribute('aria-pressed', String(queue.shuffle));
@@ -669,10 +699,12 @@ export function mountUi(root, store, sw) {
   }
 
   function renderEmpty(state) {
-    const permission = state.source.permission;
-    const name = state.source.name || t('common.musicFolder');
-    if (permission !== 'granted') {
-      if (permission === 'denied') {
+    const local = state.sources.find((row) => row.id === 'local') ?? { permission: 'none', name: '' };
+    const anyGranted = state.sources.some((row) => row.permission === 'granted');
+    const name = local.name || t('common.musicFolder');
+
+    if (!anyGranted) {
+      if (local.permission === 'denied') {
         return emptyState({
           title: t('empty.deniedTitle'),
           text: t('empty.deniedText'),
@@ -680,7 +712,7 @@ export function mountUi(root, store, sw) {
           onAction: () => run(store.connectSource()),
         });
       }
-      if (permission === 'prompt') {
+      if (local.permission === 'prompt') {
         return emptyState({
           title: t('empty.promptTitle'),
           text: t('empty.promptText'),
@@ -694,13 +726,18 @@ export function mountUi(root, store, sw) {
         text: t('empty.chooseText'),
         actionLabel: t('common.chooseFolder'),
         onAction: () => run(store.connectSource()),
+        secondaryLabel: t('empty.onedriveAction'),
+        onSecondary: () => run(store.connectOneDrive()),
+        secondaryTestId: 'empty-onedrive',
       });
     }
+
+    const kind = local.permission === 'granted' ? 'local' : 'onedrive';
     return emptyState({
       title: t('empty.noTracksTitle'),
       text: t('empty.noTracksText'),
       actionLabel: t('empty.noTracksAction'),
-      onAction: () => run(store.rescan()),
+      onAction: () => run(store.rescan(kind)),
     });
   }
 
@@ -708,10 +745,11 @@ export function mountUi(root, store, sw) {
     if (state.view === 'settings') return;
     const currentId = state.current.track?.id ?? null;
     const queueView = state.view === 'queue';
+    const permissions = (state.sources ?? []).map((row) => row.permission).join(',');
     const rebuild =
       state.view !== last.view ||
       state.tracks !== last.tracks ||
-      state.source.permission !== last.permission ||
+      permissions !== last.permissions ||
       installPromptSeen !== last.installable ||
       currentId !== last.currentId ||
       (queueView &&
@@ -721,7 +759,7 @@ export function mountUi(root, store, sw) {
 
     last.view = state.view;
     last.tracks = state.tracks;
-    last.permission = state.source.permission;
+    last.permissions = permissions;
     last.installable = installPromptSeen;
     last.currentId = currentId;
     last.queueTracks = state.queue.tracks;
@@ -729,7 +767,7 @@ export function mountUi(root, store, sw) {
 
     syncCoverCache(state.tracks.map((track) => track.cover).filter(Boolean));
 
-    if (state.source.permission !== 'granted') {
+    if (!(state.sources ?? []).some((row) => row.permission === 'granted')) {
       ui.panel.replaceChildren(renderEmpty(state));
       return;
     }
