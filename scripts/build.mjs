@@ -89,6 +89,7 @@ async function main() {
   // Static PWA files.
   await cp(path.join(srcDir, 'manifest.webmanifest'), path.join(distDir, 'manifest.webmanifest'));
   await cp(path.join(srcDir, 'icons'), path.join(distDir, 'icons'), { recursive: true });
+  await cp(path.join(srcDir, 'well-known'), path.join(distDir, '.well-known'), { recursive: true });
 
   const icons = (await readdir(path.join(srcDir, 'icons')))
     .filter((name) => name.endsWith('.png'))
@@ -121,6 +122,20 @@ async function main() {
 
   // Catch a broken SW template during the build instead of in a browser.
   new vm.Script(sw, { filename: 'sw.js' });
+
+  // Microsoft domain association must ship as valid JSON with our app id.
+  const association = JSON.parse(
+    await readFile(
+      path.join(distDir, '.well-known', 'microsoft-identity-association.json'),
+      'utf8',
+    ),
+  );
+  if (
+    association?.associatedApplications?.[0]?.applicationId !==
+    '195e9ac7-6f9e-4a3c-bf09-42e0961c796a'
+  ) {
+    throw new Error('dist/.well-known/microsoft-identity-association.json is wrong');
+  }
   await writeFile(path.join(distDir, 'sw.js'), sw);
 
   console.log(`build ok  version=${version}`);

@@ -73,6 +73,15 @@ jobs:
           header /manifest.webmanifest 'content-type: application/manifest+json' \
             || { echo "/manifest.webmanifest MIME type is wrong"; exit 1; }
 
+          check /.well-known/microsoft-identity-association.json
+          header /.well-known/microsoft-identity-association.json 'content-type: application/json' \
+            || { echo ".well-known MIME type is wrong"; exit 1; }
+          curl -s http://localhost:8080/.well-known/microsoft-identity-association.json \
+            | grep -q '195e9ac7-6f9e-4a3c-bf09-42e0961c796a' \
+            || { echo ".well-known body is wrong"; exit 1; }
+          status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/.well-known/does-not-exist)
+          test "$status" = "404" || { echo "unknown .well-known path must 404, got $status"; exit 1; }
+
           ASSET=$(curl -s http://localhost:8080/ | grep -o '/assets/[^"]*\.js' | head -n 1)
           test -n "$ASSET" || { echo "no /assets/*.js referenced from /"; exit 1; }
           check "$ASSET"
