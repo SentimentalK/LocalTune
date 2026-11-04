@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { readMetadata } from '../src/core/metadata/index.js';
-import { parseId3 } from '../src/core/metadata/id3.js';
+import { parseId3, decodeLegacyText } from '../src/core/metadata/id3.js';
 import { parseMp4 } from '../src/core/metadata/mp4.js';
 
 const FIXTURES = new URL('./fixtures/', import.meta.url);
@@ -94,3 +94,65 @@ function uint32(bytes, offset) {
     ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0
   );
 }
+
+function legacyBytes(hex) {
+  return new Uint8Array(hex.match(/../g).map((byte) => Number.parseInt(byte, 16)));
+}
+
+test('decodeLegacyText keeps ASCII bytes and falls back to latin1', () => {
+  assert.equal(decodeLegacyText(new TextEncoder().encode('Plain Title')), 'Plain Title');
+  assert.equal(decodeLegacyText(legacyBytes('e9')), 'é');
+  assert.equal(decodeLegacyText(new Uint8Array(0)), '');
+});
+
+test('decodeLegacyText decodes GBK, Shift_JIS and Big5 payloads', () => {
+  assert.equal(decodeLegacyText(legacyBytes('d6dcbddcc2d7')), '周杰伦');
+  assert.equal(decodeLegacyText(legacyBytes('95c492c38cba8e74')), '米津玄師');
+  assert.equal(decodeLegacyText(legacyBytes('a4ada4eba4d1')), '五月天');
+  assert.equal(decodeLegacyText(new TextEncoder().encode('周杰伦')), '周杰伦');
+});
+
+test('mp3: encoding-0 GBK frames from Chinese sources', async () => {
+  const meta = await readMetadata(await fixtureFile('cjk-gbk-v2.mp3'));
+  assert.equal(meta.title, '周杰伦');
+  assert.equal(meta.artist, '七里香');
+  assert.equal(meta.album, '叶惠美');
+});
+
+test('mp3: encoding-0 Shift_JIS frames from Japanese sources', async () => {
+  const meta = await readMetadata(await fixtureFile('cjk-sjis-v2.mp3'));
+  assert.equal(meta.title, '米津玄師');
+  assert.equal(meta.artist, 'Lemon');
+  assert.equal(meta.album, 'STRAY SHEEP');
+});
+
+test('mp3: encoding-0 Big5 frames from Taiwanese sources', async () => {
+  const meta = await readMetadata(await fixtureFile('cjk-big5-v2.mp3'));
+  assert.equal(meta.title, '五月天');
+  assert.equal(meta.artist, '突然好想你');
+  assert.equal(meta.album, '後青春期的詩');
+});
+
+test('mp3: ID3v1-only file falls back to the ID3v1 tag', async () => {
+  const meta = await readMetadata(await fixtureFile('cjk-gbk-v1.mp3'));
+  assert.equal(meta.title, '周杰伦');
+  assert.equal(meta.artist, '七里香');
+  assert.equal(meta.album, '叶惠美');
+  assert.equal(meta.year, 2004);
+});
+
+test('mp3: encoding-0 UTF-8 frames and plain ASCII frames', async () => {
+  const utf8 = await readMetadata(await fixtureFile('cjk-utf8-v2.mp3'));
+  assert.equal(utf8.title, '周杰伦');
+  assert.equal(utf8.artist, '七里香');
+
+  const ascii = await readMetadata(await fixtureFile('ascii-v2.mp3'));
+  assert.equal(ascii.title, 'Plain Title');
+  assert.equal(ascii.artist, 'Plain Artist');
+  assert.equal(ascii.album, 'Plain Album');
+});
+
+test('mp3: ID3v1-only file still probes a positive duration', async () => {
+  const meta = await readMetadata(await fixtureFile('cjk-gbk-v1.mp3'));
+  assert.ok(meta.duration > 0, `duration ${meta.duration}`);
+});

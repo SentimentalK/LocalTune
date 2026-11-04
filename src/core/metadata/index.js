@@ -52,7 +52,8 @@ async function readId3(file) {
   }
   const readLength = Math.min(size, tagSize + ID3_PROBE_BYTES);
   const bytes = tagSize ? await readSlice(file, 0, readLength) : await readSlice(file, 0, Math.min(size, ID3_PROBE_BYTES));
-  return parseId3(bytes, { fileSize: size });
+  const tail = size >= 128 ? await readSlice(file, size - 128, size) : null;
+  return parseId3(bytes, { fileSize: size, ...(tail ? { tail } : {}) });
 }
 
 async function readMp4(file) {

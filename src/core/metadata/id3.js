@@ -67,11 +67,83 @@ function clean(value) {
     .replace(/^[\s\u3000\ufeff]+|[\s\u3000\ufeff]+$/g, '');
 }
 
+/** Candidate legacy labels, in preference order: ties keep the earlier one. */
+const LEGACY_LABELS = ['utf-8', 'shift_jis', 'gb18030', 'big5', 'euc-kr'];
+
+/** Share of decoded code points that are Hangul/CJK ideographs (kana counts half). */
+function legacyScore(text) {
+  let strong = 0;
+  let kana = 0;
+  let other = 0;
+  for (const char of text) {
+    const cp = char.codePointAt(0);
+    if (cp <= 0x7f) continue;
+    if (cp >= 0x3000 && cp <= 0x303f) continue; // CJK punctuation
+    // Half-width katakana (U+FF61-U+FF9F) appears when Chinese bytes are read
+    // single-byte by Shift_JIS, so treat it as evidence against the candidate
+    // instead of neutral full-width forms.
+    if (cp >= 0xff61 && cp <= 0xff9f) {
+      other += 1;
+      continue;
+    }
+    if (cp >= 0xff00 && cp <= 0xffef) continue; // fullwidth forms
+    if (cp >= 0x3040 && cp <= 0x30ff) kana += 1;
+    else if (
+      (cp >= 0xac00 && cp <= 0xd7af) ||
+      (cp >= 0x3400 && cp <= 0x9fff) ||
+      (cp >= 0xf900 && cp <= 0xfaff)
+    ) {
+      strong += 1;
+    } else {
+      other += 1;
+    }
+  }
+  return (strong + kana * 0.5) / Math.max(1, strong + kana + other);
+}
+
+/**
+ * Decode an ID3v2 encoding-0 text frame. Files in the wild store GBK,
+ * GB18030, Shift_JIS or Big5 bytes under that byte, so try the likely
+ * encodings and keep the one that looks most like CJK text.
+ * @param {Uint8Array} bytes
+ * @returns {string}
+ */
+export function decodeLegacyText(bytes) {
+  if (!bytes || !bytes.length) return '';
+  let ascii = true;
+  for (let i = 0; i < bytes.length; i += 1) {
+    if (bytes[i] >= 0x80) {
+      ascii = false;
+      break;
+    }
+  }
+  if (ascii) return clean(latin1(bytes, 0, bytes.length));
+
+  let best = '';
+  let bestScore = 0;
+  for (const label of LEGACY_LABELS) {
+    let text;
+    try {
+      text = new TextDecoder(label, { fatal: true }).decode(bytes);
+    } catch {
+      continue;
+    }
+    if (text.includes('\uFFFD')) continue;
+    const score = legacyScore(text);
+    if (score > bestScore) {
+      best = text;
+      bestScore = score;
+    }
+  }
+  if (!best || bestScore < 0.5) return clean(latin1(bytes, 0, bytes.length));
+  return clean(best);
+}
+
 function decodeText(bytes, offset, end, encoding) {
   if (offset >= end) return '';
   switch (encoding) {
     case 0:
-      return clean(latin1(bytes, offset, end));
+      return decodeLegacyText(bytes.subarray(offset, end));
     case 1: {
       if (end - offset < 2) return '';
       const bom = uint16(bytes, offset);
@@ -201,11 +273,41 @@ function xingFrameCount(bytes, header, frameOffset) {
 }
 
 /**
+ * Parse an ID3v1 tag. Accepts the final 128 bytes or a whole file buffer.
  * @param {Uint8Array} bytes
- * @param {{fileSize?: number}} [options]
+ * @returns {{title?:string,artist?:string,album?:string,year?:number}}
+ */
+export function parseId3v1(bytes) {
+  const meta = {};
+  if (!bytes || bytes.length < 128) return meta;
+  const start = bytes.length - 128;
+  if (ascii(bytes, start, 3) !== 'TAG') return meta;
+
+  const field = (offset, length) => {
+    const from = start + offset;
+    let to = from + length;
+    while (to > from && (bytes[to - 1] === 0x00 || bytes[to - 1] === 0x20)) to -= 1;
+    return decodeLegacyText(bytes.subarray(from, to));
+  };
+
+  const title = field(3, 30);
+  const artist = field(33, 30);
+  const album = field(63, 30);
+  if (title) meta.title = title;
+  if (artist) meta.artist = artist;
+  if (album) meta.album = album;
+
+  const year = ascii(bytes, start + 93, 4).trim();
+  if (/^\d{4}$/.test(year)) meta.year = Number(year);
+  return meta;
+}
+
+/**
+ * @param {Uint8Array} bytes
+ * @param {{fileSize?: number, tail?: Uint8Array}} [options]
  * @returns {{title?:string,artist?:string,album?:string,year?:number|null,trackNo?:number|null,duration?:number,cover?:Blob|null}}
  */
-export function parseId3(bytes, { fileSize = bytes?.byteLength ?? 0 } = {}) {
+export function parseId3(bytes, { fileSize = bytes?.byteLength ?? 0, tail } = {}) {
   const meta = {};
   if (!bytes || bytes.length < 4) return meta;
 
@@ -286,5 +388,12 @@ export function parseId3(bytes, { fileSize = bytes?.byteLength ?? 0 } = {}) {
       meta.duration = ((fileSize - offset) * 8) / (header.bitrate * 1000);
     }
   }
+
+  const tailBytes = tail ?? (bytes.length >= 128 ? bytes.subarray(bytes.length - 128) : null);
+  const legacy = tailBytes ? parseId3v1(tailBytes) : {};
+  if (!meta.title && legacy.title) meta.title = legacy.title;
+  if (!meta.artist && legacy.artist) meta.artist = legacy.artist;
+  if (!meta.album && legacy.album) meta.album = legacy.album;
+  if (meta.year == null && legacy.year != null) meta.year = legacy.year;
   return meta;
 }

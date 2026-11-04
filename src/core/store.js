@@ -355,6 +355,95 @@ export class Store extends EventTarget {
     }
   }
 
+  async rescanTags() {
+    if (this._scanning) return;
+    this._scanning = true;
+    const tracks = this._state.tracks;
+    this._state.source = {
+      ...this._state.source,
+      scanning: true,
+      progress: { done: 0, total: tracks.length },
+    };
+    this._emit();
+
+    if (this.source.permission() !== 'granted') {
+      const granted = await this.source.ensurePermission().catch(() => false);
+      if (!granted) {
+        this._state.source = {
+          ...this._state.source,
+          connected: this.source.permission() !== 'none',
+          permission: this.source.permission(),
+          scanning: false,
+          progress: { done: 0, total: 0 },
+          error: '需要目录读取权限',
+        };
+        this._scanning = false;
+        this._emit();
+        return;
+      }
+      this._state.source = { ...this._state.source, permission: 'granted' };
+    }
+
+    try {
+      const updated = [];
+      const changed = [];
+      let done = 0;
+      for (const track of tracks) {
+        try {
+          const file = await this.source.getFile(track.path);
+          const meta = await readMetadata(file);
+          const hasMeta =
+            Boolean(meta.title) ||
+            Boolean(meta.artist) ||
+            Boolean(meta.album) ||
+            meta.year != null ||
+            meta.trackNo != null ||
+            meta.duration > 0 ||
+            Boolean(meta.cover);
+          if (hasMeta) {
+            const next = buildTrack(
+              { path: track.path, file, mtime: track.mtime, size: track.size },
+              { ...meta, duration: meta.duration > 0 ? meta.duration : track.duration },
+            );
+            updated.push(next);
+            changed.push(next);
+          } else {
+            updated.push(track);
+          }
+        } catch {
+          updated.push(track);
+        }
+        done += 1;
+        this._state.source = {
+          ...this._state.source,
+          progress: { done, total: tracks.length },
+        };
+        if (done % 25 === 0 || done === tracks.length) this._emit();
+      }
+
+      this._state.tracks = updated;
+      if (changed.length) await putTracks(this.db, changed);
+      this._reconcileQueue([]);
+      this._state.source = {
+        ...this._state.source,
+        scanning: false,
+        progress: { done: 0, total: 0 },
+      };
+      this._emit();
+      this._savePlayback();
+    } catch (error) {
+      this._state.source = {
+        ...this._state.source,
+        scanning: false,
+        progress: { done: 0, total: 0 },
+        error: errorMessage(error),
+      };
+      this._emit();
+    } finally {
+      this._scanning = false;
+    }
+  }
+
   setView(view) {
     if (!VIEWS.has(view)) return;
     this._state.view = view;
