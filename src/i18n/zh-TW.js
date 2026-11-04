@@ -135,6 +135,11 @@ export default {
   'settings.background.stock2': '應用程式電池用量 → 不受限制',
   'settings.background.stock3':
     '備選：設定 → 應用程式 → 特殊應用程式存取權 → 電池最佳化 → Chrome → 不最佳化',
+  'settings.background.iosTitle': '在 iOS 上安裝',
+  'settings.background.iosHint': 'iOS 需加入主畫面才能背景播放。',
+  'settings.background.ios1': '在 Safari 點分享',
+  'settings.background.ios2': '選「加入主畫面」',
+  'settings.background.ios3': '從主畫面開啟',
   'settings.storage.title': '儲存空間',
   'settings.storage.index': '索引',
   'settings.storage.cover': '封面',

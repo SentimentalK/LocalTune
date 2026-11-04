@@ -414,6 +414,18 @@ export function createSettingsView(store, sw) {
   setHidden(batteryButton, !isAndroid);
   setHidden(batteryDesktop, isAndroid);
 
+  const ua = globalThis.navigator?.userAgent ?? '';
+  const isIos =
+    /iPad|iPhone|iPod/.test(ua) ||
+    (ua.includes('Macintosh') && (globalThis.navigator?.maxTouchPoints ?? 0) > 1);
+  const iosGuide = el('div', { 'data-testid': 'ios-install-guide' }, [
+    el('h4', { text: t('settings.background.iosTitle') }),
+    el('p', { class: 'muted', text: t('settings.background.iosHint') }),
+    el('ol', { class: 'tag-report' }, [1, 2, 3].map((step) =>
+      el('li', { 'data-testid': `ios-step-${step}`, text: t(`settings.background.ios${step}`) }),
+    )),
+  ]);
+
   const backgroundCard = el(
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-background' },
@@ -424,6 +436,7 @@ export function createSettingsView(store, sw) {
       el('div', { class: 'settings-actions' }, [installButton]),
       batteryButton,
       batteryDesktop,
+      iosGuide,
     ],
   );
 
@@ -1127,6 +1140,7 @@ export function createSettingsView(store, sw) {
     setText(installStatus, t(installKey));
     setHidden(installHint, install.status === 'installed');
     setHidden(installButton, install.status !== 'installable');
+    setHidden(iosGuide, !isIos || install.status === 'installed');
 
     const onedrive = rows.find((row) => row.id === 'onedrive') ?? {
       permission: 'none',
