@@ -251,6 +251,7 @@ export default {
   'playlists.empty': '還沒有歌單。可以從文字或連結匯入一個。',
   'playlists.emptyTracks': '還沒有對應到曲目，無法播放',
   'playlists.counts': '已配對 {matched} · 待確認 {suspect} · 缺少 {missing}',
+  'playlists.rematchAdded': '補齊 {count} 首',
   'playlists.play': '播放',
   'playlists.open': '開啟',
   'playlists.delete': '刪除',

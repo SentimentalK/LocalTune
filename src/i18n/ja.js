@@ -262,6 +262,7 @@ export default {
   'playlists.empty': 'プレイリストはまだありません。テキストかリンクから読み込めます。',
   'playlists.emptyTracks': 'まだ曲が一致していないため再生できません',
   'playlists.counts': '一致 {matched} · 要確認 {suspect} · 未一致 {missing}',
+  'playlists.rematchAdded': '未一致の {count} 曲を補完しました',
   'playlists.play': '再生',
   'playlists.open': '開く',
   'playlists.delete': '削除',

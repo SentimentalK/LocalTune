@@ -33,6 +33,10 @@ const SEEK_STEP = 5;
 // Installability is only observable through the event; the app never prompts.
 let installPromptSeen = false;
 
+// The rematch notice is cleared as soon as it is shown, so a re-render with the
+// same count must stay quiet. 0 means no notice is pending.
+let lastRematchAdded = 0;
+
 function isInstalled() {
   if (typeof window === 'undefined') return false;
   if (typeof window.matchMedia === 'function') {
@@ -1036,6 +1040,19 @@ export function mountUi(root, store, sw) {
     setHidden(ui.settingsHost, !settings);
     setHidden(ui.settingsButton, settings);
     setHidden(ui.updateBanner, !state.updateReady);
+
+    // rescan() re-matched missing playlist rows: announce the count once and
+    // clear the notice so the next render does not repeat it.
+    const rematchAdded = Number(state.rematch?.added) || 0;
+    if (rematchAdded > 0) {
+      if (rematchAdded !== lastRematchAdded) {
+        lastRematchAdded = rematchAdded;
+        showToast(t('playlists.rematchAdded', { count: rematchAdded }));
+      }
+      store.clearRematchNotice();
+    } else {
+      lastRematchAdded = 0;
+    }
   }
 
   function remount() {
