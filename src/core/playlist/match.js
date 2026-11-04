@@ -4,16 +4,44 @@
  * edit-distance blend and flags likely wrong-version hits by artist and
  * duration. No DOM, no storage, no network.
  */
-import { T2S_PAIRS } from './t2s-table.js';
 
-const T2S = (() => {
-  const map = new Map();
-  for (const pair of T2S_PAIRS.split(' ')) {
-    const [traditional, simplified] = Array.from(pair);
-    if (traditional && simplified) map.set(traditional, simplified);
+/**
+ * Traditional -> simplified table, loaded on demand. It is ~21 KB gzipped, so it
+ * is kept out of the first-load bundle: `matchItem`/`matchPlaylist` await
+ * `ensureNormalizer()` (which `import()`s the table into its own chunk), while
+ * the synchronous normalizers still work as identity-only until then.
+ */
+let T2S = new Map();
+let loading = null;
+
+/**
+ * Load the traditional/simplified table once. Idempotent: a loaded table
+ * returns immediately and concurrent callers share one `import()`. A failed
+ * load clears the cached promise so the next call retries.
+ */
+export async function ensureNormalizer() {
+  if (T2S.size > 0) return;
+  loading ??= import('./t2s-table.js').then(({ T2S_PAIRS }) => {
+    const map = new Map();
+    for (const pair of T2S_PAIRS.split(' ')) {
+      const [traditional, simplified] = Array.from(pair);
+      if (traditional && simplified) map.set(traditional, simplified);
+    }
+    if (!map.size) throw new Error('t2s table empty');
+    T2S = map;
+  });
+  try {
+    await loading;
+  } catch (error) {
+    loading = null;
+    throw error;
   }
-  return map;
-})();
+}
+
+/** True once the table is in memory; until then normalization leaves hanzi as-is. */
+export function isNormalizerLoaded() {
+  return T2S.size > 0;
+}
 
 /** Bracket contents that mark a version/source annotation rather than a title. */
 const VERSION_RE =
@@ -191,8 +219,12 @@ function durationOf(item) {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }
 
-/** Best match for one playlist item, with wrong-version suspicions. */
-export function matchItem(item, tracks, options = {}) {
+/**
+ * Best match for one playlist item, with wrong-version suspicions. Async so the
+ * hanzi table can load on demand; the matching itself is synchronous.
+ */
+export async function matchItem(item, tracks, options = {}) {
+  await ensureNormalizer();
   const threshold = options?.threshold ?? 0.8;
   const durationToleranceMs = options?.durationToleranceMs ?? 15000;
   const source = item ?? {};
@@ -248,7 +280,8 @@ export function matchItem(item, tracks, options = {}) {
 }
 
 /** Match every item in order; the result has the same length as `items`. */
-export function matchPlaylist(items, tracks, options = {}) {
+export async function matchPlaylist(items, tracks, options = {}) {
+  await ensureNormalizer();
   const list = Array.isArray(items) ? items : [];
-  return list.map((item) => matchItem(item, tracks, options));
+  return Promise.all(list.map((item) => matchItem(item, tracks, options)));
 }

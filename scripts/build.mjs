@@ -36,35 +36,64 @@ function toUrl(file) {
   return './' + path.relative(distDir, file).split(path.sep).join('/');
 }
 
-/** Output file of an esbuild build, relative to the output dir. */
-function outputOf(result, extension) {
-  const files = Object.keys(result.metafile.outputs).filter((file) =>
-    file.endsWith(extension),
-  );
+/**
+ * Output file of one entry, relative to the output dir. A split build also
+ * emits chunks; only entry outputs carry `entryPoint` in the metafile.
+ */
+function outputOf(result, extension, entry) {
+  const wanted = path.resolve(srcDir, entry);
+  const files = Object.entries(result.metafile.outputs)
+    .filter(
+      ([file, meta]) =>
+        file.endsWith(extension) &&
+        meta.entryPoint &&
+        path.resolve(meta.entryPoint) === wanted,
+    )
+    .map(([file]) => toUrl(path.resolve(root, file)));
   if (files.length !== 1) {
     throw new Error(
-      `expected exactly one ${extension} output, got ${files.length}: ${files.join(', ')}`,
+      `expected exactly one ${extension} entry output for ${entry}, got ${files.length}: ${files.join(', ')}`,
     );
   }
-  return toUrl(path.resolve(root, files[0]));
+  return files[0];
 }
 
-async function bundle(entry, extension, loader = 'js', define = {}) {
+/** Every JS output (entry + split chunks) as relative URLs, sorted for stable precaching. */
+function outputUrls(result, extension) {
+  return Object.keys(result.metafile.outputs)
+    .filter((file) => file.endsWith(extension))
+    .map((file) => toUrl(path.resolve(root, file)))
+    .sort();
+}
+
+async function bundle(entries, extension, loader = 'js', define = {}) {
+  const entryPoints = Object.fromEntries(
+    Object.entries(entries).map(([name, file]) => [name, path.join(srcDir, file)]),
+  );
   const result = await build({
-    entryPoints: { [path.basename(entry, path.extname(entry))]: path.join(srcDir, entry) },
+    entryPoints,
     outdir: distDir,
     entryNames: 'assets/[name]-[hash]',
+    chunkNames: 'assets/[name]-[hash]',
     bundle: true,
     minify: true,
+    // Only the JS build splits: `import('./t2s-table.js')` becomes a lazy chunk.
+    splitting: extension === '.js',
     format: extension === '.js' ? 'esm' : undefined,
     target: 'es2022',
+    // Keep CJK table/i18n text as UTF-8 instead of \u escapes: smaller gzip
+    // and the lazy table stays greppable in dist/.
+    charset: 'utf8',
     legalComments: 'none',
     loader: loader === 'js' ? {} : { [`.${loader}`]: loader },
     define,
     metafile: true,
     logLevel: 'silent',
   });
-  return outputOf(result, extension);
+  const urls = Object.fromEntries(
+    Object.keys(entries).map((name) => [name, outputOf(result, extension, entries[name])]),
+  );
+  return { urls, outputs: outputUrls(result, extension) };
 }
 
 /** Version of the build: hash of every source file plus the optional label. */
@@ -102,12 +131,29 @@ async function main() {
   await rm(distDir, { recursive: true, force: true });
   await mkdir(path.join(distDir, 'assets'), { recursive: true });
 
-  const jsUrl = await bundle('main.js', '.js', 'js', define);
-  const cssUrl = await bundle('styles.css', '.css', 'css', define);
+  // `t2s-table` is also declared as an entry (not only reached via the dynamic
+  // import in match.js) so the lazy table always ships as its own file, even
+  // while no UI imports the matcher yet.
+  const js = await bundle(
+    { main: 'main.js', 't2s-table': 'core/playlist/t2s-table.js' },
+    '.js',
+    'js',
+    define,
+  );
+  const css = await bundle({ styles: 'styles.css' }, '.css', 'css', define);
+  const jsUrl = js.urls.main;
+  const cssUrl = css.urls.styles;
 
   const jsPath = path.join(distDir, jsUrl);
   const cssPath = path.join(distDir, cssUrl);
   const [jsBytes, cssBytes] = await Promise.all([readFile(jsPath), readFile(cssPath)]);
+
+  // Lazy chunks are not referenced from index.html, so they are listed here:
+  // every JS output goes into the precache list, not just the entry.
+  const chunks = js.outputs.filter((url) => url !== jsUrl);
+  const chunkSizes = await Promise.all(
+    chunks.map(async (url) => [url, (await readFile(path.join(distDir, url))).length]),
+  );
 
   // Templates are read up front so a broken one fails before esbuild work.
   const template = await readFile(path.join(srcDir, 'index.html'), 'utf8');
@@ -139,6 +185,7 @@ async function main() {
     './',
     './index.html',
     jsUrl,
+    ...chunks,
     cssUrl,
     './manifest.webmanifest',
     ...icons.map((name) => `./icons/${name}`),
@@ -179,6 +226,7 @@ async function main() {
 
   console.log(`build ok  version=${version}`);
   console.log(`  ${jsUrl}  ${jsBytes.length} B`);
+  for (const [url, bytes] of chunkSizes) console.log(`  ${url}  ${bytes} B  (lazy chunk)`);
   console.log(`  ${cssUrl}  ${cssBytes.length} B`);
   console.log(`  precache: ${precache.length} entries`);
 }

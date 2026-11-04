@@ -9,8 +9,14 @@ import {
   similarity,
   matchItem,
   matchPlaylist,
+  ensureNormalizer,
+  isNormalizerLoaded,
 } from '../src/core/playlist/match.js';
 import { T2S_PAIRS } from '../src/core/playlist/t2s-table.js';
+
+// The hanzi table is a lazy chunk; load it once before the suite so the
+// synchronous normalizers below see traditional characters.
+await ensureNormalizer();
 
 const EPSILON = 1e-12;
 
@@ -246,20 +252,20 @@ test('similarity normalizes traditional and simplified titles', () => {
 
 // --- matchItem -----------------------------------------------------------
 
-test('matchItem matches an exact title', () => {
-  const result = matchItem({ title: 'Hello' }, [track('t1', 'Hello')]);
+test('matchItem matches an exact title', async () => {
+  const result = await matchItem({ title: 'Hello' }, [track('t1', 'Hello')]);
   assert.deepEqual(result, { status: 'matched', trackId: 't1', score: 1, reasons: [] });
 });
 
-test('matchItem ignores case and typographic apostrophes', () => {
-  const result = matchItem({ title: 'Don’t Stop' }, [track('t1', "DON'T STOP")]);
+test('matchItem ignores case and typographic apostrophes', async () => {
+  const result = await matchItem({ title: 'Don’t Stop' }, [track('t1', "DON'T STOP")]);
   assert.equal(result.status, 'matched');
   assert.equal(result.trackId, 't1');
   assert.equal(result.score, 1);
 });
 
-test('matchItem matches a traditional playlist title against a simplified library', () => {
-  const result = matchItem(
+test('matchItem matches a traditional playlist title against a simplified library', async () => {
+  const result = await matchItem(
     { title: '給我一個理由忘記', artist: '陳奕迅' },
     [track('t1', '给我一个理由忘记', { artist: '陈奕迅', duration: 238 })],
   );
@@ -267,20 +273,20 @@ test('matchItem matches a traditional playlist title against a simplified librar
   assert.equal(result.trackId, 't1');
 });
 
-test('matchItem matches full-width playlist text', () => {
-  const result = matchItem({ title: 'Ｌｉｖｅ　Ａｃｏｕｓｔｉｃ' }, [track('t1', 'Live Acoustic')]);
+test('matchItem matches full-width playlist text', async () => {
+  const result = await matchItem({ title: 'Ｌｉｖｅ　Ａｃｏｕｓｔｉｃ' }, [track('t1', 'Live Acoustic')]);
   assert.equal(result.status, 'matched');
   assert.equal(result.trackId, 't1');
 });
 
-test('matchItem matches a title against a library title with a live suffix', () => {
-  const result = matchItem({ title: '夜に駆ける' }, [track('t1', '夜に駆ける (Official Video)')]);
+test('matchItem matches a title against a library title with a live suffix', async () => {
+  const result = await matchItem({ title: '夜に駆ける' }, [track('t1', '夜に駆ける (Official Video)')]);
   assert.equal(result.status, 'matched');
   assert.equal(result.trackId, 't1');
 });
 
-test('matchItem tolerates a different feat order', () => {
-  const result = matchItem(
+test('matchItem tolerates a different feat order', async () => {
+  const result = await matchItem(
     { title: 'Song feat. B', artist: 'A feat. B' },
     [track('t1', 'Song', { artist: 'B feat. A' })],
   );
@@ -288,30 +294,30 @@ test('matchItem tolerates a different feat order', () => {
   assert.deepEqual(result.reasons, []);
 });
 
-test('matchItem matches when the library credit is one of the collaborators', () => {
-  const result = matchItem({ title: 'Song', artist: 'A feat. B' }, [track('t1', 'Song', { artist: 'B' })]);
+test('matchItem matches when the library credit is one of the collaborators', async () => {
+  const result = await matchItem({ title: 'Song', artist: 'A feat. B' }, [track('t1', 'Song', { artist: 'B' })]);
   assert.equal(result.status, 'matched');
   assert.deepEqual(result.reasons, []);
 });
 
-test('matchItem marks a different artist as suspect', () => {
-  const result = matchItem(
+test('matchItem marks a different artist as suspect', async () => {
+  const result = await matchItem(
     { title: 'Song', artist: 'A' },
     [track('t1', 'Song', { artist: 'B', duration: 200 })],
   );
   assert.deepEqual(result, { status: 'suspect', trackId: 't1', score: 1, reasons: ['artist'] });
 });
 
-test('matchItem marks a 16000 ms duration gap as suspect', () => {
-  const result = matchItem(
+test('matchItem marks a 16000 ms duration gap as suspect', async () => {
+  const result = await matchItem(
     { title: 'Song', artist: 'A', durationMs: 216000 },
     [track('t1', 'Song', { artist: 'A', duration: 200 })],
   );
   assert.deepEqual(result, { status: 'suspect', trackId: 't1', score: 1, reasons: ['duration'] });
 });
 
-test('matchItem reports artist then duration when both are off', () => {
-  const result = matchItem(
+test('matchItem reports artist then duration when both are off', async () => {
+  const result = await matchItem(
     { title: 'Song', artist: 'A', durationMs: 260000 },
     [track('t1', 'Song', { artist: 'B', duration: 200 })],
   );
@@ -319,8 +325,8 @@ test('matchItem reports artist then duration when both are off', () => {
   assert.equal(result.status, 'suspect');
 });
 
-test('matchItem accepts a 14000 ms duration gap', () => {
-  const result = matchItem(
+test('matchItem accepts a 14000 ms duration gap', async () => {
+  const result = await matchItem(
     { title: 'Song', artist: 'A', durationMs: 214000 },
     [track('t1', 'Song', { artist: 'A', duration: 200 })],
   );
@@ -328,8 +334,8 @@ test('matchItem accepts a 14000 ms duration gap', () => {
   assert.deepEqual(result.reasons, []);
 });
 
-test('matchItem accepts exactly a 15000 ms duration gap', () => {
-  const result = matchItem(
+test('matchItem accepts exactly a 15000 ms duration gap', async () => {
+  const result = await matchItem(
     { title: 'Song', artist: 'A', durationMs: 215000 },
     [track('t1', 'Song', { artist: 'A', duration: 200 })],
   );
@@ -337,16 +343,16 @@ test('matchItem accepts exactly a 15000 ms duration gap', () => {
   assert.deepEqual(result.reasons, []);
 });
 
-test('matchItem flags 15001 ms as a duration suspect', () => {
-  const result = matchItem(
+test('matchItem flags 15001 ms as a duration suspect', async () => {
+  const result = await matchItem(
     { title: 'Song', artist: 'A', durationMs: 215001 },
     [track('t1', 'Song', { artist: 'A', duration: 200 })],
   );
   assert.deepEqual(result.reasons, ['duration']);
 });
 
-test('matchItem ignores a null playlist duration', () => {
-  const result = matchItem(
+test('matchItem ignores a null playlist duration', async () => {
+  const result = await matchItem(
     { title: 'Song', artist: 'A', durationMs: null },
     [track('t1', 'Song', { artist: 'A', duration: 400 })],
   );
@@ -354,8 +360,8 @@ test('matchItem ignores a null playlist duration', () => {
   assert.deepEqual(result.reasons, []);
 });
 
-test('matchItem ignores an unknown library duration', () => {
-  const result = matchItem(
+test('matchItem ignores an unknown library duration', async () => {
+  const result = await matchItem(
     { title: 'Song', artist: 'A', durationMs: 200000 },
     [track('t1', 'Song', { artist: 'A', duration: 0 })],
   );
@@ -363,14 +369,14 @@ test('matchItem ignores an unknown library duration', () => {
   assert.deepEqual(result.reasons, []);
 });
 
-test('matchItem ignores a missing artist on the playlist side', () => {
-  const result = matchItem({ title: 'Song' }, [track('t1', 'Song', { artist: 'Anyone' })]);
+test('matchItem ignores a missing artist on the playlist side', async () => {
+  const result = await matchItem({ title: 'Song' }, [track('t1', 'Song', { artist: 'Anyone' })]);
   assert.equal(result.status, 'matched');
   assert.deepEqual(result.reasons, []);
 });
 
-test('matchItem picks the closest duration among equal scores', () => {
-  const result = matchItem(
+test('matchItem picks the closest duration among equal scores', async () => {
+  const result = await matchItem(
     { title: 'Song', artist: 'A', durationMs: 230000 },
     [track('short', 'Song', { artist: 'A', duration: 200 }), track('long', 'Song', { artist: 'A', duration: 240 })],
   );
@@ -378,16 +384,16 @@ test('matchItem picks the closest duration among equal scores', () => {
   assert.equal(result.status, 'matched');
 });
 
-test('matchItem keeps the first track when score and duration gap tie', () => {
-  const result = matchItem(
+test('matchItem keeps the first track when score and duration gap tie', async () => {
+  const result = await matchItem(
     { title: 'Song', artist: 'A', durationMs: 200000 },
     [track('early', 'Song', { artist: 'A', duration: 190 }), track('late', 'Song', { artist: 'A', duration: 210 })],
   );
   assert.equal(result.trackId, 'early');
 });
 
-test('matchItem prefers the higher score over a closer duration', () => {
-  const result = matchItem(
+test('matchItem prefers the higher score over a closer duration', async () => {
+  const result = await matchItem(
     { title: 'Song', artist: 'A', durationMs: 100000 },
     [track('close', 'Song - Single', { artist: 'A', duration: 100 }), track('far', 'Song', { artist: 'A', duration: 300 })],
   );
@@ -395,13 +401,13 @@ test('matchItem prefers the higher score over a closer duration', () => {
   assert.equal(result.trackId, 'close');
 });
 
-test('matchItem reports missing when nothing clears the threshold', () => {
-  const result = matchItem({ title: 'hello world' }, [track('t1', 'hello there')]);
+test('matchItem reports missing when nothing clears the threshold', async () => {
+  const result = await matchItem({ title: 'hello world' }, [track('t1', 'hello there')]);
   assert.deepEqual(result, { status: 'missing', trackId: null, score: 0, reasons: [] });
 });
 
-test('matchItem reports missing for an empty library', () => {
-  assert.deepEqual(matchItem({ title: 'Song' }, []), {
+test('matchItem reports missing for an empty library', async () => {
+  assert.deepEqual(await matchItem({ title: 'Song' }, []), {
     status: 'missing',
     trackId: null,
     score: 0,
@@ -409,20 +415,20 @@ test('matchItem reports missing for an empty library', () => {
   });
 });
 
-test('matchItem honours a custom threshold', () => {
+test('matchItem honours a custom threshold', async () => {
   const tracks = [track('t1', 'hello there')];
-  assert.equal(matchItem({ title: 'hello world' }, tracks, { threshold: 0.4 }).status, 'matched');
-  assert.equal(matchItem({ title: 'hello world' }, tracks, { threshold: 0.9 }).status, 'missing');
+  assert.equal((await matchItem({ title: 'hello world' }, tracks, { threshold: 0.4 })).status, 'matched');
+  assert.equal((await matchItem({ title: 'hello world' }, tracks, { threshold: 0.9 })).status, 'missing');
 });
 
-test('matchItem uses the default 0.8 threshold', () => {
+test('matchItem uses the default 0.8 threshold', async () => {
   const close = [track('t1', 'a b c d e f g x')];
-  assert.equal(matchItem({ title: 'a b c d e f g h' }, close).status, 'matched');
-  assert.equal(matchItem({ title: 'a b c d e f g h' }, close, { threshold: 0.9 }).status, 'missing');
+  assert.equal((await matchItem({ title: 'a b c d e f g h' }, close)).status, 'matched');
+  assert.equal((await matchItem({ title: 'a b c d e f g h' }, close, { threshold: 0.9 })).status, 'missing');
 });
 
-test('matchItem skips a track that scores just under the threshold', () => {
-  const result = matchItem({ title: 'a b c d e f g h' }, [
+test('matchItem skips a track that scores just under the threshold', async () => {
+  const result = await matchItem({ title: 'a b c d e f g h' }, [
     track('low', 'a b c d e f g z z'),
     track('high', 'a b c d e f g h (Remastered)'),
   ]);
@@ -430,20 +436,20 @@ test('matchItem skips a track that scores just under the threshold', () => {
   assert.equal(result.score, 1);
 });
 
-test('matchItem honours a custom duration tolerance', () => {
+test('matchItem honours a custom duration tolerance', async () => {
   const item = { title: 'Song', artist: 'A', durationMs: 220000 };
   const tracks = [track('t1', 'Song', { artist: 'A', duration: 200 })];
-  assert.equal(matchItem(item, tracks, { durationToleranceMs: 20000 }).status, 'matched');
-  assert.equal(matchItem(item, tracks, { durationToleranceMs: 25000 }).status, 'matched');
-  assert.equal(matchItem(item, tracks, { durationToleranceMs: 1000 }).status, 'suspect');
+  assert.equal((await matchItem(item, tracks, { durationToleranceMs: 20000 })).status, 'matched');
+  assert.equal((await matchItem(item, tracks, { durationToleranceMs: 25000 })).status, 'matched');
+  assert.equal((await matchItem(item, tracks, { durationToleranceMs: 1000 })).status, 'suspect');
 });
 
 // --- matchPlaylist -------------------------------------------------------
 
-test('matchPlaylist keeps length and order', () => {
+test('matchPlaylist keeps length and order', async () => {
   const items = [{ title: 'A' }, { title: 'Unknown' }, { title: 'C' }];
   const tracks = [track('a', 'A'), track('c', 'C')];
-  const results = matchPlaylist(items, tracks);
+  const results = await matchPlaylist(items, tracks);
   assert.equal(results.length, items.length);
   assert.deepEqual(
     results.map((result) => result.trackId),
@@ -455,14 +461,14 @@ test('matchPlaylist keeps length and order', () => {
   );
 });
 
-test('matchPlaylist returns all missing for an empty library', () => {
-  const results = matchPlaylist([{ title: 'A' }, { title: 'B' }], []);
+test('matchPlaylist returns all missing for an empty library', async () => {
+  const results = await matchPlaylist([{ title: 'A' }, { title: 'B' }], []);
   assert.equal(results.length, 2);
   assert.ok(results.every((result) => result.status === 'missing' && result.trackId === null));
 });
 
-test('matchPlaylist forwards options to every item', () => {
-  const results = matchPlaylist(
+test('matchPlaylist forwards options to every item', async () => {
+  const results = await matchPlaylist(
     [{ title: 'hello world' }, { title: 'hello there' }],
     [track('t1', 'hello there')],
     { threshold: 0.9 },
@@ -473,8 +479,30 @@ test('matchPlaylist forwards options to every item', () => {
   );
 });
 
-test('matchPlaylist is empty for an empty item list', () => {
-  assert.deepEqual(matchPlaylist([], [track('t1', 'A')]), []);
+test('matchPlaylist is empty for an empty item list', async () => {
+  assert.deepEqual(await matchPlaylist([], [track('t1', 'A')]), []);
+});
+
+// --- lazy table ----------------------------------------------------------
+
+test('ensureNormalizer is idempotent and reports the table loaded', async () => {
+  await ensureNormalizer();
+  await ensureNormalizer();
+  assert.equal(isNormalizerLoaded(), true);
+});
+
+test('matchPlaylist returns a promise and preserves order once awaited', async () => {
+  const pending = matchPlaylist(
+    [{ title: 'C' }, { title: 'A' }],
+    [track('a', 'A'), track('c', 'C')],
+  );
+  assert.ok(pending instanceof Promise);
+  const results = await pending;
+  assert.equal(results.length, 2);
+  assert.deepEqual(
+    results.map((result) => result.trackId),
+    ['c', 'a'],
+  );
 });
 
 // --- table ---------------------------------------------------------------
