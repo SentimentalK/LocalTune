@@ -3,7 +3,7 @@ import { installGraphMock } from './support/graph-mock.js';
 
 const FILES = [
   { id: 'track-1', name: 'one.mp3' },
-  { id: 'track-2', name: 'two.mp3' },
+  { id: 'track-2', name: 'Jazz/two.mp3' },
 ];
 
 // `navigator.serviceWorker.ready` can settle while the worker is 'activating'.
@@ -49,6 +49,14 @@ test('audio cache hits, offline replay, folder pins and clearing', async ({ page
   await signInAndPickMusic(page);
   await waitForServiceWorker(page);
 
+  // ---- 0. a returning user lands on the library, not the picker ----------
+  await page.reload();
+  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('#tab-tracks')).toBeVisible();
+  await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
+  await expect(page.locator('[data-testid="settings-back"]')).toBeHidden();
+  await expect(page.locator('.row-hit')).toHaveCount(2);
+
   // ---- 1. one whole download per track, none on replay -------------------
   await page.locator('.row-hit').first().click();
   await expect.poll(() => mock.wholeRequests.length, { timeout: 10_000 }).toBe(1);
@@ -67,26 +75,30 @@ test('audio cache hits, offline replay, folder pins and clearing', async ({ page
   await context.setOffline(true);
   await page.reload();
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
-  await expect(page.locator('[data-testid="settings-back"]')).toBeVisible();
-  await page.locator('[data-testid="settings-back"]').click();
+  await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
+  await expect(page.locator('[data-testid="settings-back"]')).toBeHidden();
 
   await expect(page.locator('.row-hit').first()).toBeVisible();
   await page.locator('.row-hit').first().click();
   await expectPlaying(page);
   await context.setOffline(false);
 
-  // ---- 3. pin the folder for offline use --------------------------------
+  // ---- 3. pin a subfolder for offline use -------------------------------
   await page.locator('#tab-folders').click();
-  const pinButton = page.locator('[data-testid="pin-root"]');
-  await expect(pinButton).toBeVisible();
-  await expect(pinButton).toHaveAttribute('aria-pressed', 'false');
+  const rootPin = page.locator('[data-testid="pin-root"]');
+  const jazzPin = page.locator('[data-testid="pin-Jazz"]');
+  await expect(jazzPin).toBeVisible();
+  await expect(jazzPin).toHaveAttribute('aria-pressed', 'false');
+  await expect(rootPin).toHaveAttribute('aria-pressed', 'false');
 
-  await pinButton.click();
-  await expect(pinButton).toHaveAttribute('aria-pressed', 'true');
-  await expect(pinButton).toBeEnabled({ timeout: 20_000 });
-  const folderRow = page.locator('.rows .row').first();
-  await expect(folderRow).toContainText('已固定离线');
-  // Both tracks are cached; the pin fetched from the cache, not the network.
+  await jazzPin.click();
+  await expect(jazzPin).toHaveAttribute('aria-pressed', 'true');
+  await expect(jazzPin).toBeEnabled({ timeout: 20_000 });
+  const jazzRow = page.locator('.rows .row').filter({ has: jazzPin });
+  await expect(jazzRow).toContainText('已固定离线');
+  // Pinning a child directory must not report the parent/root row as pinned.
+  await expect(rootPin).toHaveAttribute('aria-pressed', 'false');
+  // Both tracks are already cached; the pin fetched from the cache, not the network.
   expect(mock.wholeRequests).toHaveLength(2);
 
   // ---- 4. clearing the cache also clears the pins -----------------------

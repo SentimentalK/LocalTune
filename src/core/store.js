@@ -220,11 +220,10 @@ export class Store extends EventTarget {
   }
 
   async init() {
-    let loggedIn = false;
     try {
-      loggedIn = await this.onedrive.handleRedirect();
+      await this.onedrive.handleRedirect();
     } catch {
-      loggedIn = false;
+      // A failed exchange leaves the source signed out; restore() decides.
     }
 
     try {
@@ -238,7 +237,11 @@ export class Store extends EventTarget {
       // Same for a malformed token/root entry.
     }
 
-    if (loggedIn || this.onedrive.hasRoot()) {
+    // The picker only helps while no library root exists: a returning user
+    // keeps their last view, and a re-auth redirect that lands with a root
+    // must not detour through it again.
+    const needsRoot = this.onedrive.permission() !== 'none' && !this.onedrive.hasRoot();
+    if (needsRoot) {
       this._state.view = 'settings';
       this._state.onedrivePicker = {
         open: true,
@@ -788,7 +791,9 @@ export class Store extends EventTarget {
   /** Whether a source's `dir` (or its whole root) is kept for offline use. */
   isPinned(source, dir) {
     return this._state.pins.some(
-      (pin) => pin.source === source && (pin.dir === dir || pin.dir === ''),
+      (pin) =>
+        pin.source === source &&
+        (pin.dir === '' || dir === pin.dir || dir.startsWith(`${pin.dir}/`)),
     );
   }
 
