@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="LocalTune vinyl record">
+  <rect width="512" height="512" rx="112.6" fill="#f6f5f1" />
+  <circle cx="256" cy="256" r="190" fill="#141416" />
+  <circle cx="256" cy="256" r="159.6" fill="none" stroke="#2a2a2e" stroke-width="2" />
+  <circle cx="256" cy="256" r="129.2" fill="none" stroke="#2a2a2e" stroke-width="2" />
+  <circle cx="256" cy="256" r="98.8" fill="none" stroke="#2a2a2e" stroke-width="2" />
+  <circle cx="256" cy="256" r="64.6" fill="#1f5c45" />
+  <circle cx="256" cy="256" r="13.3" fill="#f6f5f1" />
+</svg>
