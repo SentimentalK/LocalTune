@@ -148,9 +148,11 @@ function decodeText(bytes, offset, end, encoding) {
       return decodeLegacyText(bytes.subarray(offset, end));
     case 1: {
       if (end - offset < 2) return '';
+      // uint16() reads in file order, so FF FE is a little-endian BOM
+      // (UTF-16LE code units) and FE FF is big-endian.
       const bom = uint16(bytes, offset);
-      if (bom === 0xfeff) return decodeUtf16(bytes, offset + 2, end, 'utf-16le');
-      if (bom === 0xfffe) return decodeUtf16(bytes, offset + 2, end, 'utf-16be');
+      if (bom === 0xfffe) return decodeUtf16(bytes, offset + 2, end, 'utf-16le');
+      if (bom === 0xfeff) return decodeUtf16(bytes, offset + 2, end, 'utf-16be');
       return decodeUtf16(bytes, offset, end, 'utf-16le');
     }
     case 2:
@@ -226,7 +228,10 @@ function frameCandidates(bytes, start, end, encoding) {
 
   let label;
   if (encoding === 1) {
-    label = start + 2 <= end && uint16(bytes, start) === 0xfffe ? 'utf-16be' : 'utf-16le';
+    // Same BOM mapping as decodeText(), including the no-BOM default:
+    // file-order FF FE is little-endian, FE FF is big-endian, absent means LE.
+    const bom = start + 2 <= end ? uint16(bytes, start) : 0;
+    label = bom === 0xfeff ? 'utf-16be' : 'utf-16le';
   } else if (encoding === 2) {
     label = 'utf-16be';
   } else {
