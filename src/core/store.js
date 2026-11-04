@@ -175,7 +175,10 @@ export class Store extends EventTarget {
 
     const tracks = sortTracks(await getAllTracks(this.db).catch(() => []));
     const playback = await loadPlayback(this.db).catch(() => null);
-    const settings = await loadSettings(this.db).catch(() => ({ vinylSpin: true }));
+    const settings = await loadSettings(this.db).catch(() => ({
+      vinylSpin: true,
+      language: 'auto',
+    }));
 
     this._state.tracks = tracks;
     this._state.settings = { vinylSpin: true, language: 'auto', ...settings };
