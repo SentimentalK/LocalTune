@@ -4,9 +4,12 @@
  * a 'change' event whenever the read-only state snapshot is updated.
  */
 
-import { openDb, putTracks, deleteTracksById, getAllTracks, setMeta } from './db.js';
+import { openDb, putTracks, deleteTracksById, getAllTracks, getMeta, setMeta } from './db.js';
 import { createSource } from './source.js';
 import { readMetadata } from './metadata/index.js';
+import { isGarbledTrack } from './metadata/garbled.js';
+import { BUILD_VERSION } from './version.js';
+import { migrateGarbledTracks } from './migrate.js';
 import { diffScan } from './scan.js';
 import {
   createQueue,
@@ -79,6 +82,7 @@ export class Store extends EventTarget {
     this.queue = createQueue([]);
 
     this._scanning = false;
+    this._migrating = false;
     this._loading = false;
     this._loadedId = null;
     this._pendingSeek = null;
@@ -101,6 +105,7 @@ export class Store extends EventTarget {
       },
       settings: { vinylSpin: true },
       updateReady: false,
+      migration: { running: false, done: 0, total: 0, error: null },
     };
 
     this.#bindPlayer();
@@ -229,6 +234,58 @@ export class Store extends EventTarget {
     installMediaSession(this);
     syncMediaSession(this._state);
     this._emit();
+    void this._maybeMigrateTags();
+  }
+
+  /**
+   * Re-read tags for tracks that look garbled, once per build. Runs in the
+   * background after init; playback is never awaited on it.
+   */
+  async _maybeMigrateTags() {
+    if (this._migrating) return;
+    this._migrating = true;
+    try {
+      const last = await getMeta(this.db, 'lastBuildVersion').catch(() => null);
+      if (last === BUILD_VERSION) return;
+      // Without a granted directory there is nothing to read; retry next launch
+      // or when the user grants permission in this session.
+      if (this.source.permission() !== 'granted') return;
+
+      this._state.migration = {
+        running: true,
+        done: 0,
+        total: this._state.tracks.filter(isGarbledTrack).length,
+        error: null,
+      };
+      this._emit();
+
+      try {
+        const { changed } = await migrateGarbledTracks({
+          tracks: this._state.tracks,
+          getFile: (path) => this.source.getFile(path),
+          readMetadata,
+          onProgress: ({ done, total }) => {
+            this._state.migration = { ...this._state.migration, done, total };
+            if (done % 5 === 0 || done === total) this._emit();
+          },
+        });
+
+        if (changed.length) await putTracks(this.db, changed);
+        const byId = new Map(changed.map((track) => [track.id, track]));
+        this._state.tracks = sortTracks(
+          this._state.tracks.map((track) => byId.get(track.id) ?? track),
+        );
+        this._reconcileQueue([]);
+        await setMeta(this.db, 'lastBuildVersion', BUILD_VERSION);
+      } catch (error) {
+        this._state.migration = { ...this._state.migration, error: errorMessage(error) };
+      } finally {
+        this._state.migration = { ...this._state.migration, running: false };
+        this._emit();
+      }
+    } finally {
+      this._migrating = false;
+    }
   }
 
   async connectSource() {
@@ -244,6 +301,7 @@ export class Store extends EventTarget {
       };
       this._emit();
       await this.rescan();
+      void this._maybeMigrateTags();
     } catch (error) {
       if (error?.name === 'AbortError') return;
       this._state.source = {
@@ -266,7 +324,10 @@ export class Store extends EventTarget {
       error: null,
     };
     this._emit();
-    if (granted) await this.rescan();
+    if (granted) {
+      await this.rescan();
+      void this._maybeMigrateTags();
+    }
     return granted;
   }
 

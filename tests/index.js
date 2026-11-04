@@ -9,3 +9,6 @@ import './scan.test.js';
 import './queue.test.js';
 import './folders.test.js';
 import './update-flow.test.js';
+import './diagnostics.test.js';
+import './garbled.test.js';
+import './migrate.test.js';

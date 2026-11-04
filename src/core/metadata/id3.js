@@ -185,6 +185,84 @@ function stringEnd(bytes, offset, end, encoding) {
   return end;
 }
 
+/** Every encoding-0 candidate, including the Latin-1 display fallback. */
+const LEGACY_CANDIDATES = [...LEGACY_LABELS, 'latin1'];
+
+function decodeLegacyCandidate(bytes, label) {
+  if (label === 'latin1') return clean(latin1(bytes, 0, bytes.length));
+  try {
+    const text = new TextDecoder(label, { fatal: true }).decode(bytes);
+    if (text.includes('\uFFFD')) return '';
+    return clean(text);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Encoding-0 candidates with the score the parser uses to pick one.
+ * @param {Uint8Array} bytes
+ * @returns {Array<{label:string,text:string,score:number}>}
+ */
+function legacyCandidates(bytes) {
+  return LEGACY_CANDIDATES.map((label) => {
+    const text = decodeLegacyCandidate(bytes, label);
+    return { label, text, score: text ? legacyScore(text) : 0 };
+  });
+}
+
+/**
+ * Candidates for one text frame payload (after the encoding byte).
+ * @param {Uint8Array} bytes
+ * @param {number} start
+ * @param {number} end
+ * @param {number} encoding
+ * @returns {Array<{label:string,text:string,score:number}>}
+ */
+function frameCandidates(bytes, start, end, encoding) {
+  if (encoding === 0) return legacyCandidates(bytes.subarray(start, end));
+
+  let label;
+  if (encoding === 1) {
+    label = start + 2 <= end && uint16(bytes, start) === 0xfffe ? 'utf-16be' : 'utf-16le';
+  } else if (encoding === 2) {
+    label = 'utf-16be';
+  } else {
+    label = 'utf-8';
+  }
+  const text = decodeText(bytes, start, end, encoding);
+  const ok = Boolean(text) && !text.includes('\uFFFD');
+  return [{ label, text: ok ? text : '', score: ok ? 1 : 0 }];
+}
+
+/** Lower-case hex of bytes[start, end), space separated. */
+function hexRange(bytes, start, end) {
+  const out = [];
+  for (let i = start; i < end; i += 1) out.push(bytes[i].toString(16).padStart(2, '0'));
+  return out.join(' ');
+}
+
+/** One-line APIC summary without copying the image payload. */
+function apicSummary(bytes, start, end, encoding) {
+  let cursor = start + 1;
+  const mimeEnd = stringEnd(bytes, cursor, end, 0);
+  let mime = latin1(bytes, cursor, mimeEnd);
+  cursor = Math.min(mimeEnd + 1, end);
+  cursor = Math.min(cursor + 1, end); // picture type
+  const descEnd = stringEnd(bytes, cursor, end, encoding);
+  const descLen = encoding === 1 || encoding === 2 ? 2 : 1;
+  cursor = Math.min(descEnd + descLen, end);
+  if (cursor >= end) return `${mime || 'application/octet-stream'} 0 bytes`;
+  if (!mime || mime === '-->') {
+    if (bytes[cursor] === 0xff && bytes[cursor + 1] === 0xd8) mime = 'image/jpeg';
+    else if (bytes[cursor] === 0x89 && bytes[cursor + 1] === 0x50 && bytes[cursor + 2] === 0x4e && bytes[cursor + 3] === 0x47) {
+      mime = 'image/png';
+    } else mime = 'application/octet-stream';
+  }
+  if (mime === 'image/jpg') mime = 'image/jpeg';
+  return `${mime} ${end - cursor} bytes`;
+}
+
 function coverFromApic(bytes, start, end, encoding) {
   let cursor = start + 1;
   const mimeEnd = stringEnd(bytes, cursor, end, 0);
@@ -396,4 +474,108 @@ export function parseId3(bytes, { fileSize = bytes?.byteLength ?? 0, tail } = {}
   if (!meta.album && legacy.album) meta.album = legacy.album;
   if (meta.year == null && legacy.year != null) meta.year = legacy.year;
   return meta;
+}
+
+/**
+ * Frame-level diagnostics for a buffer read the same way as `parseId3`.
+ * Text frames (`T*`) and APIC are listed; compressed frames are skipped.
+ *
+ * @param {Uint8Array} bytes
+ * @param {{fileSize?: number, tail?: Uint8Array}} [options]
+ * @returns {{
+ *   version: number,
+ *   frames: Array<{id:string,encoding:number,rawHex32:string,decoded:string,
+ *     candidates:Array<{label:string,text:string,score:number}>}>,
+ *   id3v1: {title:string,artist:string,album:string}|null
+ * }}
+ */
+export function describeId3(bytes, { fileSize = bytes?.byteLength ?? 0, tail } = {}) {
+  void fileSize;
+  const described = { version: 0, frames: [], id3v1: null };
+  if (!bytes || bytes.length < 4) return described;
+
+  let framesStart = 0;
+  let framesEnd = 0;
+  let version = 0;
+
+  if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+    version = bytes[3];
+    const flags = bytes[5] ?? 0;
+    const declared = syncsafe(bytes, 6);
+    framesStart = 10;
+    framesEnd = Math.min(bytes.length, 10 + declared);
+
+    if (flags & 0x40) {
+      if (version >= 4) {
+        const extSize = syncsafe(bytes, 10);
+        framesStart = Math.min(10 + Math.max(extSize, 6), framesEnd);
+      } else {
+        const extSize = uint32(bytes, 10);
+        framesStart = Math.min(10 + 4 + extSize, framesEnd);
+      }
+    }
+  }
+
+  described.version = version;
+
+  if (version > 0) {
+    let cursor = framesStart;
+    while (cursor + 10 <= framesEnd) {
+      const id = ascii(bytes, cursor, 4);
+      if (!/^[A-Z0-9]{4}$/.test(id)) break;
+      const size = version >= 4 ? syncsafe(bytes, cursor + 4) : uint32(bytes, cursor + 4);
+      const frameFlags = uint16(bytes, cursor + 8);
+      const compressed = version >= 4 ? frameFlags & 0x0008 : frameFlags & 0x0080;
+      let dataStart = cursor + 10;
+      const dataEnd = dataStart + size;
+      if (size <= 0 || dataEnd > framesEnd) break;
+      if (version >= 4 && frameFlags & 0x0001) dataStart += 4; // data length indicator
+      if (compressed) {
+        cursor = dataEnd;
+        continue;
+      }
+      if (dataStart >= dataEnd) {
+        cursor = dataEnd;
+        continue;
+      }
+
+      if (id === 'APIC' || id.startsWith('T')) {
+        const encoding = bytes[dataStart];
+        const rawEnd = Math.min(dataEnd, dataStart + 32);
+        if (id === 'APIC') {
+          described.frames.push({
+            id,
+            encoding,
+            rawHex32: hexRange(bytes, dataStart, rawEnd),
+            decoded: apicSummary(bytes, dataStart, dataEnd, encoding),
+            candidates: [],
+          });
+        } else {
+          described.frames.push({
+            id,
+            encoding,
+            rawHex32: hexRange(bytes, dataStart, rawEnd),
+            decoded: decodeText(bytes, dataStart + 1, dataEnd, encoding),
+            candidates: frameCandidates(bytes, dataStart + 1, dataEnd, encoding),
+          });
+        }
+      }
+      cursor = dataEnd;
+    }
+  }
+
+  const tailBytes = tail ?? (bytes.length >= 128 ? bytes.subarray(bytes.length - 128) : null);
+  if (
+    tailBytes &&
+    tailBytes.length >= 128 &&
+    ascii(tailBytes, tailBytes.length - 128, 3) === 'TAG'
+  ) {
+    const legacy = parseId3v1(tailBytes);
+    described.id3v1 = {
+      title: legacy.title ?? '',
+      artist: legacy.artist ?? '',
+      album: legacy.album ?? '',
+    };
+  }
+  return described;
 }
