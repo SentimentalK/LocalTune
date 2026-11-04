@@ -26,3 +26,4 @@ import './prefetch.test.js';
 import './install.test.js';
 import './battery.test.js';
 import './playlist-text.test.js';
+import './playlist-match.test.js';
