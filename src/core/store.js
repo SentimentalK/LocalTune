@@ -24,6 +24,7 @@ import {
 import { AudioPlayer } from './player.js';
 import { loadPlayback, savePlayback, loadSettings, saveSettings } from './persist.js';
 import { installMediaSession, syncMediaSession } from './mediaSession.js';
+import { t } from '../i18n/index.js';
 
 const VIEWS = new Set(['tracks', 'albums', 'artists', 'folders', 'queue']);
 const MEDIA_SYNC_INTERVAL = 1000;
@@ -48,7 +49,7 @@ function clamp(value, min, max) {
 }
 
 function errorMessage(error) {
-  if (!error) return '未知错误';
+  if (!error) return t('common.unknownError');
   if (typeof error === 'string') return error;
   return error.message ? String(error.message) : String(error);
 }
@@ -59,8 +60,8 @@ function buildTrack(entry, meta) {
     id: `fsa:${path}`,
     path,
     title: meta.title || fallbackTitle(path),
-    artist: meta.artist || '未知歌手',
-    album: meta.album || '未知专辑',
+    artist: meta.artist || '',
+    album: meta.album || '',
     year: Number.isFinite(meta.year) ? meta.year : null,
     trackNo: Number.isFinite(meta.trackNo) ? meta.trackNo : null,
     duration: Number.isFinite(meta.duration) && meta.duration > 0 ? meta.duration : 0,
@@ -103,7 +104,7 @@ export class Store extends EventTarget {
         scanning: false,
         progress: { done: 0, total: 0 },
       },
-      settings: { vinylSpin: true },
+      settings: { vinylSpin: true, language: 'auto' },
       updateReady: false,
       migration: { running: false, done: 0, total: 0, error: null },
     };
@@ -157,7 +158,7 @@ export class Store extends EventTarget {
     });
 
     player.addEventListener('error', (event) => {
-      const error = event.detail?.error ?? new Error('播放失败');
+      const error = event.detail?.error ?? new Error(t('error.store.playFailed'));
       this._state.source.error = errorMessage(error);
       this._state.current.playing = false;
       this._emit();
@@ -174,10 +175,13 @@ export class Store extends EventTarget {
 
     const tracks = sortTracks(await getAllTracks(this.db).catch(() => []));
     const playback = await loadPlayback(this.db).catch(() => null);
-    const settings = await loadSettings(this.db).catch(() => ({ vinylSpin: true }));
+    const settings = await loadSettings(this.db).catch(() => ({
+      vinylSpin: true,
+      language: 'auto',
+    }));
 
     this._state.tracks = tracks;
-    this._state.settings = { ...settings };
+    this._state.settings = { vinylSpin: true, language: 'auto', ...settings };
     this._state.source = {
       ...this._state.source,
       kind: this.source.kind,
@@ -343,7 +347,10 @@ export class Store extends EventTarget {
           ...this._state.source,
           connected: this.source.permission() !== 'none',
           permission: this.source.permission(),
-          error: this.source.permission() === 'none' ? '尚未连接音乐目录' : '需要目录读取权限',
+          error:
+            this.source.permission() === 'none'
+              ? t('error.store.notConnected')
+              : t('error.store.permissionRequired'),
         };
         this._emit();
         return;
@@ -450,7 +457,7 @@ export class Store extends EventTarget {
           permission: this.source.permission(),
           scanning: false,
           progress: { done: 0, total: 0 },
-          error: '需要目录读取权限',
+          error: t('error.store.permissionRequired'),
         };
         this._scanning = false;
         this._emit();

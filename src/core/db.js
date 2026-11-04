@@ -3,6 +3,8 @@
  * request or transaction completion; no DOM globals are touched at import time.
  */
 
+import { t } from '../i18n/index.js';
+
 export const DB_NAME = 'localtune';
 export const DB_VERSION = 1;
 
@@ -12,15 +14,15 @@ export const META_STORE = 'meta';
 function requestResult(request) {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('IndexedDB 请求失败'));
+    request.onerror = () => reject(request.error ?? new Error(t('error.db.request')));
   });
 }
 
 function transactionDone(tx) {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error('IndexedDB 事务失败'));
-    tx.onabort = () => reject(tx.error ?? new Error('IndexedDB 事务中止'));
+    tx.onerror = () => reject(tx.error ?? new Error(t('error.db.transaction')));
+    tx.onabort = () => reject(tx.error ?? new Error(t('error.db.aborted')));
   });
 }
 
@@ -28,7 +30,7 @@ export function openDb() {
   return new Promise((resolve, reject) => {
     const factory = globalThis.indexedDB;
     if (!factory) {
-      reject(new Error('IndexedDB 不可用'));
+      reject(new Error(t('error.db.unavailable')));
       return;
     }
     const request = factory.open(DB_NAME, DB_VERSION);
@@ -44,7 +46,7 @@ export function openDb() {
       }
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('无法打开数据库'));
+    request.onerror = () => reject(request.error ?? new Error(t('error.db.open')));
   });
 }
 
@@ -56,8 +58,8 @@ export function putTracks(db, tracks) {
     const store = tx.objectStore(TRACKS_STORE);
     for (const track of list) store.put(track);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error('写入曲目失败'));
-    tx.onabort = () => reject(tx.error ?? new Error('写入曲目中止'));
+    tx.onerror = () => reject(tx.error ?? new Error(t('error.db.writeTracks')));
+    tx.onabort = () => reject(tx.error ?? new Error(t('error.db.writeTracksAborted')));
   });
 }
 
@@ -69,8 +71,8 @@ export function deleteTracksById(db, ids) {
     const store = tx.objectStore(TRACKS_STORE);
     for (const id of list) store.delete(id);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error('删除曲目失败'));
-    tx.onabort = () => reject(tx.error ?? new Error('删除曲目中止'));
+    tx.onerror = () => reject(tx.error ?? new Error(t('error.db.deleteTracks')));
+    tx.onabort = () => reject(tx.error ?? new Error(t('error.db.deleteTracksAborted')));
   });
 }
 
@@ -91,7 +93,7 @@ export function setMeta(db, key, value) {
     const tx = db.transaction(META_STORE, 'readwrite');
     tx.objectStore(META_STORE).put({ key, value });
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error('写入 meta 失败'));
-    tx.onabort = () => reject(tx.error ?? new Error('写入 meta 中止'));
+    tx.onerror = () => reject(tx.error ?? new Error(t('error.db.writeMeta')));
+    tx.onabort = () => reject(tx.error ?? new Error(t('error.db.writeMetaAborted')));
   });
 }

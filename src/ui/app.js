@@ -8,16 +8,21 @@
 import { groupByAlbum, groupByArtist, formatTime } from '../core/selectors.js';
 import { groupByFolder } from '../core/folders.js';
 import { el, icon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
+import { applyDocumentLang, getLocale, resolveLanguage, setLocale, t } from '../i18n/index.js';
 
 const TABS = [
-  { id: 'tracks', label: '歌曲' },
-  { id: 'albums', label: '专辑' },
-  { id: 'artists', label: '歌手' },
-  { id: 'folders', label: '文件夹' },
-  { id: 'queue', label: '队列' },
+  { id: 'tracks', labelKey: 'tabs.tracks' },
+  { id: 'albums', labelKey: 'tabs.albums' },
+  { id: 'artists', labelKey: 'tabs.artists' },
+  { id: 'folders', labelKey: 'tabs.folders' },
+  { id: 'queue', labelKey: 'tabs.queue' },
 ];
 
-const REPEAT_LABEL = { off: '循环：关闭', all: '循环：列表', one: '循环：单曲' };
+const REPEAT_LABEL_KEY = {
+  off: 'player.repeatOff',
+  all: 'player.repeatAll',
+  one: 'player.repeatOne',
+};
 const REPEAT_BADGE = { off: '', all: '∞', one: '1' };
 const SEEK_STEP = 5;
 
@@ -34,15 +39,20 @@ function isInstalled() {
 }
 
 function installHint() {
-  return installPromptSeen && !isInstalled() ? '安装为应用后，授权会自动记住。' : '';
+  return installPromptSeen && !isInstalled() ? t('empty.installHint') : '';
 }
 
 function run(result) {
   if (result && typeof result.catch === 'function') result.catch(() => {});
 }
 
+// Tracks stored before the empty-string defaults may still hold a sentinel.
+const UNKNOWN = new Set(['', '未知歌手', '未知专辑']);
+const artistLabel = (value) => (UNKNOWN.has(value ?? '') ? t('common.unknownArtist') : value);
+const albumLabel = (value) => (UNKNOWN.has(value ?? '') ? t('common.unknownAlbum') : value);
+
 function subtitleOf(track) {
-  const parts = [track.artist, track.album];
+  const parts = [artistLabel(track.artist), albumLabel(track.album)];
   if (Number.isFinite(track.year) && track.year > 0) parts.push(String(track.year));
   return parts.filter(Boolean).join(' · ');
 }
@@ -74,7 +84,7 @@ function trackRow(track, { now, onActivate }) {
     {
       class: 'row-hit',
       type: 'button',
-      'aria-label': `播放 ${track.title}`,
+      'aria-label': t('aria.playTrack', { title: track.title }),
       onclick: onActivate,
     },
     [
@@ -95,7 +105,7 @@ function queueRow(track, index, { now, onActivate, onRemove }) {
     {
       class: 'row-hit',
       type: 'button',
-      'aria-label': `播放队列第 ${index + 1} 首 ${track.title}`,
+      'aria-label': t('aria.playQueueItem', { index: index + 1, title: track.title }),
       onclick: onActivate,
     },
     [
@@ -112,35 +122,35 @@ function queueRow(track, index, { now, onActivate, onRemove }) {
     class: 'row-x',
     type: 'button',
     text: '×',
-    'aria-label': `从队列移除 ${track.title}`,
+    'aria-label': t('aria.removeFromQueue', { title: track.title }),
     onclick: onRemove,
   });
   return el('li', { class: now ? 'row queue now' : 'row queue' }, [hit, remove]);
 }
 
 function folderRow(group, { onPlay, onEnqueue }) {
-  const label = group.dir || '根目录';
+  const label = group.dir || t('common.rootFolder');
   const hit = el(
     'button',
     {
       class: 'row-hit',
       type: 'button',
-      'aria-label': `播放文件夹 ${label}`,
+      'aria-label': t('aria.playFolder', { name: label }),
       onclick: onPlay,
     },
     [
       artNode(null),
       el('span', { class: 't' }, [
         el('b', { text: label }),
-        el('span', { text: `${group.count} 首` }),
+        el('span', { text: t('common.trackCount', { count: group.count }) }),
       ]),
     ],
   );
   const add = el('button', {
     class: 'row-add',
     type: 'button',
-    text: '加入队列',
-    'aria-label': `把文件夹 ${label} 加入队列`,
+    text: t('common.addToQueue'),
+    'aria-label': t('aria.enqueueFolder', { name: label }),
     onclick: onEnqueue,
   });
   return el('li', { class: 'row' }, [hit, add]);
@@ -171,13 +181,13 @@ function cardItem({ title, meta, cover, label, onPlay }) {
 }
 
 function createShell(store, sw) {
-  const status = el('span', { class: 'status', id: 'status', text: '准备就绪' });
-  const count = el('span', { class: 'count', text: '0 首' });
-  const sourceName = el('span', { class: 'source-name', text: '未连接' });
+  const status = el('span', { class: 'status', id: 'status', text: t('common.ready') });
+  const count = el('span', { class: 'count', text: t('common.trackCount', { count: 0 }) });
+  const sourceName = el('span', { class: 'source-name', text: t('common.disconnected') });
   const authButton = el('button', {
     class: 'btn-pill ghost',
     type: 'button',
-    text: '选择音乐文件夹',
+    text: t('common.chooseFolder'),
     onclick: () => {
       const permission = store.state.source.permission;
       run(permission === 'prompt' ? store.requestSourcePermission() : store.connectSource());
@@ -186,11 +196,11 @@ function createShell(store, sw) {
   const deniedHint = el('p', {
     class: 'alert',
     role: 'status',
-    text: '浏览器已阻止目录访问，请在浏览器设置的网站权限中恢复后再试。',
+    text: t('common.deniedHint'),
   });
   const scanBar = el('i');
   const scan = el('div', { class: 'scan', role: 'status' }, [
-    el('span', { class: 'scan-label', text: '扫描中' }),
+    el('span', { class: 'scan-label', text: t('common.scanning') }),
     el('div', { class: 'bar' }, scanBar),
   ]);
   const errorBox = el('p', { class: 'alert', role: 'alert' });
@@ -209,8 +219,8 @@ function createShell(store, sw) {
   const deck = el('div', { class: 'deck' }, [vinyl, tonearm]);
   const stage = el('div', { class: 'stage' }, deck);
 
-  const title = el('h2', { text: '未选择曲目' });
-  const subtitle = el('p', { text: '从下方列表选一首开始' });
+  const title = el('h2', { text: t('player.noTrack') });
+  const subtitle = el('p', { text: t('player.noTrackHint') });
   const meta = el('div', { class: 'meta' }, [title, subtitle]);
 
   const elapsed = el('time', { text: '0:00' });
@@ -220,7 +230,7 @@ function createShell(store, sw) {
     class: 'bar',
     role: 'slider',
     tabindex: '0',
-    'aria-label': '播放进度',
+    'aria-label': t('aria.progress'),
     'aria-valuemin': '0',
     'aria-valuemax': '0',
     'aria-valuenow': '0',
@@ -234,28 +244,28 @@ function createShell(store, sw) {
   setHidden(pauseIcon, true);
   const shuffleButton = el(
     'button',
-    { class: 'btn', type: 'button', 'aria-label': '随机播放', 'aria-pressed': 'false', onclick: () => store.toggleShuffle() },
+    { class: 'btn', type: 'button', 'aria-label': t('aria.shuffle'), 'aria-pressed': 'false', onclick: () => store.toggleShuffle() },
     icon('shuffle'),
   );
   const prevButton = el(
     'button',
-    { class: 'btn', type: 'button', 'aria-label': '上一首', onclick: () => run(store.prev()) },
+    { class: 'btn', type: 'button', 'aria-label': t('aria.prev'), onclick: () => run(store.prev()) },
     icon('prev'),
   );
   const playButton = el(
     'button',
-    { class: 'btn main', type: 'button', 'aria-label': '播放', onclick: () => store.toggle() },
+    { class: 'btn main', type: 'button', 'aria-label': t('aria.play'), onclick: () => store.toggle() },
     [playIcon, pauseIcon],
   );
   const nextButton = el(
     'button',
-    { class: 'btn', type: 'button', 'aria-label': '下一首', onclick: () => run(store.next()) },
+    { class: 'btn', type: 'button', 'aria-label': t('aria.next'), onclick: () => run(store.next()) },
     icon('next'),
   );
   const repeatBadge = el('span', { class: 'badge', 'aria-hidden': 'true' });
   const repeatButton = el(
     'button',
-    { class: 'btn', type: 'button', 'aria-label': '循环：关闭', onclick: () => store.cycleRepeat() },
+    { class: 'btn', type: 'button', 'aria-label': t('player.repeatOff'), onclick: () => store.cycleRepeat() },
     [icon('repeat'), repeatBadge],
   );
   const controls = el('div', { class: 'controls' }, [
@@ -266,7 +276,7 @@ function createShell(store, sw) {
     repeatButton,
   ]);
 
-  const player = el('section', { class: 'card player', 'aria-label': '正在播放' }, [
+  const player = el('section', { class: 'card player', 'aria-label': t('aria.nowPlaying') }, [
     stage,
     meta,
     progress,
@@ -284,46 +294,46 @@ function createShell(store, sw) {
   const rescanButton = el('button', {
     class: 'btn-pill ghost',
     type: 'button',
-    text: '重新扫描',
+    text: t('settings.rescan'),
     onclick: () => run(store.rescan()),
   });
   const rescanTagsButton = el('button', {
     class: 'btn-pill ghost',
     type: 'button',
-    text: '重新读取标签',
+    text: t('settings.rescanTags'),
     onclick: () => run(store.rescanTags()),
   });
-  const settings = el('section', { class: 'card settings', 'aria-label': '设置' }, [
+  const settings = el('section', { class: 'card settings', 'aria-label': t('aria.settings') }, [
     el('label', { class: 'option', for: 'vinyl-spin' }, [
       spinToggle,
-      el('span', { text: '唱片旋转' }),
+      el('span', { text: t('settings.vinylSpin') }),
     ]),
     rescanButton,
     rescanTagsButton,
   ]);
 
   // ---- library ----
-  const tabButtons = TABS.map(({ id, label: text }) =>
+  const tabButtons = TABS.map(({ id, labelKey }) =>
     el('button', {
       id: `tab-${id}`,
       type: 'button',
       role: 'tab',
       'aria-selected': 'false',
       'aria-controls': 'view-panel',
-      text,
+      text: t(labelKey),
       onclick: () => store.setView(id),
     }),
   );
-  const tabs = el('div', { class: 'tabs', role: 'tablist', 'aria-label': '资料库视图' }, tabButtons);
+  const tabs = el('div', { class: 'tabs', role: 'tablist', 'aria-label': t('aria.libraryViews') }, tabButtons);
   const panel = el('div', { id: 'view-panel', role: 'tabpanel', tabindex: '-1' });
-  const library = el('section', { class: 'library', 'aria-label': '资料库' }, [tabs, panel]);
+  const library = el('section', { class: 'library', 'aria-label': t('aria.library') }, [tabs, panel]);
 
   const updateBanner = el('div', { class: 'update-banner', role: 'status', hidden: true }, [
-    el('span', { text: '有新版本，刷新以更新。' }),
+    el('span', { text: t('common.updateAvailable') }),
     el('button', {
       class: 'btn-pill',
       type: 'button',
-      text: '更新',
+      text: t('common.update'),
       'data-testid': 'update-apply',
       onclick: () => sw?.applyUpdate?.(),
     }),
@@ -375,7 +385,7 @@ function createShell(store, sw) {
 }
 
 export function mountUi(root, store, sw) {
-  const ui = createShell(store, sw);
+  let ui = createShell(store, sw);
 
   const last = {
     view: null,
@@ -388,35 +398,53 @@ export function mountUi(root, store, sw) {
     installable: false,
   };
 
+  // A rebuilt shell has an empty panel, so the view cache must forget
+  // everything or renderView would skip the rebuild.
+  function resetCache() {
+    last.view = null;
+    last.tracks = null;
+    last.currentId = null;
+    last.queueTracks = null;
+    last.queueIndex = -1;
+    last.cover = undefined;
+    last.permission = null;
+    last.installable = false;
+  }
+
   function renderHeader(state) {
     const { source } = state;
     if (source.scanning) {
       const { done, total } = source.progress ?? { done: 0, total: 0 };
-      setText(ui.status, total > 0 ? `扫描中 ${done} / ${total}` : `扫描中 ${done}`);
+      setText(
+        ui.status,
+        total > 0
+          ? t('common.scanProgress', { done, total })
+          : t('common.scanCount', { done }),
+      );
     } else {
-      setText(ui.status, state.ready ? '准备就绪' : '正在载入…');
+      setText(ui.status, state.ready ? t('common.ready') : t('common.loading'));
     }
 
-    setText(ui.count, `${state.tracks.length} 首`);
+    setText(ui.count, t('common.trackCount', { count: state.tracks.length }));
     const permission = source.permission;
     setText(
       ui.sourceName,
       permission === 'granted'
-        ? source.name || '已连接'
+        ? source.name || t('common.connected')
         : permission === 'prompt'
-          ? '等待授权'
+          ? t('common.awaitingPermission')
           : permission === 'denied'
-            ? '权限被拒绝'
-            : '未连接',
+            ? t('common.permissionDenied')
+            : t('common.disconnected'),
     );
     setHidden(ui.authButton, permission === 'granted');
     setText(
       ui.authButton,
       permission === 'none'
-        ? '选择音乐文件夹'
+        ? t('common.chooseFolder')
         : permission === 'prompt'
-          ? `继续使用 ${source.name || '音乐文件夹'}`
-          : '重新授权',
+          ? t('common.continueWith', { name: source.name || t('common.musicFolder') })
+          : t('common.reauthorize'),
     );
     setHidden(ui.deniedHint, permission !== 'denied');
 
@@ -449,8 +477,8 @@ export function mountUi(root, store, sw) {
       last.cover = cover;
     }
 
-    setText(ui.title, track ? track.title : '未选择曲目');
-    setText(ui.subtitle, track ? subtitleOf(track) : '从下方列表选一首开始');
+    setText(ui.title, track ? track.title : t('player.noTrack'));
+    setText(ui.subtitle, track ? subtitleOf(track) : t('player.noTrackHint'));
 
     setText(ui.elapsed, formatTime(position));
     setText(ui.total, formatTime(duration));
@@ -462,7 +490,7 @@ export function mountUi(root, store, sw) {
     ui.bar.setAttribute('aria-valuetext', `${formatTime(position)} / ${formatTime(duration)}`);
     ui.bar.setAttribute('aria-disabled', String(!track || duration <= 0));
 
-    const label = playing ? '暂停' : '播放';
+    const label = playing ? t('aria.pause') : t('aria.play');
     if (ui.playButton.getAttribute('aria-label') !== label) {
       ui.playButton.setAttribute('aria-label', label);
     }
@@ -474,7 +502,10 @@ export function mountUi(root, store, sw) {
     ui.shuffleButton.setAttribute('aria-pressed', String(queue.shuffle));
 
     ui.repeatButton.classList.toggle('is-on', queue.repeat !== 'off');
-    ui.repeatButton.setAttribute('aria-label', REPEAT_LABEL[queue.repeat] ?? REPEAT_LABEL.off);
+    ui.repeatButton.setAttribute(
+      'aria-label',
+      t(REPEAT_LABEL_KEY[queue.repeat] ?? REPEAT_LABEL_KEY.off),
+    );
     setText(ui.repeatBadge, REPEAT_BADGE[queue.repeat] ?? '');
   }
 
@@ -495,39 +526,36 @@ export function mountUi(root, store, sw) {
 
   function renderEmpty(state) {
     const permission = state.source.permission;
-    const name = state.source.name || '音乐文件夹';
+    const name = state.source.name || t('common.musicFolder');
     if (permission !== 'granted') {
       if (permission === 'denied') {
         return emptyState({
-          title: '无法访问音乐文件夹',
-          text: '浏览器已阻止访问。请在浏览器设置的网站权限中恢复文件夹读取权限，然后重新授权。',
-          actionLabel: '重新授权',
+          title: t('empty.deniedTitle'),
+          text: t('empty.deniedText'),
+          actionLabel: t('common.reauthorize'),
           onAction: () => run(store.connectSource()),
         });
       }
       if (permission === 'prompt') {
         return emptyState({
-          title: '需要再次确认文件夹权限',
-          text: '上次的授权只对本次会话有效。',
-          actionLabel: `继续使用 ${name}`,
+          title: t('empty.promptTitle'),
+          text: t('empty.promptText'),
+          actionLabel: t('common.continueWith', { name }),
           onAction: () => run(store.requestSourcePermission()),
-          note: [
-            '安装为应用并在权限弹窗中选择「每次访问时允许」，之后无需再点。',
-            installHint(),
-          ],
+          note: [t('empty.promptNote'), installHint()],
         });
       }
       return emptyState({
-        title: '先选择你的音乐文件夹',
-        text: 'LocalTune 只在本机读取你授权的文件夹，不上传、不联网。支持 mp3、m4a、flac、ogg、wav、webm。',
-        actionLabel: '选择音乐文件夹',
+        title: t('empty.chooseTitle'),
+        text: t('empty.chooseText'),
+        actionLabel: t('common.chooseFolder'),
         onAction: () => run(store.connectSource()),
       });
     }
     return emptyState({
-      title: '这个文件夹里还没有音乐',
-      text: '确认文件夹里包含音频文件后重新扫描。',
-      actionLabel: '重新扫描',
+      title: t('empty.noTracksTitle'),
+      text: t('empty.noTracksText'),
+      actionLabel: t('empty.noTracksAction'),
       onAction: () => run(store.rescan()),
     });
   }
@@ -568,20 +596,21 @@ export function mountUi(root, store, sw) {
 
     if (state.view === 'albums') {
       const groups = groupByAlbum(state.tracks);
-      const cards = groups.map((group) =>
-        cardItem({
-          title: group.name || '未知专辑',
-          meta: `${group.artist || '未知歌手'} · ${group.tracks.length} 首`,
+      const cards = groups.map((group) => {
+        const name = albumLabel(group.name);
+        return cardItem({
+          title: name,
+          meta: `${artistLabel(group.artist)} · ${t('common.trackCount', { count: group.tracks.length })}`,
           cover: group.cover,
-          label: `播放专辑 ${group.name || '未知专辑'}`,
+          label: t('aria.playAlbum', { name }),
           onPlay: () => run(store.playQueue(group.tracks, group.tracks[0]?.id)),
-        }),
-      );
+        });
+      });
       ui.panel.replaceChildren(
         el('section', { class: 'list' }, [
           el('header', {}, [
-            el('span', { text: '专辑' }),
-            el('span', { text: `${groups.length} 张` }),
+            el('span', { text: t('tabs.albums') }),
+            el('span', { text: t('common.albumCount', { count: groups.length }) }),
           ]),
           el('ul', { class: 'grid' }, cards),
         ]),
@@ -591,20 +620,21 @@ export function mountUi(root, store, sw) {
 
     if (state.view === 'artists') {
       const groups = groupByArtist(state.tracks);
-      const cards = groups.map((group) =>
-        cardItem({
-          title: group.name || '未知歌手',
-          meta: `${group.tracks.length} 首`,
+      const cards = groups.map((group) => {
+        const name = artistLabel(group.name);
+        return cardItem({
+          title: name,
+          meta: t('common.trackCount', { count: group.tracks.length }),
           cover: group.cover,
-          label: `播放歌手 ${group.name || '未知歌手'}`,
+          label: t('aria.playArtist', { name }),
           onPlay: () => run(store.playQueue(group.tracks, group.tracks[0]?.id)),
-        }),
-      );
+        });
+      });
       ui.panel.replaceChildren(
         el('section', { class: 'list' }, [
           el('header', {}, [
-            el('span', { text: '歌手' }),
-            el('span', { text: `${groups.length} 位` }),
+            el('span', { text: t('tabs.artists') }),
+            el('span', { text: t('common.artistCount', { count: groups.length }) }),
           ]),
           el('ul', { class: 'grid' }, cards),
         ]),
@@ -622,7 +652,13 @@ export function mountUi(root, store, sw) {
           onEnqueue: () => store.appendQueue(list),
         });
       });
-      ui.panel.replaceChildren(listSection('文件夹', `${groups.length} 个`, rows));
+      ui.panel.replaceChildren(
+        listSection(
+          t('tabs.folders'),
+          t('common.folderCount', { count: groups.length }),
+          rows,
+        ),
+      );
       return;
     }
 
@@ -631,9 +667,9 @@ export function mountUi(root, store, sw) {
       if (!tracks.length) {
         ui.panel.replaceChildren(
           emptyState({
-            title: '队列是空的',
-            text: '在「歌曲」里点一首，或者从专辑、歌手开始播放。',
-            actionLabel: '去歌曲',
+            title: t('empty.queueTitle'),
+            text: t('empty.queueText'),
+            actionLabel: t('empty.queueAction'),
             onAction: () => store.setView('tracks'),
           }),
         );
@@ -646,7 +682,13 @@ export function mountUi(root, store, sw) {
           onRemove: () => store.removeQueueAt(index),
         }),
       );
-      ui.panel.replaceChildren(listSection('播放队列', `${tracks.length} 首`, rows));
+      ui.panel.replaceChildren(
+        listSection(
+          t('common.playQueue'),
+          t('common.trackCount', { count: tracks.length }),
+          rows,
+        ),
+      );
       return;
     }
 
@@ -656,16 +698,37 @@ export function mountUi(root, store, sw) {
         onActivate: () => run(store.playTrack(track.id)),
       }),
     );
-    ui.panel.replaceChildren(listSection('全部歌曲', `${state.tracks.length} 首`, rows));
+    ui.panel.replaceChildren(
+      listSection(
+        t('common.allTracks'),
+        t('common.trackCount', { count: state.tracks.length }),
+        rows,
+      ),
+    );
   }
 
   function render(state) {
+    const next = resolveLanguage(state.settings.language, navigator.languages);
+    if (next !== getLocale()) {
+      setLocale(next);
+      applyDocumentLang();
+      remount();
+      return;
+    }
     renderHeader(state);
     renderPlayer(state);
     renderSettings(state);
     renderTabs(state);
     renderView(state);
     setHidden(ui.updateBanner, !state.updateReady);
+  }
+
+  function remount() {
+    ui = createShell(store, sw);
+    resetCache();
+    bindSeek();
+    root.replaceChildren(ui.app);
+    render(store.state);
   }
 
   // Seeking: pointer position → seconds; keyboard for the slider role.
@@ -678,8 +741,7 @@ export function mountUi(root, store, sw) {
     run(store.seek(ratio * duration));
   }
 
-  ui.bar.addEventListener('click', seekFromPointer);
-  ui.bar.addEventListener('keydown', (event) => {
+  function seekFromKeyboard(event) {
     const duration = store.state.current.duration || store.state.current.track?.duration || 0;
     if (duration <= 0) return;
     const position = store.state.current.position || 0;
@@ -691,8 +753,15 @@ export function mountUi(root, store, sw) {
     if (target == null) return;
     event.preventDefault();
     run(store.seek(Math.min(Math.max(target, 0), duration)));
-  });
+  }
 
+  // Re-bound on every remount: the slider node is replaced with the shell.
+  function bindSeek() {
+    ui.bar.addEventListener('click', seekFromPointer);
+    ui.bar.addEventListener('keydown', seekFromKeyboard);
+  }
+
+  bindSeek();
   root.replaceChildren(ui.app);
   render(store.state);
 

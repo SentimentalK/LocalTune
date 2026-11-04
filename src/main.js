@@ -2,20 +2,26 @@ import { createApp } from './core/store.js';
 import { mountUi } from './ui/app.js';
 import { el } from './ui/dom.js';
 import { registerServiceWorker } from './pwa.js';
+import {
+  applyDocumentLang,
+  resolveLanguage,
+  setLocale,
+  t,
+} from './i18n/index.js';
 
 const root = document.getElementById('app');
 
 function renderFatal(error) {
-  const message = error instanceof Error ? error.message : String(error ?? '未知错误');
+  const message = error instanceof Error ? error.message : String(error ?? t('common.unknownError'));
   root.replaceChildren(
     el('div', { class: 'fatal' }, [
       el('h1', { text: 'LocalTune' }),
-      el('p', { text: `应用无法启动：${message}` }),
-      el('p', { class: 'muted', text: '请重新授权音乐文件夹，或刷新页面重试。' }),
+      el('p', { text: t('fatal.message', { message }) }),
+      el('p', { class: 'muted', text: t('fatal.hint') }),
       el('button', {
         class: 'btn-pill',
         type: 'button',
-        text: '重新授权',
+        text: t('fatal.reauthorize'),
         onclick: () => location.reload(),
       }),
     ]),
@@ -25,6 +31,8 @@ function renderFatal(error) {
 let store = null;
 try {
   store = await createApp();
+  setLocale(resolveLanguage(store.state.settings.language, navigator.languages));
+  applyDocumentLang();
   const sw = registerServiceWorker(() => store?.setUpdateReady(true));
   mountUi(root, store, sw);
 } catch (error) {

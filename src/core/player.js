@@ -3,6 +3,8 @@
  * The element is injected so this module never creates DOM at import time.
  */
 
+import { t } from '../i18n/index.js';
+
 export class AudioPlayer extends EventTarget {
   #audio;
   #url = null;
@@ -11,7 +13,7 @@ export class AudioPlayer extends EventTarget {
 
   constructor(audio) {
     super();
-    if (!audio) throw new Error('AudioPlayer 需要 HTMLAudioElement');
+    if (!audio) throw new Error(t('error.player.noElement'));
     this.#audio = audio;
     this.#listen('timeupdate', () => {
       this.dispatchEvent(
@@ -22,7 +24,7 @@ export class AudioPlayer extends EventTarget {
     this.#listen('play', () => this.dispatchEvent(new Event('play')));
     this.#listen('pause', () => this.dispatchEvent(new Event('pause')));
     this.#listen('error', () => {
-      const error = this.#audio.error ?? new Error('音频元素报错');
+      const error = this.#audio.error ?? new Error(t('error.player.element'));
       this.dispatchEvent(new CustomEvent('error', { detail: { error } }));
     });
   }
@@ -44,8 +46,8 @@ export class AudioPlayer extends EventTarget {
   }
 
   async load(file) {
-    if (this.#destroyed) throw new Error('播放器已销毁');
-    if (!file) throw new Error('缺少音频文件');
+    if (this.#destroyed) throw new Error(t('error.player.destroyed'));
+    if (!file) throw new Error(t('error.player.missingFile'));
     const audio = this.#audio;
     const url = URL.createObjectURL(file);
 
@@ -60,7 +62,7 @@ export class AudioPlayer extends EventTarget {
       };
       const onError = () => {
         cleanup();
-        reject(audio.error ?? new Error('音频加载失败'));
+        reject(audio.error ?? new Error(t('error.player.loadFailed')));
       };
       audio.addEventListener('canplay', onReady);
       audio.addEventListener('error', onError);
@@ -81,8 +83,8 @@ export class AudioPlayer extends EventTarget {
   }
 
   async play() {
-    if (this.#destroyed) throw new Error('播放器已销毁');
-    if (!this.#audio.src) throw new Error('尚未加载音频');
+    if (this.#destroyed) throw new Error(t('error.player.destroyed'));
+    if (!this.#audio.src) throw new Error(t('error.player.notLoaded'));
     await this.#audio.play();
   }
 
