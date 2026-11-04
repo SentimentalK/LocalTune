@@ -7,6 +7,7 @@ import {
   resolveYouTubePlaylist,
 } from '../src/core/playlist/sources/youtube.js';
 import { platformOfUrl, resolveViaProxy } from '../src/core/playlist/sources/proxy.js';
+import { t } from '../src/i18n/index.js';
 
 function jsonResponse(body, status = 200) {
   return {
@@ -200,18 +201,18 @@ test('resolveYouTubePlaylist keeps the raw title when parsing leaves it empty', 
 test('resolveYouTubePlaylist requires an API key', async () => {
   await assert.rejects(
     resolveYouTubePlaylist({ url: 'https://www.youtube.com/playlist?list=PL1', apiKey: '' }),
-    /playlists\.error\.needApiKey/,
+    new Error(t('playlists.error.needApiKey')),
   );
   await assert.rejects(
     resolveYouTubePlaylist({ url: 'https://www.youtube.com/playlist?list=PL1' }),
-    /playlists\.error\.needApiKey/,
+    new Error(t('playlists.error.needApiKey')),
   );
 });
 
 test('resolveYouTubePlaylist rejects unsupported URLs', async () => {
   await assert.rejects(
     resolveYouTubePlaylist({ url: 'https://example.com/playlist?list=PL1', apiKey: 'k' }),
-    /playlists\.error\.unsupportedUrl/,
+    new Error(t('playlists.error.unsupportedUrl')),
   );
 });
 
@@ -222,7 +223,7 @@ test('resolveYouTubePlaylist surfaces upstream status failures', async () => {
       apiKey: 'k',
       fetchImpl: async () => response(403),
     }),
-    /playlists\.error\.youtubeFailed/,
+    new Error(t('playlists.error.youtubeFailed', { status: 403 })),
   );
 });
 
@@ -285,11 +286,11 @@ test('resolveViaProxy returns the normalized worker payload', async () => {
 test('resolveViaProxy requires a proxy base', async () => {
   await assert.rejects(
     resolveViaProxy({ url: 'https://music.163.com/playlist?id=1', proxyBase: '' }),
-    /playlists\.error\.needProxy/,
+    new Error(t('playlists.error.needProxy')),
   );
   await assert.rejects(
     resolveViaProxy({ url: 'https://music.163.com/playlist?id=1' }),
-    /playlists\.error\.needProxy/,
+    new Error(t('playlists.error.needProxy')),
   );
 });
 
@@ -300,7 +301,7 @@ test('resolveViaProxy surfaces upstream status failures', async () => {
       proxyBase: 'https://proxy.example',
       fetchImpl: async () => response(502),
     }),
-    /playlists\.error\.proxyFailed/,
+    new Error(t('playlists.error.proxyFailed', { status: 502 })),
   );
 });
 
@@ -312,7 +313,7 @@ test('resolveViaProxy rejects malformed payloads', async () => {
       proxyBase: 'https://proxy.example',
       fetchImpl: badItems,
     }),
-    /playlists\.error\.proxyBadResponse/,
+    new Error(t('playlists.error.proxyBadResponse')),
   );
 
   const brokenJson = async () => ({ status: 200, ok: true, json: async () => { throw new Error('boom'); } });
@@ -322,7 +323,7 @@ test('resolveViaProxy rejects malformed payloads', async () => {
       proxyBase: 'https://proxy.example',
       fetchImpl: brokenJson,
     }),
-    /playlists\.error\.proxyBadResponse/,
+    new Error(t('playlists.error.proxyBadResponse')),
   );
 });
 

@@ -612,6 +612,10 @@ export function createSettingsView(store, sw) // → { node, render(state) }
 
 // src/ui/diagnostics.js
 export function openTagInfo(track, { loadReport }) // 标签信息弹层；loadReport: () => Promise<string>
+
+// src/ui/playlist.js
+export function createPlaylistView(store)     // → { node, render(state) }；歌单列表 + 详情
+export function createImportDialog(store)     // → { node, open(), close() }；文本/链接导入弹层
 ```
 
 `sw` 是 `registerServiceWorker()` 的返回值（`{ applyUpdate, checkForUpdate }`），UI 只通过它触发更新，不直接碰 `navigator.serviceWorker`。
@@ -630,11 +634,20 @@ export function openTagInfo(track, { loadReport }) // 标签信息弹层；loadR
 - 曲目/队列行尾「⋯」（`data-testid="row-more"`）、长按 500ms、右键都打开同一菜单（一项「标签信息」）；点击后 `openTagInfo(track, { loadReport: () => store.describeTrackTags(track.id) })`。弹层 `role="dialog" aria-modal="true"`（`data-testid="tag-info-modal"`），Esc/遮罩/关闭按钮关闭；复制失败时选中 `<pre>` 文本。数据全部来自 store，UI 不读文件。
 - toast 固定在底部一条，`role="status"`，3 秒后消失。
 
+歌单视图（`state.view === 'playlists'`，`store.js` 的 `VIEWS` 白名单包含它）复用主 tab 行：`TABS` 顺序为歌曲/专辑/歌手/文件夹/歌单/队列，行右侧是 `data-testid="import-open"` 的导入按钮（`.tabs-import`，`margin-left:auto`）。`renderView` 在「无授权」「无曲目」判断之前调用 `playlistView.render(state)`，rebuild 条件额外比较 `state.playlists` 的引用；列表与详情全部来自 `state.playlists`，不自行请求。
+
+- 列表行 `data-testid="playlist-row"`：名称、来源 chip（`playlists.source.<source>`）、代理来源旁的 `source-experimental` chip、`playlists.counts` 计数、`toLocaleString()` 创建的本地时间；行内按钮 `playlist-play`（`store.playlistTracks` → `store.playQueue`，空则 toast `playlists.emptyTracks`）、`playlist-open`、`playlist-delete`（`confirm(playlists.deleteConfirm)` → `store.deletePlaylist`）。无歌单时显示 `playlists.empty`。
+- 详情 `data-testid="playlist-detail"`：标题/来源/计数 + 三栏 `result-matched|result-suspect|result-missing`（共用 `renderColumns`，行 `result-row`；suspect 行带原因 chip 与 `confirm-item`，missing 行带 `assign-select` + `assign-item`）+ 动作 `missing-copy`（复制内容去掉末尾换行）、`missing-download`（`<name>-missing.txt`，保留末尾换行）、`m3u8-write`（`store.writePlaylistM3u8`，本地来源未授权或 OneDrive 时 `disabled` 且 `title=playlists.m3u8Unsupported`）。
+- 导入弹层 `role="dialog" aria-modal="true"`（`data-testid="import-dialog"`，`.import-dialog` 内层，`max-height:90vh`、`max-width:960px`）：`import-name`、`import-text`、`import-url`、列顺序 `import-order-auto|artist-title|title-artist`、`import-submit`、`import-close`、`import-error`、`import-result`。URL 非空时先按主机名走 YouTube（`resolveYouTubePlaylist`，key 取 `state.settings.youtubeApiKey`），再走 `platformOfUrl` + `resolveViaProxy`（`state.settings.playlistProxyUrl`），其余 URL 报 `playlists.error.unsupportedUrl`；URL 为空时 `parsePlaylistText` + `matchPlaylist`。未保存的 draft 由弹层闭包维护（`import-result` 内直接改 status/reasons 并重渲染）；`playlist-create` 调 `store.createPlaylist` 后关闭弹层、`store.setView('playlists')`、toast `playlists.created`。draft 的缺失清单与 `.m3u8` 走 `missingText`/`m3u8Text` 纯函数（id 用 `'draft'`）。Spotify 且 `truncated`（或 ≥100 行）时显示 `import-truncated`；代理来源在结果与列表行显示实验性 chip。
+- 弹层内的 toast 与视图 toast 都通过 `CustomEvent('toast', { bubbles:true, detail:{text} })` 冒泡给 app，由 app 的 `showToast` 统一显示。
+
+设置 → 关于卡在版本行之前新增两个输入：`setting-youtube-key`（`settings.about.youtubeKey` / hint `settings.about.youtubeKeyHint`）与 `setting-proxy-url`（`settings.about.proxyUrl` / hint `settings.about.proxyUrlHint`）。`change` 时调 `store.setSetting('youtubeApiKey'|'playlistProxyUrl', value.trim())`，值落库后 toast `settings.about.saved`；无校验弹窗（store 清洗非法值）。`render(state)` 只在输入框未聚焦时回填，避免 4 Hz 播放更新覆盖正在输入的文本。
+
 语言切换即时生效：`render(state)` 开头比较 `resolveLanguage(state.settings.language, navigator.languages)` 与 `getLocale()`，不同则 `setLocale()` + `applyDocumentLang()` + 用 `createShell` 重建整个壳（重新绑定进度条事件、`root.replaceChildren(ui.app)`、清空视图缓存后重渲染）。**不得用 `location.reload()` 切换语言**；`store` 的 `change` 监听只绑一次。
 
 UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.mediaSession`；全部经 Store。
 
-视图：歌曲 / 专辑 / 歌手 / 文件夹 / 队列 / 设置（全屏）。设置区不再有唱片旋转开关；来源、存储、语言、关于都在设置视图。文件夹视图整行点击 = 以该目录曲目替换队列并播放；行尾「加入队列」= 追加到队列末尾；行尾固定按钮（`data-testid="pin-<dir|root>"`）= 对该目录出现过的每个 `track.source` 调 `store.pinFolder`，已全部固定时改为 `unpinFolder`。固定运行中按钮禁用并显示 `settings.storage.pinning`（跨来源求和 `done/total`），完成后显示 `settings.storage.pinned`；状态由 `store.isPinned` + `state.pins` 决定，`aria-pressed` + `.is-on` 表达开关。
+视图：歌曲 / 专辑 / 歌手 / 文件夹 / 歌单 / 队列 / 设置（全屏）。设置区不再有唱片旋转开关；来源、存储、语言、关于都在设置视图。文件夹视图整行点击 = 以该目录曲目替换队列并播放；行尾「加入队列」= 追加到队列末尾；行尾固定按钮（`data-testid="pin-<dir|root>"`）= 对该目录出现过的每个 `track.source` 调 `store.pinFolder`，已全部固定时改为 `unpinFolder`。固定运行中按钮禁用并显示 `settings.storage.pinning`（跨来源求和 `done/total`），完成后显示 `settings.storage.pinned`；状态由 `store.isPinned` + `state.pins` 决定，`aria-pressed` + `.is-on` 表达开关。
 
 ## 构建与 SW
 

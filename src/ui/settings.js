@@ -671,6 +671,44 @@ export function createSettingsView(store, sw) {
   );
 
   // ---- about ----
+  const youtubeKeyInput = el('input', {
+    id: 'setting-youtube-key',
+    class: 'text-input',
+    type: 'text',
+    autocomplete: 'off',
+    spellcheck: 'false',
+    'data-testid': 'setting-youtube-key',
+  });
+  const proxyUrlInput = el('input', {
+    id: 'setting-proxy-url',
+    class: 'text-input',
+    type: 'url',
+    autocomplete: 'off',
+    spellcheck: 'false',
+    'data-testid': 'setting-proxy-url',
+  });
+
+  async function saveAboutSetting(key, input, limit) {
+    const expected = input.value.trim().slice(0, limit);
+    await store.setSetting(key, expected);
+    if (store.state.settings[key] === expected) toast(t('settings.about.saved'));
+  }
+
+  youtubeKeyInput.addEventListener('change', () => {
+    run(saveAboutSetting('youtubeApiKey', youtubeKeyInput, 200));
+  });
+  proxyUrlInput.addEventListener('change', () => {
+    run(saveAboutSetting('playlistProxyUrl', proxyUrlInput, 300));
+  });
+
+  function aboutField(input, labelKey, hintKey) {
+    return el('div', { class: 'about-field' }, [
+      el('label', { for: input.id, text: t(labelKey) }),
+      input,
+      el('p', { class: 'about-hint muted', text: t(hintKey) }),
+    ]);
+  }
+
   const version = el('b', { 'data-testid': 'about-version', text: BUILD_VERSION });
   const updateState = el('span', { class: 'about-state', text: t('settings.about.upToDate') });
   const checkButton = el('button', {
@@ -809,6 +847,8 @@ export function createSettingsView(store, sw) {
     { class: 'card settings-card', 'data-testid': 'settings-section-about' },
     [
       el('h3', { text: t('settings.about.title') }),
+      aboutField(youtubeKeyInput, 'settings.about.youtubeKey', 'settings.about.youtubeKeyHint'),
+      aboutField(proxyUrlInput, 'settings.about.proxyUrl', 'settings.about.proxyUrlHint'),
       el('div', { class: 'about-row' }, [
         el('span', { text: t('settings.about.version') }),
         version,
@@ -1083,6 +1123,13 @@ export function createSettingsView(store, sw) {
       updateState,
       state.updateReady ? t('settings.about.updateReady') : t('settings.about.upToDate'),
     );
+
+    for (const [input, value] of [
+      [youtubeKeyInput, settings.youtubeApiKey ?? ''],
+      [proxyUrlInput, settings.playlistProxyUrl ?? ''],
+    ]) {
+      if (document.activeElement !== input && input.value !== value) input.value = value;
+    }
 
     renderPicker(state);
 
