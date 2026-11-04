@@ -409,7 +409,7 @@ test('getFile downloads a whole file on a cache miss and writes the cache', asyn
   assert.equal(writes[0].blob, blob);
 });
 
-test('browse lists only folders sorted by name and resolves a nested path', async () => {
+test('browse lists only folders sorted by name at the drive root', async () => {
   const meta = memoryMeta({
     onedriveToken: validToken(),
     onedriveRoot: { driveId: 'drive-1', itemId: 'root', path: '', name: 'OneDrive' },
@@ -420,7 +420,6 @@ test('browse lists only folders sorted by name and resolves a nested path', asyn
     meta,
     fetchImpl: async (url) => {
       urls.push(url);
-      if (url.includes('/items/music-1/children')) return jsonResponse(200, { value: [] });
       return jsonResponse(200, {
         value: [
           { id: 'z', name: 'Zeta', folder: { childCount: 0 } },
@@ -442,10 +441,74 @@ test('browse lists only folders sorted by name and resolves a nested path', asyn
     ['Alpha', 'Zeta'],
   );
   assert.ok(root.every((entry) => entry.isFolder));
+  assert.ok(urls.some((url) => url.includes('/drives/drive-1/root/children')));
+});
 
-  const nested = await source.browse('Music');
-  assert.deepEqual(nested, []);
-  assert.ok(urls.some((url) => url.includes('/drives/drive-1/items/music-1/children')));
+test('browse resolves paths from the drive root, not the chosen library root', async () => {
+  const meta = memoryMeta({
+    onedriveToken: validToken(),
+    onedriveRoot: { driveId: 'drive-1', itemId: 'folder-music', path: 'Music', name: 'Music' },
+    // A root-relative map must not leak into picker navigation.
+    onedriveItems: { Music: 'wrong-item' },
+  });
+  const urls = [];
+  const source = makeSource({
+    meta,
+    fetchImpl: async (url) => {
+      urls.push(url);
+      if (url.includes('/root:/Music:')) {
+        return jsonResponse(200, { id: 'folder-music', name: 'Music', folder: { childCount: 2 } });
+      }
+      if (url.includes('/items/folder-music/children')) {
+        return jsonResponse(200, {
+          value: [
+            { id: 'sub', name: 'Sub', folder: { childCount: 0 } },
+            { id: 'albums', name: 'Albums', folder: { childCount: 0 } },
+          ],
+        });
+      }
+      throw new Error(`unexpected request ${url}`);
+    },
+  });
+  await source.restore();
+
+  const folders = await source.browse('Music');
+
+  assert.deepEqual(
+    folders.map((entry) => entry.name),
+    ['Albums', 'Sub'],
+  );
+  assert.deepEqual(
+    folders.map((entry) => entry.path),
+    ['Music/Albums', 'Music/Sub'],
+  );
+  assert.ok(urls.some((url) => url.includes('/drives/drive-1/root:/Music:')));
+  assert.ok(urls.every((url) => !url.includes('Music/Music')));
+  assert.ok(urls.every((url) => !url.includes('/items/wrong-item/')));
+});
+
+test('browse resolves nested drive paths with every segment encoded', async () => {
+  const meta = memoryMeta({
+    onedriveToken: validToken(),
+    onedriveRoot: { driveId: 'drive-1', itemId: 'folder-music', path: 'Music', name: 'Music' },
+  });
+  const urls = [];
+  const source = makeSource({
+    meta,
+    fetchImpl: async (url) => {
+      urls.push(url);
+      if (url.includes('/root:/Music/Sub:')) {
+        return jsonResponse(200, { id: 'folder-sub', name: 'Sub', folder: { childCount: 0 } });
+      }
+      if (url.includes('/items/folder-sub/children')) return jsonResponse(200, { value: [] });
+      throw new Error(`unexpected request ${url}`);
+    },
+  });
+  await source.restore();
+
+  assert.deepEqual(await source.browse('Music/Sub'), []);
+  assert.ok(urls.some((url) => url.includes('/drives/drive-1/root:/Music/Sub:')));
+  assert.ok(urls.every((url) => !url.includes('Music/Music')));
 });
 
 test('createRemoteFile prefetches head and tail and reuses both buffers', async () => {
