@@ -261,6 +261,7 @@ export default {
   'playlists.empty': 'No playlists yet. Import one from text or a link.',
   'playlists.emptyTracks': 'No track is matched yet, so there is nothing to play',
   'playlists.counts': '{matched} matched · {suspect} to check · {missing} missing',
+  'playlists.rematchAdded': 'Restored {count} missing tracks',
   'playlists.play': 'Play',
   'playlists.open': 'Open',
   'playlists.delete': 'Delete',
