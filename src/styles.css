@@ -671,6 +671,19 @@ time {
   opacity: 0.4;
 }
 
+@media (max-width: 600px) {
+  .source-row {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .source-actions {
+    grid-column: 1 / -1;
+    margin-left: 0;
+  }
+}
+
 .settings-progress {
   display: flex;
   align-items: center;
@@ -751,22 +764,22 @@ time {
 }
 
 .segmented {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
   gap: 4px;
   padding: 4px;
-  border-radius: 999px;
+  border-radius: 20px;
   background: color-mix(in srgb, var(--surface) 72%, transparent);
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .segment {
-  flex: 1;
-  min-width: 92px;
+  min-width: 0;
   padding: 8px 10px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
+  text-align: center;
   color: var(--muted);
 }
 
