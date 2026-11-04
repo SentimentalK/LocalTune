@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { OneDriveSource } from '../src/core/sources/onedrive/source.js';
+import { OneDriveSource, PKCE_TTL_MS } from '../src/core/sources/onedrive/source.js';
 import { createRemoteFile } from '../src/core/sources/onedrive/remoteFile.js';
 
 function memoryMeta(initial = {}) {
@@ -13,22 +13,6 @@ function memoryMeta(initial = {}) {
     set(key, value) {
       map.set(key, value);
       return Promise.resolve();
-    },
-  };
-}
-
-function memorySession(initial = {}) {
-  const map = new Map(Object.entries(initial));
-  return {
-    map,
-    getItem(key) {
-      return map.get(key) ?? null;
-    },
-    setItem(key, value) {
-      map.set(key, String(value));
-    },
-    removeItem(key) {
-      map.delete(key);
     },
   };
 }
@@ -83,12 +67,11 @@ function makeSource({
     throw new Error('unexpected fetch');
   },
   cache = null,
-  sessionStore = memorySession(),
   location = fakeLocation(),
   history = fakeHistory(),
   now,
 } = {}) {
-  return new OneDriveSource({ meta, fetchImpl, cache, sessionStore, location, history, now });
+  return new OneDriveSource({ meta, fetchImpl, cache, location, history, now });
 }
 
 function bytesOf(buffer) {
@@ -108,23 +91,41 @@ test('restore reports none without a token and prompt for an expired one', async
   assert.equal(source.permission(), 'prompt');
 });
 
-test('handleRedirect exchanges the code, stores the token and clears the query', async () => {
+test('startLogin stores PKCE in meta and redirects with an S256 challenge', async () => {
   const meta = memoryMeta();
-  const sessionStore = memorySession({
-    'localtune:onedrive:pkce': JSON.stringify({
-      verifier: 'verifier',
-      state: 'state-1',
-      redirectUri: 'https://app.test/',
-    }),
+  const location = fakeLocation();
+  const source = makeSource({ meta, location });
+
+  assert.equal(await source.startLogin(), 'redirecting');
+
+  const pkce = meta.map.get('onedrivePkce');
+  assert.equal(typeof pkce, 'object');
+  assert.equal(typeof pkce.verifier, 'string');
+  assert.ok(pkce.verifier.length > 0);
+  assert.equal(typeof pkce.state, 'string');
+  assert.ok(pkce.state.length > 0);
+  assert.equal(pkce.redirectUri, 'https://app.test/');
+  assert.ok(Number.isFinite(pkce.at));
+
+  assert.equal(location.assigned.length, 1);
+  const authorize = new URL(location.assigned[0]);
+  assert.equal(authorize.searchParams.get('code_challenge_method'), 'S256');
+  assert.equal(authorize.searchParams.get('state'), pkce.state);
+});
+
+test('handleRedirect exchanges the code from a fresh browsing context', async () => {
+  const at = 1_000_000;
+  const meta = memoryMeta({
+    onedrivePkce: { verifier: 'verifier', state: 's1', redirectUri: 'https://app.test/', at },
   });
-  const location = fakeLocation({ search: '?code=code-1&state=state-1' });
+  const location = fakeLocation({ search: '?code=c&state=s1' });
   const history = fakeHistory();
   const calls = [];
   const source = makeSource({
     meta,
-    sessionStore,
     location,
     history,
+    now: () => at + 1000,
     fetchImpl: async (url, init) => {
       calls.push([url, init]);
       return jsonResponse(200, {
@@ -139,47 +140,146 @@ test('handleRedirect exchanges the code, stores the token and clears the query',
   assert.equal(await source.handleRedirect(), true);
   assert.equal(calls.length, 1);
   assert.ok(calls[0][0].endsWith('/token'));
+  assert.equal(new URLSearchParams(calls[0][1].body).get('code_verifier'), 'verifier');
   assert.equal(meta.map.get('onedriveToken').accessToken, 'new-access');
   assert.ok(Number.isFinite(meta.map.get('onedriveAuthAt')));
-  assert.equal(sessionStore.map.has('localtune:onedrive:pkce'), false);
+  assert.equal(meta.map.get('onedrivePkce'), null);
   assert.equal(history.calls.length, 1);
   assert.equal(history.calls[0][2], '/');
-  assert.ok(!history.calls[0][2].includes('?'));
+  assert.equal(source.authError, null);
+  assert.equal(source.authStage, null);
+});
+
+test('handleRedirect consumes the PKCE entry so a replay exchanges nothing', async () => {
+  const meta = memoryMeta({
+    onedrivePkce: { verifier: 'verifier', state: 's1', redirectUri: 'https://app.test/', at: 0 },
+  });
+  const history = fakeHistory();
+  const calls = [];
+  const source = makeSource({
+    meta,
+    history,
+    now: () => 1,
+    fetchImpl: async (url, init) => {
+      calls.push([url, init]);
+      return jsonResponse(200, { access_token: 'new-access', expires_in: 3600 });
+    },
+  });
+
+  assert.equal(await source.handleRedirect('?code=c&state=s1'), true);
+  assert.equal(await source.handleRedirect('?code=c&state=s1'), false);
+  assert.equal(calls.length, 1);
+  assert.equal(meta.map.get('onedrivePkce'), null);
+});
+
+test('handleRedirect rejects a PKCE entry older than the TTL', async () => {
+  const now = 5_000_000;
+  const meta = memoryMeta({
+    onedrivePkce: {
+      verifier: 'verifier',
+      state: 's1',
+      redirectUri: 'https://app.test/',
+      at: now - PKCE_TTL_MS - 1,
+    },
+  });
+  const history = fakeHistory();
+  let fetchCalls = 0;
+  const source = makeSource({
+    meta,
+    history,
+    now: () => now,
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error('must not fetch');
+    },
+  });
+
+  assert.equal(await source.handleRedirect('?code=c&state=s1'), false);
+  assert.equal(source.authError, 'expired');
+  assert.equal(source.authStage, 'redirect');
+  assert.equal(meta.map.get('onedrivePkce'), null);
+  assert.equal(fetchCalls, 0);
+  assert.equal(history.calls.length, 1);
+  assert.equal(history.calls[0][2], '/');
 });
 
 test('handleRedirect rejects a state mismatch without storing a token', async () => {
-  const meta = memoryMeta();
-  const sessionStore = memorySession({
-    'localtune:onedrive:pkce': JSON.stringify({
-      verifier: 'verifier',
-      state: 'expected',
-      redirectUri: 'https://app.test/',
-    }),
+  const meta = memoryMeta({
+    onedrivePkce: { verifier: 'verifier', state: 'expected', redirectUri: 'https://app.test/', at: 0 },
   });
   const location = fakeLocation({ search: '?code=code-1&state=other' });
   const history = fakeHistory();
-  const source = makeSource({ meta, sessionStore, location, history });
+  let fetchCalls = 0;
+  const source = makeSource({
+    meta,
+    location,
+    history,
+    now: () => 1,
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error('must not fetch');
+    },
+  });
 
   assert.equal(await source.handleRedirect(), false);
   assert.equal(meta.map.has('onedriveToken'), false);
-  assert.equal(sessionStore.map.has('localtune:onedrive:pkce'), false);
+  assert.equal(meta.map.get('onedrivePkce'), null);
   assert.equal(history.calls.length, 1);
+  assert.equal(fetchCalls, 0);
   assert.equal(source.authError, 'state mismatch');
 });
 
+test('handleRedirect reports a failed token exchange and still consumes PKCE', async () => {
+  const meta = memoryMeta({
+    onedrivePkce: { verifier: 'verifier', state: 's1', redirectUri: 'https://app.test/', at: 0 },
+  });
+  const history = fakeHistory();
+  const source = makeSource({
+    meta,
+    history,
+    now: () => 1,
+    fetchImpl: async () => jsonResponse(400, { error: 'invalid_grant', error_description: 'bad code' }),
+  });
+
+  assert.equal(await source.handleRedirect('?code=c&state=s1'), false);
+  assert.match(source.authError, /bad code/);
+  assert.equal(source.authStage, 'token');
+  assert.equal(meta.map.get('onedrivePkce'), null);
+  assert.equal(meta.map.has('onedriveToken'), false);
+});
+
+test('handleRedirect surfaces an authorization error and clears PKCE', async () => {
+  const meta = memoryMeta({
+    onedrivePkce: { verifier: 'verifier', state: 's1', redirectUri: 'https://app.test/', at: 0 },
+  });
+  const history = fakeHistory();
+  const source = makeSource({ meta, history });
+
+  assert.equal(await source.handleRedirect('?error=access_denied&error_description=nope'), false);
+  assert.equal(source.authError, 'nope');
+  assert.equal(source.authStage, 'redirect');
+  assert.equal(meta.map.get('onedrivePkce'), null);
+  assert.equal(history.calls.length, 1);
+});
+
 test('silentReauth redirects with prompt=none once per ten minutes', async () => {
+  let clock = 1_000_000;
   const location = fakeLocation();
-  const sessionStore = memorySession();
-  const source = makeSource({ location, sessionStore });
+  const meta = memoryMeta();
+  const source = makeSource({ meta, location, now: () => clock });
 
   assert.equal(await source.silentReauth(), 'redirecting');
   assert.equal(location.assigned.length, 1);
   assert.match(location.assigned[0], /login\.microsoftonline\.com/);
   assert.match(location.assigned[0], /prompt=none/);
-  assert.ok(sessionStore.map.has('localtune:onedrive:silent'));
+  assert.deepEqual(meta.map.get('onedriveSilent'), { at: clock });
 
   assert.equal(await source.silentReauth(), false);
   assert.equal(location.assigned.length, 1);
+
+  clock += PKCE_TTL_MS + 1;
+  assert.equal(await source.silentReauth(), 'redirecting');
+  assert.equal(location.assigned.length, 2);
 });
 
 test('getFile returns a cached blob without touching auth or the network', async () => {

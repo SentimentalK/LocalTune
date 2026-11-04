@@ -127,6 +127,7 @@ function emptyRow(kind, adapter) {
     scanning: false,
     progress: { done: 0, total: 0 },
     error: null,
+    errorStage: null,
     sync: null,
     root: kind === 'onedrive' ? adapter.root()?.path ?? null : null,
   };
@@ -209,6 +210,7 @@ export class Store extends EventTarget {
     this._state = {
       ready: false,
       view: 'tracks',
+      pendingView: null,
       tracks: [],
       queue: { tracks: [], index: -1, shuffle: false, repeat: 'off' },
       current: { track: null, playing: false, position: 0, duration: 0, volume: 1 },
@@ -330,10 +332,29 @@ export class Store extends EventTarget {
   }
 
   async init() {
+    let redirect = false;
     try {
-      await this.onedrive.handleRedirect();
+      redirect = await this.onedrive.handleRedirect();
     } catch {
       // A failed exchange leaves the source signed out; restore() decides.
+      redirect = false;
+    }
+    const authError = this.onedrive.authError;
+    let authFailure = null;
+
+    if (redirect === true) {
+      this._state.pendingView = { view: 'settings', section: 'library', picker: 'onedrive' };
+      this._state.view = 'settings';
+      this.log('onedrive:auth', { stage: 'redirect', ok: true, error: null });
+    } else if (redirect === false && authError) {
+      this._state.pendingView = { view: 'settings', section: 'library', picker: null };
+      this._state.view = 'settings';
+      this.log('onedrive:auth', {
+        stage: this.onedrive.authStage ?? 'redirect',
+        ok: false,
+        error: authError,
+      });
+      authFailure = t('settings.onedrive.authFailed');
     }
 
     const savedMode = await getMeta(this.db, LOCAL_MODE_KEY).catch(() => null);
@@ -439,6 +460,12 @@ export class Store extends EventTarget {
       ...emptyRow(kind, this.sources[kind]),
       trackCount: this._countTracks(kind),
     }));
+    if (authFailure) {
+      this._refreshSource('onedrive', {
+        error: authFailure,
+        errorStage: this.onedrive.authStage ?? 'redirect',
+      });
+    }
 
     const volume = Number.isFinite(playback?.volume) ? playback.volume : 1;
     if (tracks.length) {
@@ -510,6 +537,12 @@ export class Store extends EventTarget {
     this._state.sources = this._state.sources.map((row) =>
       row.id === kind ? { ...row, ...patch } : row,
     );
+  }
+
+  clearPendingView() {
+    if (!this._state.pendingView) return;
+    this._state.pendingView = null;
+    this._emit();
   }
 
   _refreshSource(kind, patch = {}) {
@@ -647,7 +680,7 @@ export class Store extends EventTarget {
       for (const item of items) this._pickerIndex.set(item.path, item);
       const current = path ? this._pickerIndex.get(path) ?? null : null;
       this._state.onedrivePicker = { open: true, path, items, loading: false, current };
-      this._refreshSource('onedrive', { error: null });
+      this._refreshSource('onedrive', { error: null, errorStage: null });
       this._emit();
       return items;
     } catch (error) {
@@ -692,7 +725,7 @@ export class Store extends EventTarget {
 
   async reauthenticateOneDrive() {
     await this.onedrive.forget();
-    this._refreshSource('onedrive', { error: null, sync: null });
+    this._refreshSource('onedrive', { error: null, errorStage: null, sync: null });
     this._emit();
     return this.connectOneDrive();
   }

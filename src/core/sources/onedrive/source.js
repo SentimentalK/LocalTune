@@ -5,6 +5,10 @@
  * Tokens never leave `meta`: they are not logged and never rendered. The
  * refresh token of a consumer SPA lives 24 h; after that the user has to go
  * through the top-level authorization redirect again.
+ *
+ * The PKCE state also lives in `meta` (IndexedDB), not sessionStorage: the
+ * installed PWA hands the Microsoft redirect to a new browsing context (an
+ * Android Custom Tab), where sessionStorage is empty but IndexedDB is shared.
  */
 
 import {
@@ -22,9 +26,10 @@ import { createRemoteFile } from './remoteFile.js';
 import { cacheKey } from '../../cache/audioCache.js';
 import { t } from '../../../i18n/index.js';
 
-const PKCE_KEY = 'localtune:onedrive:pkce';
-const SILENT_KEY = 'localtune:onedrive:silent';
-const SILENT_WINDOW_MS = 10 * 60 * 1000;
+const PKCE_KEY = 'onedrivePkce';
+const SILENT_KEY = 'onedriveSilent';
+export const PKCE_TTL_MS = 10 * 60 * 1000;
+const SILENT_WINDOW_MS = PKCE_TTL_MS;
 const ITEM_SELECT =
   'id,name,size,file,folder,lastModifiedDateTime,parentReference,@microsoft.graph.downloadUrl';
 
@@ -53,7 +58,6 @@ export class OneDriveSource {
     meta,
     fetchImpl = (...args) => globalThis.fetch(...args),
     cache = null,
-    sessionStore = globalThis.sessionStorage,
     location = globalThis.location,
     history = globalThis.history,
     now = () => Date.now(),
@@ -62,12 +66,12 @@ export class OneDriveSource {
     this.meta = meta;
     this.fetchImpl = fetchImpl;
     this.cache = cache;
-    this.sessionStore = sessionStore;
     this.location = location;
     this.history = history;
     this.now = now;
 
     this.authError = null;
+    this.authStage = null;
     this._token = null;
     this._root = null;
     this._items = {};
@@ -102,10 +106,7 @@ export class OneDriveSource {
     const challenge = await codeChallenge(verifier);
     const state = randomState();
     const redirectUri = this.redirectUri;
-    this.sessionStore.setItem(
-      PKCE_KEY,
-      JSON.stringify({ verifier, state, redirectUri, at: this.now() }),
-    );
+    await this._setMeta(PKCE_KEY, { verifier, state, redirectUri, at: this.now() });
     const url = buildAuthorizeUrl({ redirectUri, codeChallenge: challenge, state });
     this.location.assign(prompt ? `${url}&prompt=${encodeURIComponent(prompt)}` : url);
     return 'redirecting';
@@ -116,22 +117,40 @@ export class OneDriveSource {
    * Never throws: failures land in `authError` and return false.
    */
   async handleRedirect(search = this.location.search) {
-    const { code, state } = parseAuthResponse(search ?? '');
-    if (!code) return false;
+    const { code, state, error, errorDescription } = parseAuthResponse(search ?? '');
 
-    let pkce = null;
-    try {
-      pkce = JSON.parse(this.sessionStore.getItem(PKCE_KEY) ?? 'null');
-    } catch {
-      pkce = null;
-    }
-
-    if (!pkce || !state || pkce.state !== state) {
-      this._clearPkce();
+    if (error && !code) {
+      await this._clearPkce();
       this._clearQuery();
-      this.authError = 'state mismatch';
+      this.authError = errorDescription || error;
+      this.authStage = 'redirect';
       return false;
     }
+
+    if (!code) return false;
+
+    const pkce = await this._getMeta(PKCE_KEY);
+
+    if (!pkce || !state || pkce.state !== state) {
+      await this._clearPkce();
+      this._clearQuery();
+      this.authError = 'state mismatch';
+      this.authStage = 'redirect';
+      return false;
+    }
+
+    const at = Number(pkce.at);
+    if (!Number.isFinite(at) || this.now() - at > PKCE_TTL_MS) {
+      await this._clearPkce();
+      this._clearQuery();
+      this.authError = 'expired';
+      this.authStage = 'redirect';
+      return false;
+    }
+
+    // Single use: the verifier is consumed before the exchange so a replayed
+    // redirect cannot POST the code twice.
+    await this._clearPkce();
 
     try {
       const token = await requestToken(
@@ -146,13 +165,14 @@ export class OneDriveSource {
       await this.meta.set('onedriveToken', token);
       await this.meta.set('onedriveAuthAt', this.now());
       this._permission = 'granted';
-      this._clearPkce();
       this._clearQuery();
+      this.authError = null;
+      this.authStage = null;
       return true;
-    } catch (error) {
-      this._clearPkce();
+    } catch (failure) {
       this._clearQuery();
-      this.authError = error?.message ? String(error.message) : String(error);
+      this.authError = failure?.message ? String(failure.message) : String(failure);
+      this.authStage = 'token';
       return false;
     }
   }
@@ -370,18 +390,13 @@ export class OneDriveSource {
 
   /**
    * Startup-only silent reauthorization (`prompt=none`). Never called during
-   * playback; the 10-minute guard in sessionStorage stops redirect loops.
+   * playback; the 10-minute guard in `meta` stops redirect loops.
    */
   async silentReauth() {
-    let last = null;
-    try {
-      last = JSON.parse(this.sessionStore.getItem(SILENT_KEY) ?? 'null');
-    } catch {
-      last = null;
-    }
+    const last = await this._getMeta(SILENT_KEY);
     const at = Number(last?.at);
     if (Number.isFinite(at) && this.now() - at < SILENT_WINDOW_MS) return false;
-    this.sessionStore.setItem(SILENT_KEY, JSON.stringify({ at: this.now() }));
+    await this._setMeta(SILENT_KEY, { at: this.now() });
     await this.startLogin({ prompt: 'none' });
     return 'redirecting';
   }
@@ -402,12 +417,8 @@ export class OneDriveSource {
     }
   }
 
-  _clearPkce() {
-    try {
-      this.sessionStore.removeItem(PKCE_KEY);
-    } catch {
-      // Storage may be unavailable in private modes.
-    }
+  async _clearPkce() {
+    await this._setMeta(PKCE_KEY, null);
   }
 
   _clearQuery() {
