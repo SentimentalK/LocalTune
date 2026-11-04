@@ -1,12 +1,14 @@
 /**
- * Full-screen settings view: library source, storage, language and about.
- * The node is built once per shell; `render(state)` only patches text, values
- * and disabled states so a 4 Hz playback update never rebuilds the cards.
+ * Full-screen settings view: library source, storage, playback, language and
+ * about. The node is built once per shell; `render(state)` only patches text,
+ * values and disabled states so a 4 Hz playback update never rebuilds the
+ * cards.
  */
 
 import { BUILD_VERSION } from '../core/version.js';
 import { BATTERY_BRANDS, BATTERY_STEP_KEYS, batteryTarget } from '../core/battery.js';
 import { formatBytes } from '../core/storage.js';
+import { formatTime } from '../core/selectors.js';
 import { CACHE_LIMIT_VALUES } from '../core/persist.js';
 import { DEFAULT_PROXY_URL } from '../core/playlist/sources/proxy.js';
 import { t } from '../i18n/index.js';
@@ -641,6 +643,72 @@ export function createSettingsView(store, sw) {
     ],
   );
 
+  // ---- playback ----
+  const SLEEP_OPTIONS = [
+    { value: 'off', testid: 'sleep-off', labelKey: 'settings.playback.sleepOff' },
+    { value: '15', testid: 'sleep-15', labelKey: 'settings.playback.sleep15' },
+    { value: '30', testid: 'sleep-30', labelKey: 'settings.playback.sleep30' },
+    { value: '45', testid: 'sleep-45', labelKey: 'settings.playback.sleep45' },
+    { value: '60', testid: 'sleep-60', labelKey: 'settings.playback.sleep60' },
+    { value: 'end', testid: 'sleep-end', labelKey: 'settings.playback.sleepEnd' },
+  ];
+  const sleepButtons = SLEEP_OPTIONS.map(({ value, testid, labelKey }) => ({
+    value,
+    button: el('button', {
+      type: 'button',
+      class: 'segment',
+      'data-testid': testid,
+      'aria-pressed': 'false',
+      text: t(labelKey),
+      onclick: () => store.setSleepMode(value),
+    }),
+  }));
+  const sleepRemaining = el('p', {
+    class: 'hint',
+    'data-testid': 'sleep-remaining',
+    hidden: true,
+  });
+
+  function toggleButton(key, testid) {
+    return el('button', {
+      class: 'btn-pill ghost toggle',
+      type: 'button',
+      'data-testid': testid,
+      'aria-pressed': 'false',
+      text: t(`settings.playback.${key}`),
+      onclick: () => store.setSetting(key, !store.state.settings[key]),
+    });
+  }
+
+  const levelingButton = toggleButton('leveling', 'setting-leveling');
+  const gaplessButton = toggleButton('gapless', 'setting-gapless');
+
+  const playbackCard = el(
+    'section',
+    { class: 'card settings-card', 'data-testid': 'settings-section-playback' },
+    [
+      el('h3', { text: t('settings.playback.title') }),
+      el('p', { class: 'hint', text: t('settings.playback.hint') }),
+      el('div', { class: 'setting-line' }, [
+        el('span', { class: 'setting-label', text: t('settings.playback.sleep') }),
+        el(
+          'div',
+          { class: 'segmented', role: 'group', 'aria-label': t('settings.playback.sleep') },
+          sleepButtons.map(({ button }) => button),
+        ),
+        sleepRemaining,
+      ]),
+      el('div', { class: 'setting-line' }, [
+        levelingButton,
+        el('p', { class: 'hint', text: t('settings.playback.levelingHint') }),
+      ]),
+      el('div', { class: 'setting-line' }, [
+        gaplessButton,
+        el('p', { class: 'hint', text: t('settings.playback.gaplessHint') }),
+      ]),
+    ],
+  );
+
   // ---- language ----
   const languageButtons = LANGUAGES.map(({ value, label }) => {
     const button = el('button', {
@@ -874,6 +942,7 @@ export function createSettingsView(store, sw) {
     pickerCard,
     backgroundCard,
     storageCard,
+    playbackCard,
     languageCard,
     aboutCard,
   );
@@ -1107,6 +1176,33 @@ export function createSettingsView(store, sw) {
       const active = settings.language === value;
       button.setAttribute('aria-pressed', String(active));
       button.classList.toggle('is-active', active);
+    }
+
+    const sleep = state.sleep ?? { mode: 'off', remaining: null, fading: false };
+    for (const { value, button } of sleepButtons) {
+      const active = sleep.mode === value;
+      button.setAttribute('aria-pressed', String(active));
+      button.classList.toggle('is-active', active);
+    }
+    const timedMode = ['15', '30', '45', '60'].includes(sleep.mode);
+    const showRemaining = timedMode && Number.isFinite(sleep.remaining);
+    setHidden(sleepRemaining, !showRemaining);
+    if (showRemaining) {
+      setText(
+        sleepRemaining,
+        t(
+          sleep.fading ? 'settings.playback.sleepFading' : 'settings.playback.sleepRemaining',
+          { time: formatTime(Math.ceil(sleep.remaining / 1000)) },
+        ),
+      );
+    }
+    for (const [key, button] of [
+      ['leveling', levelingButton],
+      ['gapless', gaplessButton],
+    ]) {
+      const on = Boolean(settings[key]);
+      button.setAttribute('aria-pressed', String(on));
+      button.classList.toggle('is-on', on);
     }
 
     for (const { value, button } of cacheLimitButtons) {
