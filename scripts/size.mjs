@@ -1,12 +1,13 @@
 // Enforce the first-load JS budget: gzip every dist/assets/*.js bundle and fail
-// above 80 KiB total (level 9 gzip, matching what a server would send).
+// above 100 KiB total (level 9 gzip, matching what a server would send).
 
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
-const LIMIT = 80 * 1024;
+// APP-001-H: i18n tables + settings raise the first-load JS budget to 100 KB gzip.
+const LIMIT = 102400;
 const assetsDir = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
