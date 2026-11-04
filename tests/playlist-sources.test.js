@@ -6,7 +6,7 @@ import {
   parseIsoDuration,
   resolveYouTubePlaylist,
 } from '../src/core/playlist/sources/youtube.js';
-import { platformOfUrl, resolveViaProxy } from '../src/core/playlist/sources/proxy.js';
+import { normalizeProxyUrl, platformOfUrl, resolveViaProxy } from '../src/core/playlist/sources/proxy.js';
 import { t } from '../src/i18n/index.js';
 
 function jsonResponse(body, status = 200) {
@@ -283,15 +283,46 @@ test('resolveViaProxy returns the normalized worker payload', async () => {
   });
 });
 
-test('resolveViaProxy requires a proxy base', async () => {
-  await assert.rejects(
-    resolveViaProxy({ url: 'https://music.163.com/playlist?id=1', proxyBase: '' }),
-    new Error(t('playlists.error.needProxy')),
-  );
-  await assert.rejects(
-    resolveViaProxy({ url: 'https://music.163.com/playlist?id=1' }),
-    new Error(t('playlists.error.needProxy')),
-  );
+test('resolveViaProxy defaults to the same-origin endpoint', async () => {
+  const targets = [];
+  const fetchImpl = async (target) => {
+    targets.push(target);
+    return jsonResponse({ source: 'spotify', name: 'x', items: [] });
+  };
+  const url = 'https://open.spotify.com/playlist/abc';
+
+  await resolveViaProxy({ url, fetchImpl });
+  await resolveViaProxy({ url, proxyBase: '', fetchImpl });
+  await resolveViaProxy({ url, proxyBase: '   ', fetchImpl });
+
+  assert.equal(targets.length, 3);
+  for (const target of targets) assert.ok(target.startsWith('/api/resolve?url='));
+});
+
+test('resolveViaProxy appends /resolve exactly once', async () => {
+  const targets = [];
+  const fetchImpl = async (target) => {
+    targets.push(target);
+    return jsonResponse({ source: 'spotify', name: 'x', items: [] });
+  };
+  const url = 'https://open.spotify.com/playlist/abc';
+  const query = `?url=${encodeURIComponent(url)}`;
+
+  await resolveViaProxy({ url, proxyBase: '/api/resolve', fetchImpl });
+  await resolveViaProxy({ url, proxyBase: '/api', fetchImpl });
+  await resolveViaProxy({ url, proxyBase: 'https://proxy.example/', fetchImpl });
+
+  assert.equal(targets[0], `/api/resolve${query}`);
+  assert.equal(targets[1], `/api/resolve${query}`);
+  assert.equal(targets[2], `https://proxy.example/resolve${query}`);
+});
+
+test('normalizeProxyUrl accepts HTTPS URLs and same-origin paths only', () => {
+  assert.equal(normalizeProxyUrl(' /api/resolve '), '/api/resolve');
+  assert.equal(normalizeProxyUrl('https://x.example/y'), 'https://x.example/y');
+  assert.equal(normalizeProxyUrl('//evil.example/x'), '');
+  assert.equal(normalizeProxyUrl('http://x.example'), '');
+  assert.equal(normalizeProxyUrl('p'.repeat(301)), '');
 });
 
 test('resolveViaProxy surfaces upstream status failures', async () => {

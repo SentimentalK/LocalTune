@@ -63,6 +63,7 @@ import {
   DEFAULT_CACHE_LIMIT_BYTES,
 } from './persist.js';
 import { installMediaSession, syncMediaSession } from './mediaSession.js';
+import { normalizeProxyUrl } from './playlist/sources/proxy.js';
 import { t } from '../i18n/index.js';
 
 const VIEWS = new Set(['tracks', 'albums', 'artists', 'folders', 'playlists', 'queue', 'settings']);
@@ -1223,8 +1224,9 @@ export class Store extends EventTarget {
     if (key === 'youtubeApiKey' || key === 'playlistProxyUrl') {
       const limit = key === 'youtubeApiKey' ? 200 : 300;
       const text = typeof value === 'string' ? value.trim().slice(0, limit) : '';
-      if (key === 'playlistProxyUrl' && text !== '' && !text.startsWith('https://')) return;
-      this._state.settings = { ...this._state.settings, [key]: text };
+      const clean = key === 'playlistProxyUrl' ? normalizeProxyUrl(text) : text;
+      if (key === 'playlistProxyUrl' && text !== '' && clean === '') return;
+      this._state.settings = { ...this._state.settings, [key]: clean };
       void saveSettings(this.db, this._state.settings).catch(() => {});
       this._emit();
       return;

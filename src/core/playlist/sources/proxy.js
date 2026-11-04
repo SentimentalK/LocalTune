@@ -7,6 +7,30 @@ import { t } from '../../../i18n/index.js';
 const SPOTIFY_PATH = /^\/(?:embed\/)?playlist\/([A-Za-z0-9]+)/;
 const QQ_PATH = /^\/(?:n\/ryqq\/)?playlist\/([A-Za-z0-9]+)/;
 
+/** Same-origin resolver endpoint, served by the deployment's own origin. */
+export const DEFAULT_PROXY_URL = '/api/resolve';
+
+const MAX_PROXY_URL = 300;
+const HTTPS_PROXY_RE = /^https:\/\/\S+$/i;
+const SAME_ORIGIN_PATH_RE = /^\/(?!\/)\S*$/;
+
+/**
+ * Accepts an absolute HTTPS URL or a same-origin path; anything else becomes ''.
+ * '' is valid and means "use DEFAULT_PROXY_URL".
+ */
+export function normalizeProxyUrl(value) {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  if (text === '' || text.length > MAX_PROXY_URL) return '';
+  if (HTTPS_PROXY_RE.test(text) || SAME_ORIGIN_PATH_RE.test(text)) return text;
+  return '';
+}
+
+function endpointOf(proxyBase) {
+  const value = normalizeProxyUrl(proxyBase) || DEFAULT_PROXY_URL;
+  return value.endsWith('/resolve') ? value : value.replace(/\/+$/, '') + '/resolve';
+}
+
 function toUrl(value) {
   if (typeof value !== 'string') return null;
   const text = value.trim();
@@ -86,12 +110,8 @@ function isOk(response) {
  * @returns {Promise<{source:string, name:string, items:Array<{title:string,artist:string,durationMs:number,coverUrl:string|null}>, truncated:boolean}>}
  */
 export async function resolveViaProxy({ url, proxyBase, fetchImpl = fetch } = {}) {
-  if (typeof proxyBase !== 'string' || proxyBase.trim() === '') {
-    throw new Error(t('playlists.error.needProxy'));
-  }
-
-  const base = proxyBase.trim().replace(/\/+$/, '');
-  const response = await fetchImpl(`${base}/resolve?url=${encodeURIComponent(url)}`);
+  const endpoint = endpointOf(proxyBase);
+  const response = await fetchImpl(`${endpoint}?url=${encodeURIComponent(url)}`);
   if (!isOk(response)) {
     throw new Error(t('playlists.error.proxyFailed', { status: response?.status ?? 0 }));
   }

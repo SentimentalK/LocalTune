@@ -8,6 +8,7 @@ import { BUILD_VERSION } from '../core/version.js';
 import { BATTERY_BRANDS, BATTERY_STEP_KEYS, batteryTarget } from '../core/battery.js';
 import { formatBytes } from '../core/storage.js';
 import { CACHE_LIMIT_VALUES } from '../core/persist.js';
+import { DEFAULT_PROXY_URL } from '../core/playlist/sources/proxy.js';
 import { t } from '../i18n/index.js';
 import { el, icon, setHidden, setText } from './dom.js';
 
@@ -686,6 +687,7 @@ export function createSettingsView(store, sw) {
     autocomplete: 'off',
     spellcheck: 'false',
     'data-testid': 'setting-proxy-url',
+    placeholder: DEFAULT_PROXY_URL,
   });
 
   async function saveAboutSetting(key, input, limit) {
