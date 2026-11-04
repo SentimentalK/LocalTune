@@ -234,12 +234,19 @@ function createShell(store) {
     text: '重新扫描',
     onclick: () => run(store.rescan()),
   });
+  const rescanTagsButton = el('button', {
+    class: 'btn-pill ghost',
+    type: 'button',
+    text: '重新读取标签',
+    onclick: () => run(store.rescanTags()),
+  });
   const settings = el('section', { class: 'card settings', 'aria-label': '设置' }, [
     el('label', { class: 'option', for: 'vinyl-spin' }, [
       spinToggle,
       el('span', { text: '唱片旋转' }),
     ]),
     rescanButton,
+    rescanTagsButton,
   ]);
 
   // ---- library ----
@@ -306,6 +313,7 @@ function createShell(store) {
     repeatBadge,
     spinToggle,
     rescanButton,
+    rescanTagsButton,
     tabButtons,
     panel,
     updateBanner,
@@ -410,6 +418,7 @@ export function mountUi(root, store) {
   function renderSettings(state) {
     ui.spinToggle.checked = state.settings.vinylSpin !== false;
     ui.rescanButton.disabled = state.source.scanning || state.source.permission === 'none';
+    ui.rescanTagsButton.disabled = state.source.scanning || state.source.permission === 'none';
   }
 
   function renderTabs(state) {
