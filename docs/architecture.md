@@ -88,13 +88,15 @@ iOS / 未来来源只需实现同一组方法（`connect/restore/permission/ensu
 ### `src/core/metadata/{index,id3,mp4}.js`
 
 ```js
-export async function readMetadata(file) // 读文件头（ID3 全标签，MP4 至 moov），返回 PartialMeta
+export async function readMetadata(file) // 读文件头（ID3 全标签 + 末尾 128 字节，MP4 至 moov），返回 PartialMeta
 /** @typedef {{title?:string,artist?:string,album?:string,year?:number|null,trackNo?:number|null,duration?:number,cover?:Blob|null}} PartialMeta */
-export function parseId3(bytes)   // Uint8Array → PartialMeta（ID3v2.3/2.4：TIT2 TPE1 TALB TYER/TDRC TRCK APIC；时长由首个 MPEG 帧 + Xing/Info 或比特率估算）
+export function parseId3(bytes, { fileSize, tail } = {}) // Uint8Array → PartialMeta（ID3v2.3/2.4：TIT2 TPE1 TALB TYER/TDRC TRCK APIC；时长由首个 MPEG 帧 + Xing/Info 或比特率估算；ID3v2 缺字段时用末尾 128 字节 ID3v1 补）
+export function parseId3v1(bytes) // 末尾 128 字节（或整文件）→ {title?,artist?,album?,year?}；文本同样走 decodeLegacyText
+export function decodeLegacyText(bytes) // encoding byte 0 的文本：ASCII 直出；否则 utf-8 → shift_jis → gb18030 → big5 → euc-kr 依次试解，按 CJK/假名/谚文占比打分取最高；都不像才回退 latin1
 export function parseMp4(bytes)   // Uint8Array → PartialMeta（mvhd 时长；ilst：©nam ©ART ©alb ©day trkn covr）
 ```
 
-`readMetadata` 只读取必要字节（ID3 按 tag size 截取；MP4 只读到 `moov` 结束），不整文件读入。解析异常一律吞掉并返回 `{}`，由调用方回退文件名。
+`readMetadata` 只读取必要字节（ID3 按 tag size 截取并额外读末尾 128 字节；MP4 只读到 `moov` 结束），不整文件读入。解析异常一律吞掉并返回 `{}`，由调用方回退文件名。
 
 ### `src/core/scan.js`
 
@@ -186,11 +188,14 @@ export function syncMediaSession(state)      // metadata + playbackState + posit
 export async function createApp()  // → Store（已 init）
 export class Store extends EventTarget {
   get state()                      // 只读快照，见下
-  async connectSource()            // 首次授权 / 重新授权
+  async connectSource()            // 首次授权 / 重新授权（目录选择器）
+  async requestSourcePermission()  // 'prompt' 时只调 requestPermission，不打开选择器；granted 后 rescan
   async rescan()                   // 扫描 + diff + 元数据 + 写库 + 刷新 state
-  setView(view)                    // 'tracks'|'albums'|'artists'|'queue'
+  async rescanTags()               // 对已索引曲目重新读取标签（不重新扫描目录），保留 duration
+  setView(view)                    // 'tracks'|'albums'|'artists'|'folders'|'queue'
   async playTrack(trackId)         // 以全部歌曲为队列，从该曲开始
   async playQueue(tracks, startId) // 以给定列表为队列
+  appendQueue(tracks)              // 追加到队列末尾，不切歌、不自动播放
   toggle()                         // 播放/暂停
   async next(); async prev()
   async seek(seconds)
@@ -209,7 +214,7 @@ export class Store extends EventTarget {
 ```js
 {
   ready: boolean,
-  view: 'tracks',
+  view: 'tracks'|'albums'|'artists'|'folders'|'queue',
   tracks: Track[],
   queue: { tracks: Track[], index: number, shuffle: boolean, repeat: 'off'|'all'|'one' },
   current: { track: Track|null, playing: boolean, position: 0, duration: 0, volume: 1 },
@@ -228,6 +233,14 @@ export function groupByArtist(tracks)  // [{name, cover, tracks}]
 export function formatTime(seconds)    // 'm:ss'
 ```
 
+### `src/core/folders.js`
+
+```js
+export function groupByFolder(tracks)  // [{dir, count, trackIds}]：每个直接含音频的目录（含嵌套）一项；
+                                       // trackIds 含该目录所有子孙目录的曲目，按 trackNo、再文件名自然排序、再路径；
+                                       // 结果按 dir 升序；根目录直接放歌时 dir = ''
+```
+
 ### UI（`src/ui/`）
 
 ```js
@@ -242,6 +255,8 @@ export function mountUi(root, store)  // 首次渲染 + store.on('change') 重�
 ```
 
 UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.mediaSession`；全部经 Store。
+
+视图：歌曲 / 专辑 / 歌手 / 文件夹 / 队列。设置区：唱片旋转、重新扫描、重新读取标签。文件夹视图整行点击 = 以该目录曲目替换队列并播放；行尾「加入队列」= 追加到队列末尾。
 
 ## 构建与 SW
 
