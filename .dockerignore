@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+dist
+test-results
+playwright-report
+.scratch
+docs
+design
+e2e
+tests
+playwright.config.js
+*.md

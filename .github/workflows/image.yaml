@@ -1,0 +1,117 @@
+name: Build & Publish Image
+
+# Every push (any branch) builds, smoke-tests and publishes a multi-arch
+# (amd64 + arm64, Linux only) image to GHCR, tagged sha-<short> and <branch>.
+# Only main moves :latest.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    name: Build, Smoke-test & Publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Compute lowercase image name
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/localtune" >> "$GITHUB_ENV"
+
+      - name: Set up QEMU
+        if: github.event_name != 'pull_request'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Smoke build (amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: localtune:ci
+          cache-from: type=gha
+
+      - name: Smoke test container
+        run: |
+          CONTAINER_ID=$(docker run -d -p 8080:8080 localtune:ci)
+          trap "docker logs $CONTAINER_ID; docker rm -f $CONTAINER_ID" EXIT
+
+          for i in $(seq 1 15); do
+            curl -fs http://localhost:8080/healthz >/dev/null && break
+            sleep 1
+          done
+
+          check() {
+            status=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080$1")
+            echo "$1 -> $status"
+            test "$status" = "200" || { echo "expected 200 for $1"; exit 1; }
+          }
+          check /healthz
+          check /
+          check /manifest.webmanifest
+          check /sw.js
+
+          header() {
+            curl -sI "http://localhost:8080$1" | tr -d '\r' | grep -qi "$2"
+          }
+          header /sw.js 'cache-control:.*no-cache' || { echo "/sw.js must be no-cache"; exit 1; }
+          header /manifest.webmanifest 'content-type: application/manifest+json' \
+            || { echo "/manifest.webmanifest MIME type is wrong"; exit 1; }
+
+          ASSET=$(curl -s http://localhost:8080/ | grep -o '/assets/[^"]*\.js' | head -n 1)
+          test -n "$ASSET" || { echo "no /assets/*.js referenced from /"; exit 1; }
+          check "$ASSET"
+          header "$ASSET" 'cache-control:.*immutable' || { echo "$ASSET must be immutable"; exit 1; }
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker Metadata
+        if: github.event_name != 'pull_request'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and Push Multi-arch Image
+        if: github.event_name != 'pull_request'
+        id: docker_build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Print Published Image
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "Image digest: ${{ steps.docker_build.outputs.digest }}"
+          echo "Tags:"
+          echo "${{ steps.meta.outputs.tags }}"
