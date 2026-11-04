@@ -6,12 +6,14 @@
  */
 
 import { groupByAlbum, groupByArtist, formatTime } from '../core/selectors.js';
+import { groupByFolder } from '../core/folders.js';
 import { el, icon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
 
 const TABS = [
   { id: 'tracks', label: '歌曲' },
   { id: 'albums', label: '专辑' },
   { id: 'artists', label: '歌手' },
+  { id: 'folders', label: '文件夹' },
   { id: 'queue', label: '队列' },
 ];
 
@@ -94,6 +96,34 @@ function queueRow(track, index, { now, onActivate, onRemove }) {
     onclick: onRemove,
   });
   return el('li', { class: now ? 'row queue now' : 'row queue' }, [hit, remove]);
+}
+
+function folderRow(group, { onPlay, onEnqueue }) {
+  const label = group.dir || '根目录';
+  const hit = el(
+    'button',
+    {
+      class: 'row-hit',
+      type: 'button',
+      'aria-label': `播放文件夹 ${label}`,
+      onclick: onPlay,
+    },
+    [
+      artNode(null),
+      el('span', { class: 't' }, [
+        el('b', { text: label }),
+        el('span', { text: `${group.count} 首` }),
+      ]),
+    ],
+  );
+  const add = el('button', {
+    class: 'row-add',
+    type: 'button',
+    text: '加入队列',
+    'aria-label': `把文件夹 ${label} 加入队列`,
+    onclick: onEnqueue,
+  });
+  return el('li', { class: 'row' }, [hit, add]);
 }
 
 function listSection(headerLabel, countLabel, rows) {
@@ -520,6 +550,20 @@ export function mountUi(root, store) {
           el('ul', { class: 'grid' }, cards),
         ]),
       );
+      return;
+    }
+
+    if (state.view === 'folders') {
+      const groups = groupByFolder(state.tracks);
+      const byId = new Map(state.tracks.map((track) => [track.id, track]));
+      const rows = groups.map((group) => {
+        const list = group.trackIds.map((id) => byId.get(id)).filter(Boolean);
+        return folderRow(group, {
+          onPlay: () => run(store.playQueue(list, list[0]?.id)),
+          onEnqueue: () => store.appendQueue(list),
+        });
+      });
+      ui.panel.replaceChildren(listSection('文件夹', `${groups.length} 个`, rows));
       return;
     }
 

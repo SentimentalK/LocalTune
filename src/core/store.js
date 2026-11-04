@@ -22,7 +22,7 @@ import { AudioPlayer } from './player.js';
 import { loadPlayback, savePlayback, loadSettings, saveSettings } from './persist.js';
 import { installMediaSession, syncMediaSession } from './mediaSession.js';
 
-const VIEWS = new Set(['tracks', 'albums', 'artists', 'queue']);
+const VIEWS = new Set(['tracks', 'albums', 'artists', 'folders', 'queue']);
 const MEDIA_SYNC_INTERVAL = 1000;
 
 function sortTracks(tracks) {
@@ -376,6 +376,19 @@ export class Store extends EventTarget {
     this._reflectQueue();
     this._emit();
     await this._loadTrack(currentTrack(this.queue), { play: true });
+    this._savePlayback();
+    this._syncMediaSession(true);
+  }
+
+  appendQueue(tracks) {
+    const list = Array.from(tracks ?? []).filter(Boolean);
+    if (!list.length) return;
+    const base = this.queue ?? createQueue([]);
+    const merged = [...base.tracks, ...list];
+    const index = base.index >= 0 ? base.index : 0;
+    this.queue = setQueue(base, merged, index);
+    this._reflectQueue();
+    this._emit();
     this._savePlayback();
     this._syncMediaSession(true);
   }
