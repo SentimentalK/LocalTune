@@ -54,12 +54,12 @@ test('setLocale switches the active table and ignores unknown locales', () => {
   const before = getLocale();
   setLocale('ja');
   assert.equal(getLocale(), 'ja');
-  assert.equal(t('tabs.tracks'), ja['tabs.tracks']);
+  assert.equal(t('tabs.folders'), ja['tabs.folders']);
   assert.equal(t('common.ready'), ja['common.ready']);
 
   setLocale('zh-CN');
   assert.equal(getLocale(), 'zh-CN');
-  assert.equal(t('tabs.tracks'), zhCN['tabs.tracks']);
+  assert.equal(t('tabs.folders'), zhCN['tabs.folders']);
 
   setLocale('de');
   assert.equal(getLocale(), 'zh-CN');

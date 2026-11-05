@@ -35,7 +35,6 @@ export default {
   'diagnostics.copy': '复制',
   'diagnostics.close': '关闭',
 
-  'tabs.tracks': '歌曲',
   'tabs.folders': '文件夹',
   'tabs.playlists': '歌单',
   'tabs.queue': '队列',

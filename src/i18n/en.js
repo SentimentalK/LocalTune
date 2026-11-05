@@ -37,9 +37,6 @@ export default {
   'diagnostics.copy': 'Copy',
   'diagnostics.close': 'Close',
 
-  // Kept for tests/i18n.test.js (outside this change's file scope): no view
-  // renders it any more.
-  'tabs.tracks': 'Songs',
   'tabs.folders': 'Folders',
   'tabs.playlists': 'Playlists',
   'tabs.queue': 'Queue',

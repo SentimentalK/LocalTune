@@ -36,7 +36,6 @@ export default {
   'diagnostics.copy': 'コピー',
   'diagnostics.close': '閉じる',
 
-  'tabs.tracks': '曲',
   'tabs.folders': 'フォルダー',
   'tabs.playlists': 'プレイリスト',
   'tabs.queue': 'キュー',
