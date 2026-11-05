@@ -120,78 +120,36 @@ test('import mode copies files into OPFS and survives a reload', async ({ page }
 });
 
 test.describe('background playback card', () => {
-  test.use({ userAgent: ANDROID_UA });
+  test.use({ userAgent: ANDROID_UA, locale: 'en-US' });
 
-  test('shows install state and two-column battery steps', async ({ page }) => {
+  test('offers install and a manual battery check, with no OEM brands', async ({ page }) => {
     await page.goto('/');
     await page.locator('[data-testid="settings-open"]').click();
 
-    await expect(page.locator('[data-testid="settings-section-background"]')).toBeVisible();
-    await expect(page.locator('[data-testid="install-status"]')).not.toHaveText('');
+    const card = page.locator('[data-testid="settings-section-background"]');
+    await expect(card).toBeVisible();
 
-    const grid = page.locator('[data-testid="background-grid"]');
-    await expect(grid).toBeVisible();
-    const layout = await grid.evaluate((node) => {
-      const [left, right] = node.children;
-      const a = left.getBoundingClientRect();
-      const b = right.getBoundingClientRect();
-      return {
-        childCount: node.children.length,
-        topDelta: Math.abs(a.top - b.top),
-        gap: b.left - a.right,
-        overflow: node.scrollWidth - node.clientWidth,
-      };
-    });
-    expect(layout.childCount).toBe(2);
-    expect(layout.topDelta).toBeLessThan(2);
-    expect(layout.gap).toBeGreaterThan(-4);
-    expect(layout.overflow).toBeLessThanOrEqual(0);
+    const install = page.locator('[data-testid="install-button"]');
+    const battery = page.locator('[data-testid="battery-button"]');
+    await expect(install).toBeVisible();
+    await expect(install).toBeEnabled();
+    await expect(install).toHaveText('How to install');
+    await expect(battery).toBeVisible();
+    await expect(battery).toHaveText('Check settings');
+    await expect(battery).toBeEnabled();
+    await expect(page.locator('[data-testid="install-status"]')).toHaveText(
+      'This browser cannot install the app; playback may stop when the screen is off.',
+    );
+    await expect(page.locator('[data-testid="background-desktop"]')).toBeHidden();
 
-    const stockList = page.locator('[data-testid="battery-steps-stock-list"]');
-    await expect(stockList).toBeVisible();
-    await expect(stockList.locator('li')).toHaveCount(3);
-
-    const samsung = page.locator('[data-testid="battery-brand-details-samsung"]');
-    await expect(samsung).toBeVisible();
-    await expect(samsung.locator('ol')).toBeHidden();
-    await samsung.locator('summary').click();
-    await expect(samsung.locator('ol')).toBeVisible();
-
-    const batteryButton = page.locator('[data-testid="battery-button"]');
-    await expect(batteryButton).toBeVisible();
-    await batteryButton.click();
-    const details = page.locator('[data-testid="battery-steps-section"] details');
-    await expect(details).toHaveCount(3);
-    for (let index = 0; index < 3; index += 1) {
-      await expect(details.nth(index)).toHaveAttribute('open', '');
-    }
+    const text = await page.locator('body').innerText();
+    expect(text).not.toMatch(/Samsung|Xiaomi|Huawei|MIUI|One UI|EMUI/);
+    await expect(page.locator('details')).toHaveCount(0);
+    await expect(page.locator('[data-testid="battery-steps-section"]')).toHaveCount(0);
+    expect(text).not.toMatch(/Battery: OK/);
   });
 
-  test('keeps the copy and actions side by side at 360px', async ({ page }) => {
-    await page.setViewportSize({ width: 360, height: 780 });
-    await page.goto('/');
-    await page.locator('[data-testid="settings-open"]').click();
-
-    const grid = page.locator('[data-testid="background-grid"]');
-    await expect(grid).toBeVisible();
-    const layout = await grid.evaluate((node) => {
-      const [left, right] = node.children;
-      const a = left.getBoundingClientRect();
-      const b = right.getBoundingClientRect();
-      return {
-        childCount: node.children.length,
-        topDelta: Math.abs(a.top - b.top),
-        gap: b.left - a.right,
-        overflow: node.scrollWidth - node.clientWidth,
-      };
-    });
-    expect(layout.childCount).toBe(2);
-    expect(layout.topDelta).toBeLessThan(2);
-    expect(layout.gap).toBeGreaterThanOrEqual(-4);
-    expect(layout.overflow).toBeLessThanOrEqual(0);
-  });
-
-  test('hides the install button once the app runs installed', async ({ page }) => {
+  test('a standalone launch disables install and survives a reload', async ({ page }) => {
     await page.addInitScript(() => {
       const real = window.matchMedia?.bind(window);
       window.matchMedia = (query) => {
@@ -205,24 +163,104 @@ test.describe('background playback card', () => {
             removeListener() {},
           };
         }
-        return real
-          ? real(query)
-          : {
-              matches: false,
-              media: query,
-              addEventListener() {},
-              removeEventListener() {},
-              addListener() {},
-              removeListener() {},
-            };
+        return real ? real(query) : { matches: false, media: query, addEventListener() {}, removeEventListener() {} };
       };
+      Object.defineProperty(window.navigator, 'standalone', { configurable: true, value: true });
     });
 
+    for (const pass of ['first load', 'after reload']) {
+      await page.goto('/');
+      await page.locator('[data-testid="settings-open"]').click();
+      const install = page.locator('[data-testid="install-button"]');
+      await expect(install, pass).toBeDisabled();
+      await expect(install, pass).toHaveText('Installed');
+      await expect(install, pass).toHaveAttribute('aria-disabled', 'true');
+      await expect(page.locator('[data-testid="install-status"]'), pass).toHaveText(
+        'Open LocalTune from your home screen.',
+      );
+      await expect(page.locator('[data-testid="battery-button"]'), pass).toBeEnabled();
+    }
+  });
+
+  test('the appinstalled event greys the button in the same session', async ({ page }) => {
     await page.goto('/');
     await page.locator('[data-testid="settings-open"]').click();
-    await expect(page.locator('[data-testid="settings-section-background"]')).toBeVisible();
+    const install = page.locator('[data-testid="install-button"]');
+    await expect(install).toBeEnabled();
+
+    await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')));
+    await expect(install).toBeDisabled();
+    await expect(install).toHaveText('Installed');
+  });
+
+  test('the install button calls the captured prompt and turns Installed', async ({ page }) => {
+    await page.goto('/');
+    await page.locator('[data-testid="settings-open"]').click();
+    await page.evaluate(() => {
+      window.__prompted = 0;
+      const event = new Event('beforeinstallprompt');
+      event.prompt = async () => {
+        window.__prompted += 1;
+      };
+      event.userChoice = Promise.resolve({ outcome: 'accepted' });
+      window.dispatchEvent(event);
+    });
+
+    const install = page.locator('[data-testid="install-button"]');
+    await expect(install).toHaveText('Install app');
+    await install.click();
+    await expect(install).toHaveText('Installed');
+    await expect(install).toBeDisabled();
+    expect(await page.evaluate(() => window.__prompted)).toBe(1);
+  });
+
+  test('the card keeps no horizontal overflow at 360px', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.goto('/');
+    await page.locator('[data-testid="settings-open"]').click();
+
+    const overflow = await page.evaluate(() => {
+      const card = document.querySelector('[data-testid="settings-section-background"]');
+      const actions = document.querySelector('[data-testid="background-actions"]');
+      return {
+        page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        card: card.scrollWidth - card.clientWidth,
+        actions: actions.scrollWidth - actions.clientWidth,
+      };
+    });
+    expect(overflow.page).toBeLessThanOrEqual(0);
+    expect(overflow.card).toBeLessThanOrEqual(0);
+    expect(overflow.actions).toBeLessThanOrEqual(0);
+  });
+});
+
+test.describe('background card on desktop', () => {
+  test.use({ locale: 'en-US' });
+
+  test('shows only the phone-only sentence', async ({ page }) => {
+    await page.goto('/');
+    await page.locator('[data-testid="settings-open"]').click();
+    await expect(page.locator('[data-testid="background-desktop"]')).toHaveText(
+      'Background playback applies to phones.',
+    );
+    await expect(page.locator('[data-testid="background-actions"]')).toBeHidden();
     await expect(page.locator('[data-testid="install-button"]')).toBeHidden();
-    await expect(page.locator('[data-testid="install-status"]')).not.toHaveText('');
+    await expect(page.locator('[data-testid="battery-button"]')).toBeHidden();
+    await expect(page.locator('[data-testid="install-status"]')).toBeHidden();
+  });
+
+  test('the sentence does not overflow at 360px', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.goto('/');
+    await page.locator('[data-testid="settings-open"]').click();
+    const note = page.locator('[data-testid="background-desktop"]');
+    await expect(note).toBeVisible();
+    const overflow = await note.evaluate((node) => node.scrollWidth - node.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+    const pageOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(pageOverflow).toBeLessThanOrEqual(0);
   });
 });
 

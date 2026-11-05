@@ -665,14 +665,7 @@ time {
   color: var(--muted);
 }
 
-/* Background card: copy on the left, install/battery actions on the right. */
-.background-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: stretch;
-  gap: 12px;
-}
-
+/* Background card: copy, then a wrapping action row on phones. */
 .background-copy {
   min-width: 0;
 }
@@ -685,10 +678,9 @@ time {
 
 .background-actions {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 8px;
-  align-items: stretch;
-  min-width: 116px;
+  margin-top: 10px;
 }
 
 .background-actions .btn-pill {
@@ -701,39 +693,16 @@ time {
   margin: 0;
 }
 
-.battery-steps-list {
-  margin: 0 0 6px;
-  padding-left: 18px;
+.background-status {
+  margin: 8px 0 0;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
-.battery-steps-list li {
-  margin: 2px 0;
-}
-
-.battery-steps {
-  margin-top: 12px;
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
-}
-
-.battery-steps-title {
-  margin: 0 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-}
-
-.battery-brand-details {
-  margin-top: 6px;
-}
-
-.battery-brand-details summary {
-  cursor: pointer;
+.background-desktop {
+  margin: 10px 0 0;
   font-size: 13px;
+  line-height: 1.45;
 }
 
 .source-row,
@@ -1998,7 +1967,7 @@ textarea.text-input {
     grid-column: 1 / -1;
   }
 
-  /* Keeps the 116px action column two-up at 360px while the copy stays ≤4 lines. */
+  /* Keeps the copy and the status line ≤4 lines beside the wrapping buttons. */
   .background-copy p {
     font-size: 12px;
   }

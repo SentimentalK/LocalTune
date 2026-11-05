@@ -116,45 +116,17 @@ export default {
   'settings.onedrive.authFailedToken': "OneDrive couldn't finish the sign-in exchange. Please try again.",
   'settings.onedrive.authFailedPending': 'OneDrive sign-in is still finishing. Please retry in a moment.',
   'settings.background.title': 'Background playback',
-  'settings.background.cardTitle': 'Install and battery',
-  'settings.background.cardBody':
-    'Install LocalTune, then set Chrome and LocalTune battery usage to Unrestricted. This improves how reliably playback continues while the screen is off.',
-  'settings.background.installed': 'Installed — open it from the home screen for background playback.',
+  'settings.background.cardBody': 'Phones pause background pages to save power.',
+  'settings.background.desktop': 'Background playback applies to phones.',
+  'settings.background.install': 'Install app',
+  'settings.background.installed': 'Installed',
+  'settings.background.installedHint': 'Open LocalTune from your home screen.',
+  'settings.background.howToInstall': 'How to install',
+  'settings.background.checkSettings': 'Check settings',
+  'settings.background.batteryOk': 'Battery: OK',
   'settings.background.installable': 'Install LocalTune for the most reliable background playback.',
   'settings.background.browserMode':
     'This browser cannot install the app; playback may stop when the screen is off.',
-  'settings.background.install': 'Install app',
-  'settings.background.installNext':
-    'Installed. Next: set Chrome and LocalTune to Unrestricted battery usage (steps below).',
-  'settings.background.batteryGuide': 'Battery guide',
-  'settings.background.batteryDesktop': 'Battery optimisation only applies to Android devices.',
-  'settings.background.stepsTitle': 'Battery settings on Android',
-  'settings.background.batteryBrandSamsung': 'Samsung',
-  'settings.background.batteryBrandXiaomi': 'Xiaomi',
-  'settings.background.batteryBrandHuawei': 'Huawei',
-  'settings.background.batteryBrandStock': 'Android',
-  'settings.background.samsung1':
-    'Settings → Battery and device care → Battery → Background usage limits',
-  'settings.background.samsung2': 'Turn off “Put unused apps to sleep”',
-  'settings.background.samsung3':
-    '“Never sleeping apps” → + → select Chrome. Alternative: Settings → Apps → Chrome → Battery → Battery optimization → All apps → Chrome → Don’t optimize',
-  'settings.background.xiaomi1': 'Settings → Apps → Manage apps → Chrome',
-  'settings.background.xiaomi2': 'Battery saver → No restrictions',
-  'settings.background.xiaomi3': 'App permissions → Background autostart → allow',
-  'settings.background.huawei1': 'Phone Manager → App launch → Chrome',
-  'settings.background.huawei2':
-    'Turn off “Manage automatically” and enable Auto-launch, Secondary launch and Run in background',
-  'settings.background.huawei3':
-    'Alternative: Settings → Battery → Battery optimization → Chrome → Don’t allow',
-  'settings.background.stock1': 'Settings → Apps → See all apps → Chrome',
-  'settings.background.stock2': 'App battery usage → Allow background usage → Unrestricted',
-  'settings.background.stock3':
-    'Repeat for LocalTune. Older builds: Settings → Apps → Special app access → Battery optimization → Chrome → Don’t optimize',
-  'settings.background.iosTitle': 'Install on iOS',
-  'settings.background.iosHint': 'Add to Home Screen for background playback.',
-  'settings.background.ios1': 'Tap Share in Safari',
-  'settings.background.ios2': 'Add to Home Screen',
-  'settings.background.ios3': 'Open from Home Screen',
   'battery.dialog.title': 'Background playback',
   'battery.dialog.intro':
     'Phones pause background pages to save power. These steps keep playback alive.',

@@ -120,47 +120,19 @@ export default {
   'settings.onedrive.authFailedPending':
     'OneDrive のサインインを処理中です。しばらくしてから再試行してください。',
   'settings.background.title': 'バックグラウンド再生',
-  'settings.background.cardTitle': 'インストールとバッテリー',
   'settings.background.cardBody':
-    'LocalTune をインストールし、Chrome と LocalTune のバッテリー使用量を「無制限」に設定します。画面が消えている間も再生が続く信頼性が上がります。',
-  'settings.background.installed':
-    'インストール済み。ホーム画面から起動すればバックグラウンドで再生できます。',
+    'スマートフォンは省電力のためバックグラウンドのページを停止します。',
+  'settings.background.desktop': 'バックグラウンド再生はスマートフォン向けの機能です。',
+  'settings.background.install': 'アプリをインストール',
+  'settings.background.installed': 'インストール済み',
+  'settings.background.installedHint': 'ホーム画面から LocalTune を開いてください。',
+  'settings.background.howToInstall': 'インストール方法',
+  'settings.background.checkSettings': '設定を確認',
+  'settings.background.batteryOk': 'バッテリー: OK',
   'settings.background.installable':
     'LocalTune をインストールすると、バックグラウンド再生が安定します。',
   'settings.background.browserMode':
     'このブラウザーではインストールできません。画面オフ時に再生が止まる場合があります。',
-  'settings.background.install': 'アプリをインストール',
-  'settings.background.installNext':
-    'インストールしました。次に Chrome と LocalTune のバッテリー使用量を「無制限」に設定してください（手順は下）。',
-  'settings.background.batteryGuide': 'バッテリー設定',
-  'settings.background.batteryDesktop': 'バッテリー最適化は Android 端末でのみ関係します。',
-  'settings.background.stepsTitle': 'Android のバッテリー設定',
-  'settings.background.batteryBrandSamsung': 'サムスン',
-  'settings.background.batteryBrandXiaomi': 'Xiaomi',
-  'settings.background.batteryBrandHuawei': 'HUAWEI',
-  'settings.background.batteryBrandStock': 'Android',
-  'settings.background.samsung1':
-    '設定 → バッテリーとデバイスケア → バッテリー → バックグラウンド使用の制限',
-  'settings.background.samsung2': '「未使用のアプリをスリープさせる」をオフ',
-  'settings.background.samsung3':
-    '「スリープしないアプリ」→ ＋ → Chrome を選択。別ルート：設定 → アプリ → Chrome → バッテリー → バッテリーの最適化 → すべてのアプリ → Chrome → 最適化しない',
-  'settings.background.xiaomi1': '設定 → アプリ → アプリを管理 → Chrome',
-  'settings.background.xiaomi2': 'バッテリーセーバー → 制限なし',
-  'settings.background.xiaomi3': 'アプリの権限 → バックグラウンドでの自動起動 → 許可',
-  'settings.background.huawei1': '電話マネージャー → アプリ起動 → Chrome',
-  'settings.background.huawei2':
-    '「自動管理」をオフにし、自動起動・関連起動・バックグラウンド動作の3つをすべてオン',
-  'settings.background.huawei3':
-    '別ルート：設定 → バッテリー → バッテリーの最適化 → Chrome → 許可しない',
-  'settings.background.stock1': '設定 → アプリ → すべてのアプリを表示 → Chrome',
-  'settings.background.stock2': 'アプリのバッテリー使用量 → バックグラウンドでの使用を許可 → 無制限',
-  'settings.background.stock3':
-    'LocalTune でも同じ設定を行います。古い端末: 設定 → アプリ → 特別なアプリのアクセス → バッテリー最適化 → Chrome → 最適化しない',
-  'settings.background.iosTitle': 'iOS でインストール',
-  'settings.background.iosHint': 'ホーム画面に追加するとバックグラウンド再生。',
-  'settings.background.ios1': 'Safari の共有をタップ',
-  'settings.background.ios2': '「ホーム画面に追加」を選択',
-  'settings.background.ios3': 'ホーム画面から起動',
   'battery.dialog.title': 'バックグラウンド再生',
   'battery.dialog.intro':
     'スマートフォンは省電力のためバックグラウンドのページを停止します。以下の手順で再生を続けられます。',

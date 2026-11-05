@@ -80,7 +80,12 @@ export function initInstall({ window: win = globalThis.window } = {}) {
       const promptEvent = event;
       try {
         await promptEvent.prompt();
-        return await promptEvent.userChoice;
+        const choice = await promptEvent.userChoice;
+        // Accepted is the only outcome that may claim "Installed": dismissed and
+        // unavailable keep the environment-derived state. `appinstalled` still
+        // fires later as the authoritative fallback.
+        if (choice?.outcome === 'accepted') installed = true;
+        return choice;
       } catch {
         return { outcome: 'unavailable' };
       } finally {

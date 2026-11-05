@@ -6,10 +6,10 @@
  */
 
 import { BUILD_VERSION } from '../core/version.js';
-import { BATTERY_BRANDS, BATTERY_STEP_KEYS } from '../core/battery.js';
 import { formatBytes } from '../core/storage.js';
 import { formatTime } from '../core/selectors.js';
 import { CACHE_LIMIT_VALUES } from '../core/persist.js';
+import { createBatteryGuide } from './batteryGuide.js';
 import { t } from '../i18n/index.js';
 import { el, icon, setHidden, setText } from './dom.js';
 
@@ -243,99 +243,80 @@ export function createSettingsView(store, sw) {
   );
 
   // ---- background playback ----
-  const BRAND_LABELS = {
-    samsung: 'settings.background.batteryBrandSamsung',
-    xiaomi: 'settings.background.batteryBrandXiaomi',
-    huawei: 'settings.background.batteryBrandHuawei',
-    stock: 'settings.background.batteryBrandStock',
-  };
+  const ua = globalThis.navigator?.userAgent ?? '';
+  const platform = /Android/i.test(ua)
+    ? 'android'
+    : /iPad|iPhone|iPod/.test(ua) ||
+        (ua.includes('Macintosh') && (globalThis.navigator?.maxTouchPoints ?? 0) > 1)
+      ? 'ios'
+      : 'desktop';
+  const desktopOnly = platform === 'desktop';
 
-  const installStatus = el('p', { class: 'muted', 'data-testid': 'install-status' });
+  // No web API exposes "battery optimisation / unrestricted" on Android or iOS
+  // (docs/research/pwa-background-battery.md), so the state stays 'unknown' and
+  // the button is always actionable. A future detector only has to return 'ok'.
+  function batteryButtonState(status) {
+    return status === 'ok'
+      ? { labelKey: 'settings.background.batteryOk', disabled: true }
+      : { labelKey: 'settings.background.checkSettings', disabled: false };
+  }
+  const batteryState = batteryButtonState('unknown');
+
+  const guide = createBatteryGuide();
+
+  const installStatus = el('p', {
+    class: 'muted background-status',
+    'data-testid': 'install-status',
+  });
 
   const installButton = el('button', {
     class: 'btn-pill',
     type: 'button',
     'data-testid': 'install-button',
     text: t('settings.background.install'),
-    onclick: async () => {
-      installButton.disabled = true;
-      try {
-        const result = await store.install?.prompt();
-        if (result?.outcome === 'accepted') {
-          setText(installStatus, t('settings.background.installNext'));
-          toast(t('settings.background.installNext'));
-        }
-      } finally {
-        installButton.disabled = false;
+    onclick: () => {
+      if ((store.state.install?.status ?? 'browser') === 'installable') {
+        run(store.install?.prompt());
+        return;
       }
+      if ((store.state.install?.status ?? 'browser') === 'installed') return;
+      guide.open(platform, installButton);
     },
   });
-  setHidden(installButton, true);
 
-  const isAndroid = /Android/i.test(globalThis.navigator?.userAgent ?? '');
   const batteryButton = el('button', {
     class: 'btn-pill ghost',
     type: 'button',
     'data-testid': 'battery-button',
-    text: t('settings.background.batteryGuide'),
-    onclick: () => {
-      for (const node of batterySteps.querySelectorAll('details')) node.open = true;
-      batterySteps.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    },
+    text: t(batteryState.labelKey),
+    onclick: () => guide.open(platform, batteryButton),
   });
-  const batteryDesktop = el('p', {
-    class: 'muted',
-    text: t('settings.background.batteryDesktop'),
+  if (batteryState.disabled) batteryButton.disabled = true;
+
+  const backgroundActions = el(
+    'div',
+    { class: 'background-actions', 'data-testid': 'background-actions' },
+    [installButton, batteryButton],
+  );
+  const backgroundDesktop = el('p', {
+    class: 'muted background-desktop',
+    'data-testid': 'background-desktop',
+    text: t('settings.background.desktop'),
   });
-  setHidden(batteryButton, !isAndroid);
-  setHidden(batteryDesktop, isAndroid);
-
-  const ua = globalThis.navigator?.userAgent ?? '';
-  const isIos =
-    /iPad|iPhone|iPod/.test(ua) ||
-    (ua.includes('Macintosh') && (globalThis.navigator?.maxTouchPoints ?? 0) > 1);
-  const iosGuide = el('div', { 'data-testid': 'ios-install-guide' }, [
-    el('h4', { text: t('settings.background.iosTitle') }),
-    el('p', { class: 'muted', text: t('settings.background.iosHint') }),
-    el('ol', { class: 'tag-report' }, [1, 2, 3].map((step) =>
-      el('li', { 'data-testid': `ios-step-${step}`, text: t(`settings.background.ios${step}`) }),
-    )),
-  ]);
-
   const backgroundCopy = el('div', { class: 'background-copy' }, [
-    el('h4', { class: 'background-title', text: t('settings.background.cardTitle') }),
+    el('h4', { class: 'background-title', text: t('settings.background.title') }),
     el('p', { class: 'muted', text: t('settings.background.cardBody') }),
   ]);
-  const backgroundGrid = el('div', { class: 'background-grid', 'data-testid': 'background-grid' }, [
-    backgroundCopy,
-    el('div', { class: 'background-actions' }, [installButton, batteryButton]),
-  ]);
-  const batterySteps = el(
-    'div',
-    { class: 'battery-steps', 'data-testid': 'battery-steps-section' },
-    [
-      el('h5', { class: 'battery-steps-title', text: t('settings.background.stepsTitle') }),
-      el('div', { class: 'battery-brand-stock', 'data-testid': 'battery-steps-stock' }, [
-        el('ol', { class: 'battery-steps-list', 'data-testid': 'battery-steps-stock-list' },
-          BATTERY_STEP_KEYS.stock.map((key) => el('li', { text: t(key) }))),
-      ]),
-      ...BATTERY_BRANDS.filter((brand) => brand !== 'stock').map((brand) => {
-        const list = el('ol', { class: 'battery-steps-list' },
-          (BATTERY_STEP_KEYS[brand] ?? []).map((key) => el('li', { text: t(key) })));
-        const details = el('details', { class: 'battery-brand-details', 'data-testid': `battery-brand-details-${brand}` }, [
-          el('summary', { text: t(BRAND_LABELS[brand]) }),
-          list,
-        ]);
-        return details;
-      }),
-    ],
-  );
-
   const backgroundCard = el(
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-background' },
-    [backgroundGrid, installStatus, batteryDesktop, batterySteps, iosGuide],
+    [backgroundCopy, backgroundActions, installStatus, backgroundDesktop],
   );
+  // Desktop has no install or battery switch to act on: one sentence instead of
+  // an empty action row.
+  setHidden(backgroundActions, desktopOnly);
+  setHidden(installStatus, desktopOnly);
+  setHidden(backgroundDesktop, !desktopOnly);
 
   // ---- OneDrive folder picker ----
   const pickerCard = el('section', {
@@ -923,16 +904,31 @@ export function createSettingsView(store, sw) {
       );
     }
 
-    const install = state.install ?? { status: 'browser' };
-    const installKey =
-      install.status === 'installed'
-        ? 'settings.background.installed'
-        : install.status === 'installable'
-          ? 'settings.background.installable'
-          : 'settings.background.browserMode';
-    setText(installStatus, t(installKey));
-    setHidden(installButton, install.status !== 'installable');
-    setHidden(iosGuide, !isIos || install.status === 'installed');
+    if (!desktopOnly) {
+      const installState = state.install?.status ?? 'browser';
+      setText(
+        installButton,
+        t(
+          installState === 'installed'
+            ? 'settings.background.installed'
+            : installState === 'installable'
+              ? 'settings.background.install'
+              : 'settings.background.howToInstall',
+        ),
+      );
+      installButton.disabled = installState === 'installed';
+      installButton.setAttribute('aria-disabled', String(installState === 'installed'));
+      setText(
+        installStatus,
+        t(
+          installState === 'installed'
+            ? 'settings.background.installedHint'
+            : installState === 'installable'
+              ? 'settings.background.installable'
+              : 'settings.background.browserMode',
+        ),
+      );
+    }
 
     const migrationMessage = migration?.error;
     setHidden(migrationError, !migrationMessage);
