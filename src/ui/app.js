@@ -997,9 +997,15 @@ export function mountUi(root, store, sw) {
     return track.source === 'onedrive' ? 'onedrive' : 'local';
   }
 
+  /** Source rows name the source, never the folder the user happened to pick. */
+  function sourceDisplayName(state, kind) {
+    return kind === 'onedrive'
+      ? t('settings.source.onedrive')
+      : t('settings.library.localGroup');
+  }
+
   function sourceLabel(state, kind) {
-    const row = (state.sources ?? []).find((item) => item.id === kind);
-    return row?.name || t('common.rootFolder');
+    return sourceDisplayName(state, kind);
   }
 
   function kindTracks(state, kind) {
@@ -1124,11 +1130,10 @@ export function mountUi(root, store, sw) {
       for (const row of state.sources ?? []) {
         if (row.permission !== 'granted') continue;
         const list = kindTracks(state, row.id);
-        if (!list.length) continue;
         rows.push(
           sourceRow({
             id: row.id,
-            label: row.name || t('common.rootFolder'),
+            label: sourceDisplayName(state, row.id),
             count: list.length,
             onOpen: () => {
               folder = { source: row.id, dir: '' };
@@ -1367,13 +1372,14 @@ export function mountUi(root, store, sw) {
       return;
     }
 
-    if (!state.tracks.length) {
-      ui.panel.replaceChildren(renderEmpty(state));
+    // Granted sources own their rows even when the library holds no track.
+    if (state.view === 'folders') {
+      renderFolders(state);
       return;
     }
 
-    if (state.view === 'folders') {
-      renderFolders(state);
+    if (!state.tracks.length) {
+      ui.panel.replaceChildren(renderEmpty(state));
       return;
     }
 

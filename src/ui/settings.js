@@ -264,14 +264,6 @@ export function createSettingsView(store, sw) {
   });
   setHidden(importProgress, true);
 
-  const rescanTagsButton = el('button', {
-    class: 'btn-pill ghost',
-    type: 'button',
-    'data-testid': 'settings-rescan-tags',
-    text: t('settings.rescanTags'),
-    onclick: () => run(store.rescanTags()),
-  });
-
   const libraryCard = el(
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-library' },
@@ -281,11 +273,7 @@ export function createSettingsView(store, sw) {
         el('h4', { class: 'settings-group-title', text: t('settings.library.localGroup') }),
         createSourceRow('local'),
         modeRow,
-        el('div', { class: 'settings-actions' }, [
-          addSourceButton,
-          sourceChoices,
-          rescanTagsButton,
-        ]),
+        el('div', { class: 'settings-actions' }, [addSourceButton, sourceChoices]),
       ]),
       el('div', { 'data-testid': 'settings-library-cloud' }, [
         el('h4', { class: 'settings-group-title', text: t('settings.library.cloudGroup') }),
@@ -1094,7 +1082,6 @@ export function createSettingsView(store, sw) {
     const rows = state.sources ?? [];
     const scanningRow = rows.find((row) => row.scanning) ?? null;
     const anyScanning = Boolean(scanningRow);
-    const anyGranted = rows.some((row) => row.permission === 'granted');
     const localRow = rows.find((row) => row.id === 'local') ?? null;
     // `emptyRow` does not carry the mode, so fall back to the store's value
     // until a source refresh patches the row.
@@ -1207,7 +1194,6 @@ export function createSettingsView(store, sw) {
     setHidden(retryButton, !onedrive.error);
     setHidden(hint, !(onedrive.permission === 'granted' && !onedrive.root));
 
-    rescanTagsButton.disabled = anyScanning || !anyGranted;
     localButton.disabled = anyScanning;
 
     setHidden(progress, !anyScanning);

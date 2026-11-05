@@ -279,6 +279,62 @@ export class AudioCache {
     }
   }
 
+  /**
+   * Drop every cached response that belongs to one track source. Index rows
+   * are authoritative; Cache Storage is also scanned by key prefix so entries
+   * whose index row was lost still go. Returns the number of keys removed.
+   */
+  async removeBySource(source) {
+    const prefix = `${source}:`;
+    const keys = new Set();
+
+    let rows = [];
+    try {
+      rows = await this.index.all();
+    } catch {
+      rows = [];
+    }
+    for (const row of rows) {
+      if (row?.source === source && typeof row.key === 'string') keys.add(row.key);
+    }
+
+    let cache = null;
+    try {
+      cache = await this._openCache();
+    } catch {
+      cache = null;
+    }
+    if (cache) {
+      let requests = [];
+      try {
+        requests = await cache.keys();
+      } catch {
+        requests = [];
+      }
+      for (const request of requests) {
+        const key = keyFromRequest(request);
+        if (key !== null && key.startsWith(prefix)) keys.add(key);
+      }
+    }
+
+    const list = [...keys];
+    for (const key of list) {
+      if (cache) {
+        try {
+          await cache.delete(cacheRequest(key));
+        } catch {
+          // Another tab may have removed it already.
+        }
+      }
+    }
+    try {
+      await this.index.deleteByKeys(list);
+    } catch {
+      // Nothing else to try.
+    }
+    return list.length;
+  }
+
   async clear() {
     let rows = [];
     try {

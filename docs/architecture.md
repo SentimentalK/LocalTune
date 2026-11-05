@@ -78,7 +78,7 @@ v1 有两个实现：File System Access（桌面 Chromium / Android Chrome 132+�
  */
 ```
 
-`SourceEntry.file` 与 `SourceEntry.readFile()` 二选一：`store.rescan()` 优先调用 `readFile()`，否则使用 `file`。`readFile()` 返回的对象只需满足 `readMetadata` 的最小需求（`name`、`size`、`slice().arrayBuffer()`）。
+`SourceEntry.file` 与 `SourceEntry.readFile()` 二选一：列表阶段只读条目元数据（path/mtime/size）并立即落占位曲目；后台补标签阶段由 `enrichTracks` 优先调用 `readFile()`，否则使用 `file`。`readFile()` 返回的对象只需满足 `readMetadata` 的最小需求（`name`、`size`、`slice().arrayBuffer()`）。
 
 ```js
 export const AUDIO_EXTENSIONS = new Set(['mp3','m4a','flac','ogg','oga','wav','webm']);
@@ -229,7 +229,7 @@ export async function clearAudioCache(cachesImpl = globalThis.caches)     // 删
 - 上限：`CACHE_LIMIT_OPTIONS` = `[512 MiB, 1 GiB, 2 GiB, 5 GiB, 0(不限)]`，默认 `2 GiB`（`DEFAULT_CACHE_LIMIT`）。`persist.js` 直接 re-export 这两个常量（`CACHE_LIMIT_VALUES` / `DEFAULT_CACHE_LIMIT_BYTES`），`meta.settings.cacheLimitBytes` 缺失或非法一律回落到默认值；`0` 表示不限。
 - 状态与动作：`state.pins` 是 `{ id, source, dir, running, done, total, error }` 的数组；`pinFolder` 先落库再逐首 `getFile`（并发 1，单曲失败跳过，全部失败保留 pin 并写 `error`），`unpinFolder` 只删 pin、缓存保留；`isPinned(source, dir)` 对 `dir === ''` 的根 pin 返回 true。
 - 启动同步：`init()` 只在 `meta.lastScanBySource.onedrive.at` 距今超过 1 小时（或缺失）时后台 `syncSource('onedrive')`，不阻塞首屏。
-- 清除：`store.clearAudioCache()` = `cache.clear()` + 删除全部 pins（`state.pins = []`），返回释放字节数；两条路径都不触碰源文件。
+- 清除：`store.clearAudioCache()` = `cache.clear()` + 删除全部 pins（`state.pins = []`）+ `playlog.clear()`，返回释放字节数；不触碰源文件。移除来源用 `cache.removeBySource(source)`：按 `cacheIndex.source` 取 key，再用 Cache Storage 的 `keyFromRequest` 前缀 `${source}:` 兜底，删除条目与索引行并返回删除数。
 
 ### `src/core/migrate.js` — 乱码标签迁移
 
@@ -242,6 +242,15 @@ export async function migrateGarbledTracks({ tracks, getFile, readMetadata, onPr
 - 单曲 `getFile`/`readMetadata` 抛错计入 `failed`，该曲目原样返回，不中断整体。
 - 合并规则：`title`/`artist`/`album` 新值非空才覆盖；`year`/`trackNo` 新值为有限数才覆盖；`duration` 新值 > 0 才覆盖；`cover` 新值非空才覆盖；`id`/`path`/`mtime`/`size`/`source`/`externalIds` 原样保留。
 - 每首完成调用 `onProgress({ done, total, changed, failed })`，`total` = 可疑曲目数；`changed` 只含字段实际变化的曲目。
+
+### `src/core/enrich.js` — 后台补标签（纯逻辑）
+
+```js
+export async function enrichTracks({ items, readMetadata, makeTrack, onTrack, shouldUpdate, onProgress })
+// items: [{ entry }] 或调用方结构；→ { updated, failed }
+// 顺序处理；每首 try/catch：shouldUpdate → entry.readFile()/entry.file → readMetadata → makeTrack → await onTrack
+// 单首失败计入 failed，绝不 reject；onProgress({ done, total, updated, failed })
+```
 
 ### `src/core/scan.js`
 
@@ -475,10 +484,10 @@ export class Store extends EventTarget {
   closeOneDrivePicker()
   async chooseOneDriveRoot({ id, path, name })  // setRoot → rescan('onedrive') → 关闭 picker
   async reauthenticateOneDrive()   // forget + connectOneDrive
-  async rescan(kind = 'local')     // 只扫描该来源；diff 只影响该来源的 track.source；返回 {at,added,updated,removed}|null
-  async syncSource(kind = 'onedrive') // rescan(kind)，结果同时写入该行 sync
-  async rescanTags()               // 遍历 permission === 'granted' 的来源；按 track.source 选 adapter
-  async removeSource(kind = 'local') // adapter.forget()；该行复位，保留已索引曲目
+  async rescan(kind = 'local')     // 只扫描该来源；added 立即落文件名占位曲目、updated 保留旧标签；标签读取转后台（见 _enrich）；返回 {at,added,updated,removed}|null
+  async syncSource(kind = 'onedrive') // rescan(kind)，列表阶段结束即返回，结果同时写入该行 sync
+  async removeSource(kind = 'local') // 删除该来源的曲目索引/缓存音频/pins，取消挂起的补标签，adapter.forget()；该行复位
+  // 后台补标签：每来源一条串行队列（_enrich/_drainEnrich）；重复同步合并进 pending；单曲失败只计数，不写 sources[kind].error
   async clearLibrary()             // 删除全部曲目索引，暂停播放并清空队列/current，不动授权与 settings
   async storageEstimate()          // → {indexBytes, coverBytes, audioBytes, importBytes, importCount, usage, quota, limitBytes, pinnedCount}
                                    // audioBytes = cache.total()；import* = opfs.usage()
@@ -675,7 +684,7 @@ export function createImportDialog(store)     // → { node, open(), close() }�
 
 UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.mediaSession`；全部经 Store。
 
-视图：文件夹 / 歌单 / 队列（主 tab，顺序固定）+ 搜索（顶部 `data-testid="search-open"` 图标进入的内部视图，不在 tab 里）/ 设置（全屏）。`store.js` 的 `VIEWS` 为 `folders|playlists|queue|search|settings`；歌曲 / 专辑 / 歌手与歌词视图没有 UI，索引的 album/artist 字段仍供搜索与元数据使用。设置区不再有唱片旋转开关；来源、存储、播放、语言、关于都在设置视图。文件夹视图两级：来源根（`data-testid="folder-source-local|onedrive"`）→ 子文件夹行（`folder-dir-<dir>`）+ 当前目录直接曲目（`track-row`）；顶部 `folder-up` 返回上一级或来源列表，`folder-play-all` / `folder-shuffle` 以 `tracksUnder`（含子目录）建队列，点某首曲目从该曲开始。每来源各自一棵根；目录行尾固定按钮（`data-testid="pin-<dir|root>"`）= 对该目录出现过的每个 `track.source` 调 `store.pinFolder`，已全部固定时改为 `unpinFolder`。固定运行中按钮禁用并显示 `settings.storage.pinning`（跨来源求和 `done/total`），完成后显示 `settings.storage.pinned`；状态由 `store.isPinned` + `state.pins` 决定，`aria-pressed` + `.is-on` 表达开关。队列行 `queue-row` 只有 ×（`row-x`）删除；列表 header 的 `queue-clear` 确认后调 `store.clearQueue()`；没有拖拽排序，队列行也没有「⋯」菜单。
+视图：文件夹 / 歌单 / 队列（主 tab，顺序固定）+ 搜索（顶部 `data-testid="search-open"` 图标进入的内部视图，不在 tab 里）/ 设置（全屏）。`store.js` 的 `VIEWS` 为 `folders|playlists|queue|search|settings`；歌曲 / 专辑 / 歌手与歌词视图没有 UI，索引的 album/artist 字段仍供搜索与元数据使用。设置区不再有唱片旋转开关；来源、存储、播放、语言、关于都在设置视图。文件夹视图两级：来源根（`data-testid="folder-source-local|onedrive"`，每个 `permission === 'granted'` 的来源一行，0 首也显示；文案固定为来源名 `settings.library.localGroup` / `settings.source.onedrive`，不读所选根目录名）→ 子文件夹行（`folder-dir-<dir>`）+ 当前目录直接曲目（`track-row`）；根级标题同样用来源名；顶部 `folder-up` 返回上一级或来源列表，`folder-play-all` / `folder-shuffle` 以 `tracksUnder`（含子目录）建队列，点某首曲目从该曲开始。每来源各自一棵根；目录行尾固定按钮（`data-testid="pin-<dir|root>"`）= 对该目录出现过的每个 `track.source` 调 `store.pinFolder`，已全部固定时改为 `unpinFolder`。固定运行中按钮禁用并显示 `settings.storage.pinning`（跨来源求和 `done/total`），完成后显示 `settings.storage.pinned`；状态由 `store.isPinned` + `state.pins` 决定，`aria-pressed` + `.is-on` 表达开关。队列行 `queue-row` 只有 ×（`row-x`）删除；列表 header 的 `queue-clear` 确认后调 `store.clearQueue()`；没有拖拽排序，队列行也没有「⋯」菜单。
 
 搜索视图（`state.view === 'search'`，由顶部 `search-open` 图标进入）覆盖整个库：搜索框 `data-testid="search-input"`（`aria-label`=`search.label`，`placeholder`=`search.placeholder`），输入 150 ms 防抖后调 `runSearch(state.tracks, 查询)`；`Escape` 或非空时出现的 `search-clear` 清空，空查询不渲染结果。查询非空时按分组渲染结果：每组一个 `search-group-title|artist|album|fileName` 标题与命中行（`track-row`，点击 `store.playQueue(state.tracks, track.id)`），计数行 `search-count` 用 `search.results`（`{count}` = `total`），无命中 `search-empty`。查询是 `mountUi` 闭包里的局部变量，语言切换重建壳后重置。自动列表不在搜索视图，见歌单视图的 `auto-list-*`。
 

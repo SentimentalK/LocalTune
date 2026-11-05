@@ -294,6 +294,37 @@ test('clear releases indexed bytes and empties the cache', async () => {
   assert.equal(await cache.read(first), null);
 });
 
+test('removeBySource deletes only that source from index and Cache Storage', async () => {
+  const caches = memoryCaches();
+  const index = memoryIndex();
+  const cache = new AudioCache({ caches, index, pins: memoryPins() });
+
+  const cloudOne = cacheKey('onedrive', 'one.mp3');
+  const cloudTwo = cacheKey('onedrive', 'Jazz/two.mp3');
+  const local = cacheKey('fsa', 'a.mp3');
+
+  await cache.write({ key: cloudOne, source: 'onedrive', path: 'one.mp3', blob: blob(100) });
+  await cache.write({ key: cloudTwo, source: 'onedrive', path: 'Jazz/two.mp3', blob: blob(50) });
+  await cache.write({ key: local, source: 'fsa', path: 'a.mp3', blob: blob(25) });
+
+  // An entry whose index row was lost still shares the source prefix.
+  const orphan = cacheRequest(cacheKey('onedrive', 'orphan.mp3'));
+  await caches.open(AUDIO_CACHE_NAME).then((opened) => opened.put(orphan, new Response(blob(5))));
+
+  assert.equal(await cache.removeBySource('onedrive'), 3);
+
+  assert.equal(index.map.has(cloudOne), false);
+  assert.equal(index.map.has(cloudTwo), false);
+  assert.equal(index.map.has(local), true);
+  assert.equal(caches.entries.has(orphan.url), false);
+  assert.equal(caches.entries.has(cacheRequest(local).url), true);
+  assert.equal(await cache.total(), 25);
+  assert.equal(await cache.removeBySource('onedrive'), 0);
+
+  const none = new AudioCache({ caches: memoryCaches(), index: memoryIndex(), pins: memoryPins() });
+  assert.equal(await none.removeBySource('onedrive'), 0);
+});
+
 test('clear accounts for cache entries missing from the index', async () => {
   const caches = memoryCaches();
   const index = memoryIndex();

@@ -31,6 +31,11 @@ test('OneDrive sign-in, folder pick, sync and playback', async ({ page }) => {
   await page.locator('[data-testid="settings-back"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();
 
+  // The row names the source, not the folder the user picked inside it.
+  const sourceRow = page.locator('[data-testid="folder-source-onedrive"]');
+  await expect(sourceRow.locator('b')).toHaveText('OneDrive');
+  await expect(sourceRow).not.toContainText('Music');
+
   await page.locator('[data-testid="folder-source-onedrive"]').click();
   await page.locator('[data-testid="track-row"] .row-hit').first().click();
   const playButton = page.locator('.controls .btn.main');

@@ -38,6 +38,7 @@ import {
   rematchPlaylist as rematchPlaylistModel,
 } from './playlist/model.js';
 import { readMetadata, describeTags } from './metadata/index.js';
+import { enrichTracks } from './enrich.js';
 import { formatTagReport } from './metadata/diagnostics.js';
 import { estimateLibrary } from './storage.js';
 import { BUILD_VERSION } from './version.js';
@@ -82,6 +83,8 @@ const SOURCE_KINDS = ['local', 'onedrive'];
 const TRACK_SOURCE = { local: 'fsa', onedrive: 'onedrive' };
 const LOCAL_MODE_KEY = 'localMode';
 const ONEDRIVE_SYNC_INTERVAL = 60 * 60 * 1000;
+const ENRICH_FLUSH_EVERY = 10;
+const ENRICH_EMIT_EVERY = 5;
 
 function trackSourceOf(kind) {
   return TRACK_SOURCE[kind] ?? 'fsa';
@@ -199,6 +202,7 @@ export class Store extends EventTarget {
 
     this._scanning = new Set();
     this._migrating = false;
+    this._enrichQueues = new Map();
     this._loading = false;
     this._loadedId = null;
     this._pendingSeek = null;
@@ -302,8 +306,7 @@ export class Store extends EventTarget {
     player.addEventListener('error', (event) => {
       const error = event.detail?.error ?? new Error(t('error.store.playFailed'));
       note('error', { error: String(error?.name ?? error) });
-      const track = this._state.current.track;
-      if (track) this._patchSource(kindOfTrack(track), { error: errorMessage(error) });
+      // Playback failure is a per-track event; the source row stays healthy.
       this._state.current.playing = false;
       this._emit();
     });
@@ -784,26 +787,17 @@ export class Store extends EventTarget {
       const diff = diffScan(previous, entries);
       const byId = new Map(previous.map((track) => [track.id, track]));
 
-      const pending = [...diff.added, ...diff.updated];
-      this._patchSource(kind, { progress: { done: 0, total: pending.length } });
-      this._emit();
-
-      const fresh = [];
-      let done = 0;
-      for (const entry of pending) {
-        const file = typeof entry.readFile === 'function' ? await entry.readFile() : entry.file;
-        const meta = await readMetadata(file);
-        const track = buildTrack(entry, meta, {
+      // Listing phase: new paths become playable placeholders (title falls
+      // back to the file name) before any tag is read. Updated paths keep
+      // their indexed tags until the background pass replaces them.
+      const fresh = diff.added.map((entry) => {
+        const track = buildTrack(entry, {}, {
           trackSource,
           externalIds: entry.externalIds ?? {},
         });
-        fresh.push(track);
         byId.set(track.id, track);
-        done += 1;
-        this._patchSource(kind, { progress: { done, total: pending.length } });
-        if (done % 5 === 0 || done === pending.length) this._emit();
-      }
-
+        return track;
+      });
       if (fresh.length) await putTracks(this.db, fresh);
       if (diff.removedIds.length) await deleteTracksById(this.db, diff.removedIds);
       for (const id of diff.removedIds) byId.delete(id);
@@ -850,6 +844,15 @@ export class Store extends EventTarget {
       this._refreshSource(kind, { scanning: false, progress: { done: 0, total: 0 } });
       this._emit();
       this._savePlayback();
+      if (diff.added.length || diff.updated.length) {
+        this._enrich(
+          kind,
+          [...diff.added, ...diff.updated].map((entry) => ({
+            entry,
+            trackId: `${trackSource}:${entry.path}`,
+          })),
+        );
+      }
       return summary;
     } catch (error) {
       this._refreshSource(kind, {
@@ -864,103 +867,92 @@ export class Store extends EventTarget {
     }
   }
 
+  /**
+   * Queue tag reads for one source. A single serial worker per source: a
+   * second sync merges into the pending map instead of opening a parallel
+   * pass, and the caller never awaits the tag pass.
+   */
+  _enrich(kind, items) {
+    let queue = this._enrichQueues.get(kind);
+    if (!queue) {
+      queue = { running: false, cancelled: false, pending: new Map(), seen: 0 };
+      this._enrichQueues.set(kind, queue);
+    }
+    for (const item of items) {
+      if (item?.entry && item.trackId) queue.pending.set(item.trackId, item);
+    }
+    if (!queue.running) void this._drainEnrich(kind, queue);
+  }
+
+  /** Persist accepted tags in batches; stale ids are never written back. */
+  async _flushEnriched(accepted) {
+    if (!accepted.length) return;
+    const present = new Set(this._state.tracks.map((track) => track.id));
+    const rows = accepted.filter((track) => present.has(track.id));
+    accepted.length = 0;
+    if (!rows.length) return;
+    try {
+      await putTracks(this.db, rows);
+    } catch {
+      // The in-memory library is already correct; a later pass retries.
+    }
+  }
+
+  /**
+   * Background tag drain. Failures are counted per file inside enrichTracks;
+   * this loop never touches `sources[kind].error`.
+   */
+  async _drainEnrich(kind, queue) {
+    queue.running = true;
+    const adapter = this.sources[kind];
+    const trackSource = adapter?.trackSource ?? trackSourceOf(kind);
+    const accepted = [];
+    try {
+      while (!queue.cancelled && queue.pending.size) {
+        const batch = Array.from(queue.pending.values());
+        queue.pending.clear();
+        await enrichTracks({
+          items: batch,
+          readMetadata,
+          makeTrack: (entry, meta) =>
+            buildTrack(entry, meta, { trackSource, externalIds: entry.externalIds ?? {} }),
+          onTrack: async (track) => {
+            if (!this._state.tracks.some((item) => item.id === track.id)) return;
+            this._state.tracks = sortTracks(
+              this._state.tracks.map((item) => (item.id === track.id ? track : item)),
+            );
+            if (this.queue.tracks.some((item) => item.id === track.id)) {
+              this.queue = {
+                ...this.queue,
+                tracks: this.queue.tracks.map((item) => (item.id === track.id ? track : item)),
+              };
+              this._reflectQueue();
+            }
+            accepted.push(track);
+            queue.seen += 1;
+            if (queue.seen % ENRICH_FLUSH_EVERY === 0) await this._flushEnriched(accepted);
+            if (queue.seen % ENRICH_EMIT_EVERY === 0) this._emit();
+          },
+        });
+        await this._flushEnriched(accepted);
+      }
+    } finally {
+      await this._flushEnriched(accepted);
+      queue.running = false;
+      if (queue.cancelled) return;
+      this._reconcileQueue([]);
+      this._refreshSource(kind, {});
+      this._emit();
+      this._savePlayback();
+      if (!queue.pending.size) this._enrichQueues.delete(kind);
+    }
+  }
+
   async syncSource(kind = 'onedrive') {
     const result = await this.rescan(kind);
     if (result) this._patchSource(kind, { sync: result });
     this._emit();
     return result;
-  }
-
-  async rescanTags() {
-    if (this._scanning.has('tags')) return;
-    this._scanning.add('tags');
-    const kinds = SOURCE_KINDS.filter((kind) => this.sources[kind].permission() === 'granted');
-    if (!kinds.length) {
-      const granted = await this.local.ensurePermission().catch(() => false);
-      if (!granted) {
-        this._refreshSource('local', { error: t('error.store.permissionRequired') });
-        this._scanning.delete('tags');
-        this._emit();
-        return;
-      }
-      kinds.push('local');
-      this._patchSource('local', { permission: 'granted', connected: true });
-    }
-
-    for (const kind of kinds) {
-      this._patchSource(kind, {
-        scanning: true,
-        progress: { done: 0, total: this._countTracks(kind) },
-      });
-    }
-    this._emit();
-
-    try {
-      const updated = this._state.tracks.filter((track) => !kinds.includes(kindOfTrack(track)));
-      const changed = [];
-      for (const kind of kinds) {
-        const adapter = this.sources[kind];
-        const trackSource = trackSourceOf(kind);
-        const list = this._state.tracks.filter((track) => track.source === trackSource);
-        let done = 0;
-        for (const track of list) {
-          try {
-            const file = await adapter.getFile(track.path);
-            const meta = await readMetadata(file);
-            const hasMeta =
-              Boolean(meta.title) ||
-              Boolean(meta.artist) ||
-              Boolean(meta.album) ||
-              meta.year != null ||
-              meta.trackNo != null ||
-              meta.duration > 0 ||
-              Boolean(meta.cover);
-            if (hasMeta) {
-              const next = buildTrack(
-                {
-                  path: track.path,
-                  file,
-                  mtime: track.mtime,
-                  size: track.size,
-                  externalIds: track.externalIds ?? {},
-                },
-                { ...meta, duration: meta.duration > 0 ? meta.duration : track.duration },
-                { trackSource, externalIds: track.externalIds ?? {} },
-              );
-              updated.push(next);
-              changed.push(next);
-            } else {
-              updated.push(track);
-            }
-          } catch {
-            updated.push(track);
-          }
-          done += 1;
-          this._patchSource(kind, { progress: { done, total: list.length } });
-          if (done % 25 === 0 || done === list.length) this._emit();
-        }
-      }
-
-      this._state.tracks = sortTracks(updated);
-      if (changed.length) await putTracks(this.db, changed);
-      this._reconcileQueue([]);
-      for (const kind of kinds) {
-        this._refreshSource(kind, { scanning: false, progress: { done: 0, total: 0 } });
-      }
-      this._emit();
-      this._savePlayback();
-    } catch (error) {
-      for (const kind of kinds) {
-        this._refreshSource(kind, {
-          scanning: false,
-          progress: { done: 0, total: 0 },
-          error: errorMessage(error),
-        });
-      }
-      this._emit();
-    } finally {
-      this._scanning.delete('tags');
-    }
   }
 
   setView(view) {
@@ -969,13 +961,42 @@ export class Store extends EventTarget {
     this._emit();
   }
 
-  /** Disconnect one source and forget its grant; indexed tracks stay. */
+  /**
+   * Disconnect one source and drop everything derived from it: its track
+   * index rows, its cached audio, its pins and its pending tag reads.
+   */
   async removeSource(kind = 'local') {
     const adapter = this.sources[kind];
     if (!adapter) return;
+    const trackSource = adapter.trackSource ?? trackSourceOf(kind);
+
+    const removedIds = this._state.tracks
+      .filter((track) => track.source === trackSource)
+      .map((track) => track.id);
+    if (removedIds.length) {
+      await deleteTracksById(this.db, removedIds);
+      const removed = new Set(removedIds);
+      this._state.tracks = this._state.tracks.filter((track) => !removed.has(track.id));
+    }
+
+    await this.cache.removeBySource(trackSource).catch(() => 0);
+
+    const pins = this._state.pins.filter((pin) => pin.source === trackSource);
+    this._state.pins = this._state.pins.filter((pin) => pin.source !== trackSource);
+    for (const pin of pins) await this.pinStore.delete(pin.id).catch(() => {});
+
+    const queue = this._enrichQueues.get(kind);
+    if (queue) {
+      queue.cancelled = true;
+      queue.pending.clear();
+      this._enrichQueues.delete(kind);
+    }
+
+    this._reconcileQueue(removedIds);
     await adapter.forget().catch(() => {});
     this._refreshSource(kind, { error: null, sync: null });
     this._emit();
+    this._savePlayback();
   }
 
   /**
@@ -1090,12 +1111,13 @@ export class Store extends EventTarget {
     };
   }
 
-  /** Drop cached audio responses and the pins that protected them. */
+  /** Drop cached audio responses, the pins that protected them, and the play log. */
   async clearAudioCache() {
     const released = await this.cache.clear();
     const pins = this._state.pins;
     this._state.pins = [];
     for (const pin of pins) await this.pinStore.delete(pin.id).catch(() => {});
+    await this.playlog.clear().catch(() => {});
     this._emit();
     return released;
   }
@@ -1229,8 +1251,8 @@ export class Store extends EventTarget {
     }
     if (this._state.settings.leveling) this._promoteLeveling();
     this.player.play().catch((error) => {
-      this._patchSource(kindOfTrack(track), { error: errorMessage(error) });
       this._state.current.playing = false;
+      this.log('playblocked', { error: String(error?.name ?? error) });
       this._emit();
     });
   }
@@ -1890,7 +1912,7 @@ export class Store extends EventTarget {
       void this._primeNext();
       return true;
     } catch (error) {
-      this._patchSource(kindOfTrack(track), { error: errorMessage(error) });
+      // One unplayable file is not a source failure; the row stays clean.
       this._state.current.playing = false;
       this._emit();
       return false;

@@ -41,12 +41,41 @@ function driveItem(file) {
   };
 }
 
+function downloadId(url) {
+  try {
+    return decodeURIComponent(new URL(url).pathname.replace(/^\/+/, ''));
+  } catch {
+    return '';
+  }
+}
+
 /**
  * @param {import('@playwright/test').Page} page
- * @param {{ files?: Array<{ id: string, name: string }> }} [options]
+ * @param {{
+ *   files?: Array<{ id: string, name: string }>,
+ *   holdRanges?: boolean,
+ *   failRangeIds?: string[],
+ *   failWholeIds?: string[],
+ * }} [options]
  */
-export async function installGraphMock(page, { files = DEFAULT_FILES } = {}) {
-  const state = { wholeRequests: [], authorizeRequests: [], tokenRequests: [] };
+export async function installGraphMock(
+  page,
+  { files = DEFAULT_FILES, holdRanges = false, failRangeIds = [], failWholeIds = [] } = {},
+) {
+  let openGate = () => {};
+  const gate = new Promise((resolve) => {
+    openGate = resolve;
+  });
+  const state = {
+    wholeRequests: [],
+    authorizeRequests: [],
+    tokenRequests: [],
+    rangeStarted: 0,
+    rangeDone: 0,
+    releaseRanges: () => {
+      openGate();
+    },
+  };
 
   await page.route('https://login.microsoftonline.com/**', async (route) => {
     const request = route.request();
@@ -139,6 +168,7 @@ export async function installGraphMock(page, { files = DEFAULT_FILES } = {}) {
       return route.fulfill({ status: 204, headers: CORS });
     }
 
+    const id = downloadId(request.url());
     const range = request.headers().range;
     const headers = {
       ...CORS,
@@ -146,8 +176,21 @@ export async function installGraphMock(page, { files = DEFAULT_FILES } = {}) {
       'accept-ranges': 'bytes',
     };
 
+    if (range && failRangeIds.includes(id)) {
+      return route.fulfill({ status: 500, headers, body: '' });
+    }
+
+    if (holdRanges && range) {
+      state.rangeStarted += 1;
+      await gate;
+      state.rangeDone += 1;
+    }
+
     if (!range) {
       state.wholeRequests.push(request.url());
+      if (failWholeIds.includes(id)) {
+        return route.fulfill({ status: 500, headers, body: '' });
+      }
       return route.fulfill({ status: 200, headers, body: AUDIO });
     }
 

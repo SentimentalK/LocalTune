@@ -10,6 +10,14 @@ test('settings view covers library, storage, language and about', async ({ page 
     await expect(page.locator(`[data-testid="settings-section-${section}"]`)).toBeVisible();
   }
 
+  // Library rows keep exactly sync / change / remove; tag re-reading is gone.
+  await expect(page.locator('[data-testid="settings-rescan-tags"]')).toHaveCount(0);
+  const sourceRows = page.locator('[data-testid^="source-row-"]');
+  await expect(sourceRows).toHaveCount(2);
+  for (const row of await sourceRows.all()) {
+    await expect(row.locator('button')).toHaveCount(3);
+  }
+
   // Playback card: sleep timer plus the leveling and gapless toggles.
   await expect(page.locator('[data-testid="setting-leveling"]')).toBeVisible();
   await expect(page.locator('[data-testid="setting-gapless"]')).toBeVisible();
