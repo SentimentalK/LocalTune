@@ -37,66 +37,6 @@ async function makeImportDir(names) {
   return dir;
 }
 
-/** Seed one playable track through the FileList fallback (no directory grant). */
-async function seedSingleTrack(page) {
-  await page.evaluate(async () => {
-    const sampleRate = 8000;
-    const samples = sampleRate * 2;
-    const bytes = 44 + samples * 2;
-    const buffer = new ArrayBuffer(bytes);
-    const view = new DataView(buffer);
-    const ascii = (offset, text) => {
-      for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i));
-    };
-    ascii(0, 'RIFF');
-    view.setUint32(4, bytes - 8, true);
-    ascii(8, 'WAVE');
-    ascii(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    ascii(36, 'data');
-    view.setUint32(40, samples * 2, true);
-
-    const file = new File([buffer], 'a.wav', { type: 'audio/wav', lastModified: Date.now() });
-
-    await new Promise((resolve, reject) => {
-      const open = indexedDB.open('localtune');
-      open.onerror = () => reject(open.error);
-      open.onsuccess = () => {
-        const db = open.result;
-        const tx = db.transaction(['meta', 'tracks'], 'readwrite');
-        tx.objectStore('meta').put({ key: 'fileList', value: [{ path: 'Music/a.wav', file }] });
-        tx.objectStore('meta').put({ key: 'localMode', value: 'reference' });
-        tx.objectStore('tracks').put({
-          id: 'fsa:Music/a.wav',
-          path: 'Music/a.wav',
-          title: 'a',
-          artist: '',
-          album: '',
-          year: null,
-          trackNo: null,
-          duration: 2,
-          mtime: file.lastModified,
-          size: file.size,
-          cover: null,
-          source: 'fsa',
-          externalIds: {},
-        });
-        tx.oncomplete = () => {
-          db.close();
-          resolve();
-        };
-        tx.onerror = () => reject(tx.error);
-      };
-    });
-  });
-}
-
 test('import mode copies files into OPFS and survives a reload', async ({ page }) => {
   test.setTimeout(60_000);
   const dir = await makeImportDir(['a.wav', 'b.wav']);
@@ -161,33 +101,107 @@ test('import mode copies files into OPFS and survives a reload', async ({ page }
 test.describe('background playback card', () => {
   test.use({ userAgent: ANDROID_UA });
 
-  test('shows install state and the brand-specific battery guide', async ({ page }) => {
+  test('shows install state and two-column battery steps', async ({ page }) => {
     await page.goto('/');
     await page.locator('[data-testid="settings-open"]').click();
 
     await expect(page.locator('[data-testid="settings-section-background"]')).toBeVisible();
     await expect(page.locator('[data-testid="install-status"]')).not.toHaveText('');
 
+    const grid = page.locator('[data-testid="background-grid"]');
+    await expect(grid).toBeVisible();
+    const layout = await grid.evaluate((node) => {
+      const [left, right] = node.children;
+      const a = left.getBoundingClientRect();
+      const b = right.getBoundingClientRect();
+      return {
+        childCount: node.children.length,
+        topDelta: Math.abs(a.top - b.top),
+        gap: b.left - a.right,
+        overflow: node.scrollWidth - node.clientWidth,
+      };
+    });
+    expect(layout.childCount).toBe(2);
+    expect(layout.topDelta).toBeLessThan(2);
+    expect(layout.gap).toBeGreaterThan(-4);
+    expect(layout.overflow).toBeLessThanOrEqual(0);
+
+    const stockList = page.locator('[data-testid="battery-steps-stock-list"]');
+    await expect(stockList).toBeVisible();
+    await expect(stockList.locator('li')).toHaveCount(3);
+
+    const samsung = page.locator('[data-testid="battery-brand-details-samsung"]');
+    await expect(samsung).toBeVisible();
+    await expect(samsung.locator('ol')).toBeHidden();
+    await samsung.locator('summary').click();
+    await expect(samsung.locator('ol')).toBeVisible();
+
     const batteryButton = page.locator('[data-testid="battery-button"]');
     await expect(batteryButton).toBeVisible();
     await batteryButton.click();
+    const details = page.locator('[data-testid="battery-steps-section"] details');
+    await expect(details).toHaveCount(3);
+    for (let index = 0; index < 3; index += 1) {
+      await expect(details.nth(index)).toHaveAttribute('open', '');
+    }
+  });
 
-    const guide = page.locator('[data-testid="battery-guide"]');
-    await expect(guide).toBeVisible();
-    const stock = page.locator('[data-testid="battery-brand-stock"]');
-    await expect(stock).toHaveAttribute('aria-pressed', 'true');
+  test('keeps the copy and actions side by side at 360px', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.goto('/');
+    await page.locator('[data-testid="settings-open"]').click();
 
-    const steps = page.locator('[data-testid="battery-steps"]');
-    const before = await steps.textContent();
-    await page.locator('[data-testid="battery-brand-samsung"]').click();
-    await expect(page.locator('[data-testid="battery-brand-samsung"]')).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await expect(steps).not.toHaveText(before ?? '');
+    const grid = page.locator('[data-testid="background-grid"]');
+    await expect(grid).toBeVisible();
+    const layout = await grid.evaluate((node) => {
+      const [left, right] = node.children;
+      const a = left.getBoundingClientRect();
+      const b = right.getBoundingClientRect();
+      return {
+        childCount: node.children.length,
+        topDelta: Math.abs(a.top - b.top),
+        gap: b.left - a.right,
+        overflow: node.scrollWidth - node.clientWidth,
+      };
+    });
+    expect(layout.childCount).toBe(2);
+    expect(layout.topDelta).toBeLessThan(2);
+    expect(layout.gap).toBeGreaterThanOrEqual(-4);
+    expect(layout.overflow).toBeLessThanOrEqual(0);
+  });
 
-    await page.locator('[data-testid="battery-guide-close"]').click();
-    await expect(guide).toBeHidden();
+  test('hides the install button once the app runs installed', async ({ page }) => {
+    await page.addInitScript(() => {
+      const real = window.matchMedia?.bind(window);
+      window.matchMedia = (query) => {
+        if (query === '(display-mode: standalone)') {
+          return {
+            matches: true,
+            media: query,
+            addEventListener() {},
+            removeEventListener() {},
+            addListener() {},
+            removeListener() {},
+          };
+        }
+        return real
+          ? real(query)
+          : {
+              matches: false,
+              media: query,
+              addEventListener() {},
+              removeEventListener() {},
+              addListener() {},
+              removeListener() {},
+            };
+      };
+    });
+
+    await page.goto('/');
+    await page.locator('[data-testid="settings-open"]').click();
+    await expect(page.locator('[data-testid="settings-section-background"]')).toBeVisible();
+    await expect(page.locator('[data-testid="install-button"]')).toBeHidden();
+    await expect(page.locator('[data-testid="install-status"]')).not.toHaveText('');
   });
 });
 
@@ -220,44 +234,4 @@ test('manifest ships two any and two maskable icons with matching PNG sizes', as
   const appleBody = await apple.body();
   expect(appleBody.readUInt32BE(16)).toBe(180);
   expect(appleBody.readUInt32BE(20)).toBe(180);
-});
-
-test('play log shows playback events, copies and clears', async ({ page, context }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
-    origin: 'http://127.0.0.1:4173',
-  });
-  await page.addInitScript(() => {
-    Object.defineProperty(window, 'showDirectoryPicker', {
-      configurable: true,
-      value: undefined,
-    });
-  });
-
-  await page.goto('/');
-  await expect(page.locator('#app h1')).toBeVisible();
-  await seedSingleTrack(page);
-  await page.reload();
-
-  await page.locator('[data-testid="folder-source-local"]').click();
-  await page.locator('[data-testid="folder-dir-Music"]').click();
-  await expect(page.locator('[data-testid="track-row"]')).toHaveCount(1);
-  await page.locator('[data-testid="track-row"] .row-hit').first().click();
-  await expect
-    .poll(() => page.evaluate(() => document.querySelector('audio')?.paused ?? true))
-    .toBe(false);
-
-  await page.locator('[data-testid="settings-open"]').click();
-  await page.locator('[data-testid="playlog-open"]').click();
-
-  const logText = page.locator('[data-testid="playlog-text"]');
-  await expect(logText).toContainText('audio:play');
-
-  await page.locator('[data-testid="playlog-copy"]').click();
-  await expect(page.locator('.toast')).toContainText('已复制播放日志');
-
-  await page.locator('[data-testid="playlog-clear"]').click();
-  await expect(logText).not.toContainText('audio:play');
-
-  await page.locator('[data-testid="playlog-close"]').click();
-  await expect(page.locator('[data-testid="playlog-panel"]')).toBeHidden();
 });

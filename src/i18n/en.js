@@ -119,18 +119,19 @@ export default {
   'settings.onedrive.authFailedToken': "OneDrive couldn't finish the sign-in exchange. Please try again.",
   'settings.onedrive.authFailedPending': 'OneDrive sign-in is still finishing. Please retry in a moment.',
   'settings.background.title': 'Background playback',
-  'settings.background.hint':
-    'Install the app and exclude it from battery optimisation so the system keeps playing when the screen is off.',
+  'settings.background.cardTitle': 'Install and battery',
+  'settings.background.cardBody':
+    'Install LocalTune, then set Chrome and LocalTune battery usage to Unrestricted. This improves how reliably playback continues while the screen is off.',
   'settings.background.installed': 'Installed — open it from the home screen for background playback.',
   'settings.background.installable': 'Install LocalTune for the most reliable background playback.',
   'settings.background.browserMode':
     'This browser cannot install the app; playback may stop when the screen is off.',
   'settings.background.install': 'Install app',
-  'settings.background.batteryOpen': 'Battery optimisation settings',
+  'settings.background.installNext':
+    'Installed. Next: set Chrome and LocalTune to Unrestricted battery usage (steps below).',
+  'settings.background.batteryGuide': 'Battery guide',
   'settings.background.batteryDesktop': 'Battery optimisation only applies to Android devices.',
-  'settings.background.batteryGuideTitle': 'Keep playing after the screen is off',
-  'settings.background.batteryGuideHint':
-    'Open the settings below and allow Chrome to run in the background. Menu names vary by system version.',
+  'settings.background.stepsTitle': 'Battery settings on Android',
   'settings.background.batteryBrandSamsung': 'Samsung',
   'settings.background.batteryBrandXiaomi': 'Xiaomi',
   'settings.background.batteryBrandHuawei': 'Huawei',
@@ -149,9 +150,9 @@ export default {
   'settings.background.huawei3':
     'Alternative: Settings → Battery → Battery optimization → Chrome → Don’t allow',
   'settings.background.stock1': 'Settings → Apps → See all apps → Chrome',
-  'settings.background.stock2': 'App battery usage → Unrestricted',
+  'settings.background.stock2': 'App battery usage → Allow background usage → Unrestricted',
   'settings.background.stock3':
-    'Alternative: Settings → Apps → Special app access → Battery optimization → Chrome → Don’t optimize',
+    'Repeat for LocalTune. Older builds: Settings → Apps → Special app access → Battery optimization → Chrome → Don’t optimize',
   'settings.background.iosTitle': 'Install on iOS',
   'settings.background.iosHint': 'Add to Home Screen for background playback.',
   'settings.background.ios1': 'Tap Share in Safari',
@@ -183,10 +184,6 @@ export default {
   'settings.about.updateReady': 'A new version is available',
   'settings.about.updateNow': 'Update now',
   'settings.about.reload': 'Reload',
-  'settings.about.playLog': 'Playback log',
-  'settings.about.playLogCopied': 'Playback log copied',
-  'settings.about.playLogClear': 'Clear',
-  'settings.about.playLogClose': 'Close',
 
   'aria.playTrack': 'Play {title}',
   'aria.playQueueItem': 'Play queue item {index}: {title}',
@@ -319,7 +316,6 @@ export default {
   'autoList.empty': 'Nothing in this list yet',
 
   'settings.playback.title': 'Playback',
-  'settings.playback.hint': 'Sleep timer, volume levelling and gapless playback.',
   'settings.playback.sleep': 'Sleep timer',
   'settings.playback.sleepOff': 'Off',
   'settings.playback.sleep15': '15 min',
@@ -330,9 +326,7 @@ export default {
   'settings.playback.sleepRemaining': '{time} left',
   'settings.playback.sleepFading': 'Fading out…',
   'settings.playback.leveling': 'Volume levelling',
-  'settings.playback.levelingHint': 'Even out quiet and loud tracks using ReplayGain data.',
   'settings.playback.gapless': 'Gapless playback',
-  'settings.playback.gaplessHint': 'Preload the next track so albums play without a gap.',
 
   'error.db.writeStats': 'Writing play statistics failed',
 };

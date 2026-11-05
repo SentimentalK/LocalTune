@@ -114,16 +114,18 @@ export default {
   'settings.onedrive.authFailedToken': 'OneDrive 換取登入權杖失敗，請重試',
   'settings.onedrive.authFailedPending': 'OneDrive 登入仍在處理中，請稍後重試',
   'settings.background.title': '背景播放',
-  'settings.background.hint': '安裝為應用程式並關閉電池最佳化，鎖屏後系統才不容易中斷播放。',
+  'settings.background.cardTitle': '安裝與電池',
+  'settings.background.cardBody':
+    '安裝 LocalTune，並把 Chrome 與 LocalTune 的電池用量設為「不受限制」。這能提高螢幕關閉時繼續播放的可靠性。',
   'settings.background.installed': '已安裝，從主畫面開啟即可背景播放。',
   'settings.background.installable': '安裝 LocalTune 後，背景播放更穩定。',
   'settings.background.browserMode': '此瀏覽器無法安裝應用程式，鎖屏後播放可能被系統中斷。',
   'settings.background.install': '安裝應用程式',
-  'settings.background.batteryOpen': '電池最佳化設定',
+  'settings.background.installNext':
+    '已安裝。接著把 Chrome 與 LocalTune 的電池用量設為「不受限制」（步驟見下）。',
+  'settings.background.batteryGuide': '電池指南',
   'settings.background.batteryDesktop': '電池最佳化只適用於 Android 裝置。',
-  'settings.background.batteryGuideTitle': '鎖屏後繼續播放',
-  'settings.background.batteryGuideHint':
-    '開啟下面的系統設定，允許 Chrome 在背景執行。不同系統版本的選單名稱可能略有差異。',
+  'settings.background.stepsTitle': 'Android 電池設定',
   'settings.background.batteryBrandSamsung': '三星',
   'settings.background.batteryBrandXiaomi': '小米',
   'settings.background.batteryBrandHuawei': '華為',
@@ -140,9 +142,9 @@ export default {
     '關閉「自動管理」，手動管理三個開關全開：自動啟動、關聯啟動、背景活動',
   'settings.background.huawei3': '備選：設定 → 電池 → 電池最佳化 → Chrome → 不允許',
   'settings.background.stock1': '設定 → 應用程式 → 查看所有應用程式 → Chrome',
-  'settings.background.stock2': '應用程式電池用量 → 不受限制',
+  'settings.background.stock2': '應用程式電池用量 → 允許背景執行 → 不受限制',
   'settings.background.stock3':
-    '備選：設定 → 應用程式 → 特殊應用程式存取權 → 電池最佳化 → Chrome → 不最佳化',
+    '對 LocalTune 重複一次。舊版系統：設定 → 應用程式 → 特殊應用程式存取權 → 電池最佳化 → Chrome → 不要最佳化',
   'settings.background.iosTitle': '在 iOS 上安裝',
   'settings.background.iosHint': 'iOS 需加入主畫面才能背景播放。',
   'settings.background.ios1': '在 Safari 點分享',
@@ -174,10 +176,6 @@ export default {
   'settings.about.updateReady': '有新版本可用',
   'settings.about.updateNow': '立即更新',
   'settings.about.reload': '重新載入',
-  'settings.about.playLog': '播放記錄',
-  'settings.about.playLogCopied': '已複製播放記錄',
-  'settings.about.playLogClear': '清除',
-  'settings.about.playLogClose': '關閉',
 
   'aria.playTrack': '播放 {title}',
   'aria.playQueueItem': '播放佇列第 {index} 首 {title}',
@@ -308,7 +306,6 @@ export default {
   'autoList.empty': '這個清單還沒有歌曲',
 
   'settings.playback.title': '播放',
-  'settings.playback.hint': '睡眠定時、音量均勻與無縫播放。',
   'settings.playback.sleep': '睡眠定時',
   'settings.playback.sleepOff': '關閉',
   'settings.playback.sleep15': '15 分鐘',
@@ -319,9 +316,7 @@ export default {
   'settings.playback.sleepRemaining': '剩餘 {time}',
   'settings.playback.sleepFading': '正在淡出…',
   'settings.playback.leveling': '音量均勻',
-  'settings.playback.levelingHint': '用 ReplayGain 資料拉平忽大忽小的曲目。',
   'settings.playback.gapless': '無縫播放',
-  'settings.playback.gaplessHint': '預先載入下一首，整張專輯連續播放不中斷。',
 
   'error.db.writeStats': '寫入播放統計失敗',
 };

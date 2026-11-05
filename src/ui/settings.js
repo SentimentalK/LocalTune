@@ -6,7 +6,7 @@
  */
 
 import { BUILD_VERSION } from '../core/version.js';
-import { BATTERY_BRANDS, BATTERY_STEP_KEYS, batteryTarget } from '../core/battery.js';
+import { BATTERY_BRANDS, BATTERY_STEP_KEYS } from '../core/battery.js';
 import { formatBytes } from '../core/storage.js';
 import { formatTime } from '../core/selectors.js';
 import { CACHE_LIMIT_VALUES } from '../core/persist.js';
@@ -27,29 +27,6 @@ function run(result) {
 
 function confirmed(message) {
   return typeof window === 'undefined' || window.confirm(message);
-}
-
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    // Fall through to the selection-based copy.
-  }
-  try {
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.setAttribute('readonly', '');
-    area.style.position = 'fixed';
-    area.style.opacity = '0';
-    document.body.append(area);
-    area.select();
-    const copied = document.execCommand('copy');
-    area.remove();
-    return copied;
-  } catch {
-    return false;
-  }
 }
 
 export function createSettingsView(store, sw) {
@@ -259,115 +236,8 @@ export function createSettingsView(store, sw) {
     stock: 'settings.background.batteryBrandStock',
   };
 
-  function openBatteryGuide() {
-    const steps = el('ol', { class: 'tag-report', 'data-testid': 'battery-steps' });
-    const userAgent = globalThis.navigator?.userAgent ?? '';
-    let brand = batteryTarget({ userAgent });
-
-    const tabButtons = BATTERY_BRANDS.map((value) =>
-      el('button', {
-        type: 'button',
-        class: 'segment',
-        'data-testid': `battery-brand-${value}`,
-        'aria-pressed': 'false',
-        text: t(BRAND_LABELS[value]),
-        onclick: () => {
-          brand = value;
-          renderBrand();
-        },
-      }),
-    );
-
-    function renderBrand() {
-      for (const button of tabButtons) {
-        const value = button.getAttribute('data-testid').replace('battery-brand-', '');
-        const active = value === brand;
-        button.setAttribute('aria-pressed', String(active));
-        button.classList.toggle('is-active', active);
-      }
-      steps.replaceChildren(
-        ...(BATTERY_STEP_KEYS[brand] ?? []).map((key) => el('li', { text: t(key) })),
-      );
-    }
-
-    function close() {
-      document.removeEventListener('keydown', onKeydown);
-      overlay.remove();
-    }
-
-    function onKeydown(event) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        close();
-      }
-    }
-
-    const closeButton = el('button', {
-      class: 'btn-pill ghost',
-      type: 'button',
-      'data-testid': 'battery-guide-close',
-      text: t('diagnostics.close'),
-      onclick: () => close(),
-    });
-
-    const panel = el('div', { class: 'modal-panel', role: 'document' }, [
-      el('header', { class: 'modal-head' }, [
-        el('div', {}, [
-          el('h2', { text: t('settings.background.batteryGuideTitle') }),
-          el('p', { class: 'tag-track', text: t('settings.background.batteryGuideHint') }),
-        ]),
-        closeButton,
-      ]),
-      el(
-        'div',
-        {
-          class: 'segmented',
-          role: 'group',
-          'aria-label': t('settings.background.batteryGuideTitle'),
-        },
-        tabButtons,
-      ),
-      steps,
-    ]);
-
-    const overlay = el(
-      'div',
-      {
-        class: 'modal',
-        role: 'dialog',
-        'aria-modal': 'true',
-        'aria-label': t('settings.background.batteryGuideTitle'),
-        'data-testid': 'battery-guide',
-      },
-      panel,
-    );
-
-    overlay.addEventListener('click', (event) => {
-      if (event.target === overlay) close();
-    });
-    document.addEventListener('keydown', onKeydown);
-    document.body.append(overlay);
-    renderBrand();
-
-    // The model arrives asynchronously; render the UA guess first, then switch
-    // tabs only when the high-entropy model changes the answer.
-    Promise.resolve()
-      .then(() => globalThis.navigator?.userAgentData?.getHighEntropyValues?.(['model']))
-      .then((values) => {
-        const next = batteryTarget({ userAgent, model: values?.model ?? '' });
-        if (next !== brand) {
-          brand = next;
-          renderBrand();
-        }
-      })
-      .catch(() => {});
-  }
-
   const installStatus = el('p', { class: 'muted', 'data-testid': 'install-status' });
-  const installHint = el('p', {
-    class: 'muted',
-    text: t('settings.background.hint'),
-  });
+
   const installButton = el('button', {
     class: 'btn-pill',
     type: 'button',
@@ -376,7 +246,11 @@ export function createSettingsView(store, sw) {
     onclick: async () => {
       installButton.disabled = true;
       try {
-        await store.install?.prompt();
+        const result = await store.install?.prompt();
+        if (result?.outcome === 'accepted') {
+          setText(installStatus, t('settings.background.installNext'));
+          toast(t('settings.background.installNext'));
+        }
       } finally {
         installButton.disabled = false;
       }
@@ -389,8 +263,11 @@ export function createSettingsView(store, sw) {
     class: 'btn-pill ghost',
     type: 'button',
     'data-testid': 'battery-button',
-    text: t('settings.background.batteryOpen'),
-    onclick: () => openBatteryGuide(),
+    text: t('settings.background.batteryGuide'),
+    onclick: () => {
+      for (const node of batterySteps.querySelectorAll('details')) node.open = true;
+      batterySteps.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    },
   });
   const batteryDesktop = el('p', {
     class: 'muted',
@@ -411,17 +288,39 @@ export function createSettingsView(store, sw) {
     )),
   ]);
 
+  const backgroundCopy = el('div', { class: 'background-copy' }, [
+    el('h4', { class: 'background-title', text: t('settings.background.cardTitle') }),
+    el('p', { class: 'muted', text: t('settings.background.cardBody') }),
+  ]);
+  const backgroundGrid = el('div', { class: 'background-grid', 'data-testid': 'background-grid' }, [
+    backgroundCopy,
+    el('div', { class: 'background-actions' }, [installButton, batteryButton]),
+  ]);
+  const batterySteps = el(
+    'div',
+    { class: 'battery-steps', 'data-testid': 'battery-steps-section' },
+    [
+      el('h5', { class: 'battery-steps-title', text: t('settings.background.stepsTitle') }),
+      el('div', { class: 'battery-brand-stock', 'data-testid': 'battery-steps-stock' }, [
+        el('ol', { class: 'battery-steps-list', 'data-testid': 'battery-steps-stock-list' },
+          BATTERY_STEP_KEYS.stock.map((key) => el('li', { text: t(key) }))),
+      ]),
+      ...BATTERY_BRANDS.filter((brand) => brand !== 'stock').map((brand) => {
+        const list = el('ol', { class: 'battery-steps-list' },
+          (BATTERY_STEP_KEYS[brand] ?? []).map((key) => el('li', { text: t(key) })));
+        const details = el('details', { class: 'battery-brand-details', 'data-testid': `battery-brand-details-${brand}` }, [
+          el('summary', { text: t(BRAND_LABELS[brand]) }),
+          list,
+        ]);
+        return details;
+      }),
+    ],
+  );
+
   const backgroundCard = el(
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-background' },
-    [
-      installHint,
-      installStatus,
-      el('div', { class: 'settings-actions' }, [installButton]),
-      batteryButton,
-      batteryDesktop,
-      iosGuide,
-    ],
+    [backgroundGrid, installStatus, batteryDesktop, batterySteps, iosGuide],
   );
 
   // ---- OneDrive folder picker ----
@@ -594,24 +493,20 @@ export function createSettingsView(store, sw) {
 
   // ---- playback ----
   const SLEEP_OPTIONS = [
-    { value: 'off', testid: 'sleep-off', labelKey: 'settings.playback.sleepOff' },
-    { value: '15', testid: 'sleep-15', labelKey: 'settings.playback.sleep15' },
-    { value: '30', testid: 'sleep-30', labelKey: 'settings.playback.sleep30' },
-    { value: '45', testid: 'sleep-45', labelKey: 'settings.playback.sleep45' },
-    { value: '60', testid: 'sleep-60', labelKey: 'settings.playback.sleep60' },
-    { value: 'end', testid: 'sleep-end', labelKey: 'settings.playback.sleepEnd' },
+    { value: 'off', labelKey: 'settings.playback.sleepOff' },
+    { value: '15', labelKey: 'settings.playback.sleep15' },
+    { value: '30', labelKey: 'settings.playback.sleep30' },
+    { value: '45', labelKey: 'settings.playback.sleep45' },
+    { value: '60', labelKey: 'settings.playback.sleep60' },
+    { value: 'end', labelKey: 'settings.playback.sleepEnd' },
   ];
-  const sleepButtons = SLEEP_OPTIONS.map(({ value, testid, labelKey }) => ({
-    value,
-    button: el('button', {
-      type: 'button',
-      class: 'segment',
-      'data-testid': testid,
-      'aria-pressed': 'false',
-      text: t(labelKey),
-      onclick: () => store.setSleepMode(value),
-    }),
-  }));
+  const sleepSelect = el('select', {
+    class: 'sleep-select',
+    'data-testid': 'sleep-timer',
+    'aria-label': t('settings.playback.sleep'),
+  }, SLEEP_OPTIONS.map(({ value, labelKey }) => el('option', { value, text: t(labelKey) })));
+  sleepSelect.addEventListener('change', () => store.setSleepMode(sleepSelect.value));
+
   const sleepRemaining = el('p', {
     class: 'hint',
     'data-testid': 'sleep-remaining',
@@ -641,26 +536,21 @@ export function createSettingsView(store, sw) {
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-playback' },
     [
-      el('p', { class: 'hint', text: t('settings.playback.hint') }),
-      el('div', { class: 'setting-line' }, [
-        el('span', { class: 'setting-label', text: t('settings.playback.sleep') }),
-        el(
-          'div',
-          { class: 'segmented', role: 'group', 'aria-label': t('settings.playback.sleep') },
-          sleepButtons.map(({ button }) => button),
-        ),
-        sleepRemaining,
+      el('div', { class: 'playback-line', 'data-testid': 'playback-line' }, [
+        el('div', { class: 'inline-setting' }, [
+          el('span', { class: 'inline-label', text: t('settings.playback.sleep') }),
+          sleepSelect,
+        ]),
+        el('div', { class: 'inline-setting' }, [
+          el('span', { class: 'inline-label', text: t('settings.playback.leveling') }),
+          levelingButton,
+        ]),
+        el('div', { class: 'inline-setting' }, [
+          el('span', { class: 'inline-label', text: t('settings.playback.gapless') }),
+          gaplessButton,
+        ]),
       ]),
-      el('div', { class: 'setting-line' }, [
-        el('span', { class: 'setting-label', text: t('settings.playback.leveling') }),
-        levelingButton,
-        el('p', { class: 'hint', text: t('settings.playback.levelingHint') }),
-      ]),
-      el('div', { class: 'setting-line' }, [
-        el('span', { class: 'setting-label', text: t('settings.playback.gapless') }),
-        gaplessButton,
-        el('p', { class: 'hint', text: t('settings.playback.gaplessHint') }),
-      ]),
+      sleepRemaining,
     ],
   );
 
@@ -739,94 +629,6 @@ export function createSettingsView(store, sw) {
     },
   });
 
-  function openPlayLog() {
-    const pre = el('pre', {
-      class: 'tag-report',
-      'data-testid': 'playlog-text',
-      text: t('common.loading'),
-    });
-
-    function close() {
-      document.removeEventListener('keydown', onKeydown);
-      overlay.remove();
-    }
-
-    function onKeydown(event) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        close();
-      }
-    }
-
-    const copyButton = el('button', {
-      class: 'btn-pill',
-      type: 'button',
-      'data-testid': 'playlog-copy',
-      text: t('diagnostics.copy'),
-      onclick: async () => {
-        await copyText(pre.textContent ?? '');
-        toast(t('settings.about.playLogCopied'));
-      },
-    });
-    const clearButton = el('button', {
-      class: 'btn-pill ghost',
-      type: 'button',
-      'data-testid': 'playlog-clear',
-      text: t('settings.about.playLogClear'),
-      onclick: async () => {
-        await store.clearPlayLog();
-        setText(pre, '');
-      },
-    });
-    const closeButton = el('button', {
-      class: 'btn-pill ghost',
-      type: 'button',
-      'data-testid': 'playlog-close',
-      text: t('settings.about.playLogClose'),
-      onclick: () => close(),
-    });
-
-    const panel = el('div', { class: 'modal-panel', role: 'document' }, [
-      el('header', { class: 'modal-head' }, [
-        el('h2', { text: t('settings.about.playLog') }),
-        closeButton,
-      ]),
-      pre,
-      el('div', { class: 'modal-actions' }, [copyButton, clearButton]),
-    ]);
-
-    const overlay = el(
-      'div',
-      {
-        class: 'modal',
-        role: 'dialog',
-        'aria-modal': 'true',
-        'aria-label': t('settings.about.playLog'),
-        'data-testid': 'playlog-panel',
-      },
-      panel,
-    );
-
-    overlay.addEventListener('click', (event) => {
-      if (event.target === overlay) close();
-    });
-    document.addEventListener('keydown', onKeydown);
-    document.body.append(overlay);
-
-    Promise.resolve()
-      .then(() => store.playLogText())
-      .then((text) => setText(pre, String(text ?? '')))
-      .catch(() => setText(pre, ''));
-  }
-
-  const playLogButton = el('button', {
-    class: 'btn-pill ghost',
-    type: 'button',
-    'data-testid': 'playlog-open',
-    text: t('settings.about.playLog'),
-    onclick: () => openPlayLog(),
-  });
-
   const aboutCard = el(
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-about' },
@@ -839,12 +641,7 @@ export function createSettingsView(store, sw) {
         el('span', { text: t('settings.about.updateState') }),
         updateState,
       ]),
-      el('div', { class: 'settings-actions' }, [
-        checkButton,
-        applyButton,
-        reloadButton,
-        playLogButton,
-      ]),
+      el('div', { class: 'settings-actions' }, [checkButton, applyButton, reloadButton]),
     ],
   );
 
@@ -1030,7 +827,6 @@ export function createSettingsView(store, sw) {
           ? 'settings.background.installable'
           : 'settings.background.browserMode';
     setText(installStatus, t(installKey));
-    setHidden(installHint, install.status === 'installed');
     setHidden(installButton, install.status !== 'installable');
     setHidden(iosGuide, !isIos || install.status === 'installed');
 
@@ -1050,11 +846,7 @@ export function createSettingsView(store, sw) {
     }
 
     const sleep = state.sleep ?? { mode: 'off', remaining: null, fading: false };
-    for (const { value, button } of sleepButtons) {
-      const active = sleep.mode === value;
-      button.setAttribute('aria-pressed', String(active));
-      button.classList.toggle('is-active', active);
-    }
+    if (sleepSelect.value !== sleep.mode) sleepSelect.value = sleep.mode;
     const timedMode = ['15', '30', '45', '60'].includes(sleep.mode);
     const showRemaining = timedMode && Number.isFinite(sleep.remaining);
     setHidden(sleepRemaining, !showRemaining);

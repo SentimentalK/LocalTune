@@ -123,8 +123,9 @@ export default {
   'settings.onedrive.authFailedPending':
     'OneDrive のサインインを処理中です。しばらくしてから再試行してください。',
   'settings.background.title': 'バックグラウンド再生',
-  'settings.background.hint':
-    'アプリとしてインストールし、バッテリー最適化から除外すると、画面オフでも再生が途切れにくくなります。',
+  'settings.background.cardTitle': 'インストールとバッテリー',
+  'settings.background.cardBody':
+    'LocalTune をインストールし、Chrome と LocalTune のバッテリー使用量を「無制限」に設定します。画面が消えている間も再生が続く信頼性が上がります。',
   'settings.background.installed':
     'インストール済み。ホーム画面から起動すればバックグラウンドで再生できます。',
   'settings.background.installable':
@@ -132,11 +133,11 @@ export default {
   'settings.background.browserMode':
     'このブラウザーではインストールできません。画面オフ時に再生が止まる場合があります。',
   'settings.background.install': 'アプリをインストール',
-  'settings.background.batteryOpen': 'バッテリー最適化の設定',
+  'settings.background.installNext':
+    'インストールしました。次に Chrome と LocalTune のバッテリー使用量を「無制限」に設定してください（手順は下）。',
+  'settings.background.batteryGuide': 'バッテリー設定',
   'settings.background.batteryDesktop': 'バッテリー最適化は Android 端末でのみ関係します。',
-  'settings.background.batteryGuideTitle': '画面オフ後も再生を続ける',
-  'settings.background.batteryGuideHint':
-    '以下のシステム設定を開き、Chrome のバックグラウンド実行を許可してください。メニュー名は OS のバージョンで異なる場合があります。',
+  'settings.background.stepsTitle': 'Android のバッテリー設定',
   'settings.background.batteryBrandSamsung': 'サムスン',
   'settings.background.batteryBrandXiaomi': 'Xiaomi',
   'settings.background.batteryBrandHuawei': 'HUAWEI',
@@ -155,9 +156,9 @@ export default {
   'settings.background.huawei3':
     '別ルート：設定 → バッテリー → バッテリーの最適化 → Chrome → 許可しない',
   'settings.background.stock1': '設定 → アプリ → すべてのアプリを表示 → Chrome',
-  'settings.background.stock2': 'アプリのバッテリー使用量 → 制限なし',
+  'settings.background.stock2': 'アプリのバッテリー使用量 → バックグラウンドでの使用を許可 → 無制限',
   'settings.background.stock3':
-    '別ルート：設定 → アプリ → 特別なアプリのアクセス → バッテリーの最適化 → Chrome → 最適化しない',
+    'LocalTune でも同じ設定を行います。古い端末: 設定 → アプリ → 特別なアプリのアクセス → バッテリー最適化 → Chrome → 最適化しない',
   'settings.background.iosTitle': 'iOS でインストール',
   'settings.background.iosHint': 'ホーム画面に追加するとバックグラウンド再生。',
   'settings.background.ios1': 'Safari の共有をタップ',
@@ -189,10 +190,6 @@ export default {
   'settings.about.updateReady': '新しいバージョンがあります',
   'settings.about.updateNow': '今すぐ更新',
   'settings.about.reload': '再読み込み',
-  'settings.about.playLog': '再生ログ',
-  'settings.about.playLogCopied': '再生ログをコピーしました',
-  'settings.about.playLogClear': '消去',
-  'settings.about.playLogClose': '閉じる',
 
   'aria.playTrack': '{title} を再生',
   'aria.playQueueItem': 'キューの {index} 曲目 {title} を再生',
@@ -325,7 +322,6 @@ export default {
   'autoList.empty': 'このリストにはまだ曲がありません',
 
   'settings.playback.title': '再生',
-  'settings.playback.hint': 'スリープタイマー、音量の均一化、ギャップレス再生。',
   'settings.playback.sleep': 'スリープタイマー',
   'settings.playback.sleepOff': 'オフ',
   'settings.playback.sleep15': '15 分',
@@ -336,9 +332,7 @@ export default {
   'settings.playback.sleepRemaining': '残り {time}',
   'settings.playback.sleepFading': 'フェードアウト中…',
   'settings.playback.leveling': '音量の均一化',
-  'settings.playback.levelingHint': 'ReplayGain データで曲ごとの音量差をならします。',
   'settings.playback.gapless': 'ギャップレス再生',
-  'settings.playback.gaplessHint': '次の曲を先読みし、アルバムを途切れずに再生します。',
 
   'error.db.writeStats': '再生統計の書き込みに失敗しました',
 };

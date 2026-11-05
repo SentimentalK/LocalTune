@@ -55,6 +55,25 @@ test('settings cards fill the width and controls hug the trailing edge', async (
   await expect(leveling).toHaveAttribute('role', 'switch');
   await expect(gapless).toHaveAttribute('role', 'switch');
 
+  // The sleep select and both toggles share one line without overflowing.
+  const playback = await page.evaluate(() => {
+    const line = document.querySelector('[data-testid="playback-line"]');
+    const settings = [...line.querySelectorAll('.inline-setting')];
+    return {
+      tops: settings.map((node) => node.offsetTop),
+      overflow: line.scrollWidth - line.clientWidth,
+    };
+  });
+  expect(playback.tops.length).toBe(3);
+  expect(new Set(playback.tops).size).toBe(1);
+  expect(playback.overflow, 'playback line horizontal overflow').toBeLessThanOrEqual(0);
+
+  const storageOverflow = await page.evaluate(() => {
+    const limit = document.querySelector('.storage-limit');
+    return limit.scrollWidth - limit.clientWidth;
+  });
+  expect(storageOverflow, 'storage limit horizontal overflow').toBeLessThanOrEqual(0);
+
   // The compact source rows must not overflow a 360px phone viewport.
   const rows = await page.evaluate(() =>
     [...document.querySelectorAll('[data-testid^="source-row-"]')].map((row) => ({

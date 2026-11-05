@@ -98,8 +98,8 @@ test('sleep timer set to end of track stops after one song', async ({ page }) =>
   await expect(rows).toHaveCount(2);
 
   await page.locator('[data-testid="settings-open"]').click();
-  await page.locator('[data-testid="sleep-end"]').click();
-  await expect(page.locator('[data-testid="sleep-end"]')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('[data-testid="sleep-timer"]').selectOption('end');
+  await expect(page.locator('[data-testid="sleep-timer"]')).toHaveValue('end');
   await page.locator('[data-testid="settings-close"]').click();
 
   const nowTitle = page.locator('.player .meta h2');

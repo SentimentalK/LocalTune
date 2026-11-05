@@ -655,6 +655,77 @@ time {
   color: var(--muted);
 }
 
+/* Background card: copy on the left, install/battery actions on the right. */
+.background-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.background-copy {
+  min-width: 0;
+}
+
+.background-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.background-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+  min-width: 116px;
+}
+
+.background-actions .btn-pill {
+  white-space: nowrap;
+}
+
+.background-copy p {
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.battery-steps-list {
+  margin: 0 0 6px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.battery-steps-list li {
+  margin: 2px 0;
+}
+
+.battery-steps {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.battery-steps-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.battery-brand-details {
+  margin-top: 6px;
+}
+
+.battery-brand-details summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+
 .source-row,
 .source-card-body {
   display: flex;
@@ -1818,28 +1889,41 @@ textarea.text-input {
 
 /* ---- playback settings ---- */
 
-.setting-line {
+.playback-line {
   display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.inline-setting {
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px 12px;
+  gap: 6px;
+  min-width: 0;
+  flex: 0 0 auto;
 }
 
-.setting-line .hint {
-  flex-basis: 100%;
-  margin: 0;
+.inline-setting:first-child {
+  flex: 1 1 auto;
 }
 
-.setting-line .segmented {
-  flex-basis: 100%;
-  width: 100%;
-}
-
-.setting-label {
-  font-size: 13px;
+.inline-label {
+  font-size: 11px;
   color: var(--muted);
+  white-space: nowrap;
+}
+
+.sleep-select {
+  min-width: 0;
+  max-width: 116px;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
 }
 
 .hint {
@@ -1863,6 +1947,11 @@ textarea.text-input {
 
   .segment:last-child:nth-child(odd) {
     grid-column: 1 / -1;
+  }
+
+  /* Keeps the 116px action column two-up at 360px while the copy stays ≤4 lines. */
+  .background-copy p {
+    font-size: 12px;
   }
 }
 

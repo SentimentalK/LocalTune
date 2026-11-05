@@ -114,16 +114,18 @@ export default {
   'settings.onedrive.authFailedToken': 'OneDrive 换取登录令牌失败，请重试',
   'settings.onedrive.authFailedPending': 'OneDrive 登录仍在处理中，请稍后重试',
   'settings.background.title': '后台播放',
-  'settings.background.hint': '安装为应用并关闭电池优化，锁屏后系统才不容易中断播放。',
+  'settings.background.cardTitle': '安装与电池',
+  'settings.background.cardBody':
+    '安装 LocalTune，并把 Chrome 与 LocalTune 的电池用量设为「不受限制」。这能提高息屏时继续播放的可靠性。',
   'settings.background.installed': '已安装，从主屏打开即可后台播放。',
   'settings.background.installable': '安装 LocalTune 后，后台播放更稳定。',
   'settings.background.browserMode': '此浏览器无法安装应用，锁屏后播放可能被系统中断。',
   'settings.background.install': '安装应用',
-  'settings.background.batteryOpen': '电池优化设置',
+  'settings.background.installNext':
+    '已安装。接下来把 Chrome 与 LocalTune 的电池用量设为「不受限制」（步骤见下）。',
+  'settings.background.batteryGuide': '电池指南',
   'settings.background.batteryDesktop': '电池优化只适用于 Android 设备。',
-  'settings.background.batteryGuideTitle': '锁屏后继续播放',
-  'settings.background.batteryGuideHint':
-    '打开下面的系统设置，允许 Chrome 在后台运行。不同系统版本的菜单名称可能略有差异。',
+  'settings.background.stepsTitle': 'Android 电池设置',
   'settings.background.batteryBrandSamsung': '三星',
   'settings.background.batteryBrandXiaomi': '小米',
   'settings.background.batteryBrandHuawei': '华为',
@@ -140,9 +142,9 @@ export default {
     '关闭「自动管理」，手动管理三个开关全开：自启动、关联启动、后台活动',
   'settings.background.huawei3': '备选：设置 → 电池 → 电池优化 → Chrome → 不允许',
   'settings.background.stock1': '设置 → 应用 → 查看全部应用 → Chrome',
-  'settings.background.stock2': '应用电池用量 → 不受限制',
+  'settings.background.stock2': '应用电池用量 → 允许后台运行 → 不受限制',
   'settings.background.stock3':
-    '备选：设置 → 应用 → 特殊应用权限 → 电池优化 → Chrome → 不优化',
+    '对 LocalTune 重复一次。旧版系统：设置 → 应用 → 特殊应用权限 → 电池优化 → Chrome → 不优化',
   'settings.background.iosTitle': '在 iOS 上安装',
   'settings.background.iosHint': 'iOS 需添加到主屏幕才能后台播放。',
   'settings.background.ios1': '在 Safari 点分享',
@@ -174,10 +176,6 @@ export default {
   'settings.about.updateReady': '有新版本可用',
   'settings.about.updateNow': '立即更新',
   'settings.about.reload': '重新加载',
-  'settings.about.playLog': '播放日志',
-  'settings.about.playLogCopied': '已复制播放日志',
-  'settings.about.playLogClear': '清除',
-  'settings.about.playLogClose': '关闭',
 
   'aria.playTrack': '播放 {title}',
   'aria.playQueueItem': '播放队列第 {index} 首 {title}',
@@ -308,7 +306,6 @@ export default {
   'autoList.empty': '这个列表还没有歌曲',
 
   'settings.playback.title': '播放',
-  'settings.playback.hint': '睡眠定时、音量均衡与无缝播放。',
   'settings.playback.sleep': '睡眠定时',
   'settings.playback.sleepOff': '关闭',
   'settings.playback.sleep15': '15 分钟',
@@ -319,9 +316,7 @@ export default {
   'settings.playback.sleepRemaining': '剩余 {time}',
   'settings.playback.sleepFading': '正在淡出…',
   'settings.playback.leveling': '音量均衡',
-  'settings.playback.levelingHint': '用 ReplayGain 数据拉平忽大忽小的曲目。',
   'settings.playback.gapless': '无缝播放',
-  'settings.playback.gaplessHint': '预加载下一首，整张专辑连续播放不中断。',
 
   'error.db.writeStats': '写入播放统计失败',
 };

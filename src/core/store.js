@@ -1350,16 +1350,6 @@ export class Store extends EventTarget {
     return this.playlog.list();
   }
 
-  async clearPlayLog() {
-    await this.playlog.clear();
-    this._emit();
-  }
-
-  async playLogText() {
-    const rows = await this.playlog.list();
-    return PlayLog.format(rows, { userAgent: globalThis.navigator?.userAgent ?? '' });
-  }
-
   async next(source = 'user') {
     const before = this.queue;
     const { state } = advance(before, { auto: false });

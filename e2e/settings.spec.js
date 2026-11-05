@@ -25,10 +25,11 @@ test('settings view covers library, storage, language and about', async ({ page 
   await expect(page.locator('[data-testid="settings-source-change"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="settings-source-remove"]')).toHaveCount(0);
 
-  // Playback card: sleep timer plus the leveling and gapless toggles.
+  // Playback card: one line with the sleep timer select and the two toggles.
+  await expect(page.locator('[data-testid="playback-line"]')).toBeVisible();
+  await expect(page.locator('[data-testid="sleep-timer"]')).toHaveValue('off');
   await expect(page.locator('[data-testid="setting-leveling"]')).toBeVisible();
   await expect(page.locator('[data-testid="setting-gapless"]')).toBeVisible();
-  await expect(page.locator('[data-testid="sleep-end"]')).toBeVisible();
 
   // The old inline settings card (and its spin toggle) is gone.
   await expect(page.locator('#vinyl-spin')).toHaveCount(0);
@@ -40,6 +41,7 @@ test('settings view covers library, storage, language and about', async ({ page 
   const aboutCard = page.locator('[data-testid="settings-section-about"]');
   await expect(aboutCard.locator('[data-testid="setting-youtube-key"]')).toHaveCount(0);
   await expect(aboutCard.locator('[data-testid="setting-proxy-url"]')).toHaveCount(0);
+  await expect(aboutCard.locator('.settings-actions > *')).toHaveCount(3);
 
   // The storage card has a single clear action; a fresh profile clears to 0 B.
   const cachedMusic = page.locator('[data-testid="storage-audio"] b');
