@@ -18,6 +18,7 @@ import {
   putStats,
   getMeta,
   setMeta,
+  updateMeta,
   putPlaylist,
   deletePlaylist,
   getAllPlaylists,
@@ -174,6 +175,7 @@ export class Store extends EventTarget {
       meta: {
         get: (key) => getMeta(db, key),
         set: (key, value) => setMeta(db, key, value),
+        update: (key, updater) => updateMeta(db, key, updater),
       },
       cache: this.cache,
     });
@@ -340,6 +342,7 @@ export class Store extends EventTarget {
       redirect = false;
     }
     const authError = this.onedrive.authError;
+    const authStage = this.onedrive.authStage ?? 'redirect';
     let authFailure = null;
 
     if (redirect === true) {
@@ -350,11 +353,18 @@ export class Store extends EventTarget {
       this._state.pendingView = { view: 'settings', section: 'library', picker: null };
       this._state.view = 'settings';
       this.log('onedrive:auth', {
-        stage: this.onedrive.authStage ?? 'redirect',
+        stage: authStage,
         ok: false,
         error: authError,
       });
-      authFailure = t('settings.onedrive.authFailed');
+      authFailure =
+        authStage === 'redirect'
+          ? t('settings.onedrive.authFailedRedirect')
+          : authStage === 'token'
+            ? t('settings.onedrive.authFailedToken')
+            : authStage === 'pending'
+              ? t('settings.onedrive.authFailedPending')
+              : t('settings.onedrive.authFailed');
     }
 
     const savedMode = await getMeta(this.db, LOCAL_MODE_KEY).catch(() => null);
@@ -463,7 +473,7 @@ export class Store extends EventTarget {
     if (authFailure) {
       this._refreshSource('onedrive', {
         error: authFailure,
-        errorStage: this.onedrive.authStage ?? 'redirect',
+        errorStage: authStage,
       });
     }
 

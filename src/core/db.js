@@ -149,6 +149,53 @@ export function setMeta(db, key, value) {
   });
 }
 
+/**
+ * Read-modify-write one meta key inside a single `readwrite` transaction, so
+ * concurrent documents cannot interleave between the read and the write.
+ * `updater(previous)` runs synchronously; returning `undefined` leaves the
+ * value untouched, any other value is written.
+ */
+export function updateMeta(db, key, updater) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(META_STORE, 'readwrite');
+    const store = tx.objectStore(META_STORE);
+    let previous = null;
+    let value = null;
+    let changed = false;
+    let failure = null;
+
+    const request = store.get(key);
+    request.onsuccess = () => {
+      const row = request.result;
+      previous = row === undefined ? null : row.value;
+      try {
+        const next = updater(previous);
+        if (next === undefined) {
+          value = previous;
+          return;
+        }
+        value = next;
+        changed = true;
+        store.put({ key, value });
+      } catch (error) {
+        failure = error ?? new Error(t('error.db.writeMeta'));
+        try {
+          tx.abort();
+        } catch {
+          // The transaction may already be finishing; onabort still rejects.
+        }
+      }
+    };
+
+    tx.oncomplete = () => {
+      if (failure) reject(failure);
+      else resolve({ previous, value, changed });
+    };
+    tx.onerror = () => reject(failure ?? tx.error ?? new Error(t('error.db.writeMeta')));
+    tx.onabort = () => reject(failure ?? tx.error ?? new Error(t('error.db.writeMetaAborted')));
+  });
+}
+
 export function getAllStats(db) {
   const tx = db.transaction(STATS_STORE, 'readonly');
   const request = tx.objectStore(STATS_STORE).getAll();

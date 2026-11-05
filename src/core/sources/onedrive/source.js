@@ -12,6 +12,8 @@
  */
 
 import {
+  PKCE_KEY,
+  PKCE_TTL_MS,
   buildAuthorizeUrl,
   buildTokenRequest,
   codeChallenge,
@@ -26,9 +28,7 @@ import { createRemoteFile } from './remoteFile.js';
 import { cacheKey } from '../../cache/audioCache.js';
 import { t } from '../../../i18n/index.js';
 
-const PKCE_KEY = 'onedrivePkce';
 const SILENT_KEY = 'onedriveSilent';
-export const PKCE_TTL_MS = 10 * 60 * 1000;
 const SILENT_WINDOW_MS = PKCE_TTL_MS;
 const ITEM_SELECT =
   'id,name,size,file,folder,lastModifiedDateTime,parentReference,@microsoft.graph.downloadUrl';
@@ -49,6 +49,8 @@ function encodePath(path) {
     .join('/');
 }
 
+export { PKCE_TTL_MS };
+
 export class OneDriveSource {
   kind = 'onedrive';
   trackSource = 'onedrive';
@@ -61,6 +63,7 @@ export class OneDriveSource {
     location = globalThis.location,
     history = globalThis.history,
     now = () => Date.now(),
+    wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   } = {}) {
     if (!meta) throw new Error('OneDriveSource requires a meta store');
     this.meta = meta;
@@ -69,6 +72,7 @@ export class OneDriveSource {
     this.location = location;
     this.history = history;
     this.now = now;
+    this.wait = wait;
 
     this.authError = null;
     this.authStage = null;
@@ -113,68 +117,15 @@ export class OneDriveSource {
   }
 
   /**
-   * Complete the authorization-code exchange after the redirect.
-   * Never throws: failures land in `authError` and return false.
+   * Complete the authorization-code exchange after the redirect. The state
+   * machine lives in a lazy chunk: plain startup (no OAuth response in the
+   * URL) never downloads it.
    */
   async handleRedirect(search = this.location.search) {
-    const { code, state, error, errorDescription } = parseAuthResponse(search ?? '');
-
-    if (error && !code) {
-      await this._clearPkce();
-      this._clearQuery();
-      this.authError = errorDescription || error;
-      this.authStage = 'redirect';
-      return false;
-    }
-
-    if (!code) return false;
-
-    const pkce = await this._getMeta(PKCE_KEY);
-
-    if (!pkce || !state || pkce.state !== state) {
-      await this._clearPkce();
-      this._clearQuery();
-      this.authError = 'state mismatch';
-      this.authStage = 'redirect';
-      return false;
-    }
-
-    const at = Number(pkce.at);
-    if (!Number.isFinite(at) || this.now() - at > PKCE_TTL_MS) {
-      await this._clearPkce();
-      this._clearQuery();
-      this.authError = 'expired';
-      this.authStage = 'redirect';
-      return false;
-    }
-
-    // Single use: the verifier is consumed before the exchange so a replayed
-    // redirect cannot POST the code twice.
-    await this._clearPkce();
-
-    try {
-      const token = await requestToken(
-        buildTokenRequest({
-          code,
-          codeVerifier: pkce.verifier,
-          redirectUri: pkce.redirectUri ?? this.redirectUri,
-        }),
-        this.fetchImpl,
-      );
-      this._token = token;
-      await this.meta.set('onedriveToken', token);
-      await this.meta.set('onedriveAuthAt', this.now());
-      this._permission = 'granted';
-      this._clearQuery();
-      this.authError = null;
-      this.authStage = null;
-      return true;
-    } catch (failure) {
-      this._clearQuery();
-      this.authError = failure?.message ? String(failure.message) : String(failure);
-      this.authStage = 'token';
-      return false;
-    }
+    const params = parseAuthResponse(search ?? '');
+    if (!params.code && !params.error) return false;
+    const { handleRedirect } = await import('./redirect.js');
+    return handleRedirect(this, params);
   }
 
   /** Read token, root and item map from `meta`. No network. */

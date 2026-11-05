@@ -14,6 +14,15 @@ function memoryMeta(initial = {}) {
       map.set(key, value);
       return Promise.resolve();
     },
+    update(key, updater) {
+      const previous = map.get(key) ?? null;
+      const value = updater(previous);
+      if (value === undefined) {
+        return Promise.resolve({ previous, value: previous, changed: false });
+      }
+      map.set(key, value);
+      return Promise.resolve({ previous, value, changed: true });
+    },
   };
 }
 
@@ -70,8 +79,9 @@ function makeSource({
   location = fakeLocation(),
   history = fakeHistory(),
   now,
+  wait,
 } = {}) {
-  return new OneDriveSource({ meta, fetchImpl, cache, location, history, now });
+  return new OneDriveSource({ meta, fetchImpl, cache, location, history, now, wait });
 }
 
 function bytesOf(buffer) {
@@ -128,6 +138,7 @@ test('handleRedirect exchanges the code from a fresh browsing context', async ()
     now: () => at + 1000,
     fetchImpl: async (url, init) => {
       calls.push([url, init]);
+      assert.notEqual(meta.map.get('onedrivePkce') ?? null, null);
       return jsonResponse(200, {
         access_token: 'new-access',
         refresh_token: 'new-refresh',
@@ -150,7 +161,7 @@ test('handleRedirect exchanges the code from a fresh browsing context', async ()
   assert.equal(source.authStage, null);
 });
 
-test('handleRedirect consumes the PKCE entry so a replay exchanges nothing', async () => {
+test('handleRedirect reuses the stored token when the same redirect loads again', async () => {
   const meta = memoryMeta({
     onedrivePkce: { verifier: 'verifier', state: 's1', redirectUri: 'https://app.test/', at: 0 },
   });
@@ -167,9 +178,185 @@ test('handleRedirect consumes the PKCE entry so a replay exchanges nothing', asy
   });
 
   assert.equal(await source.handleRedirect('?code=c&state=s1'), true);
-  assert.equal(await source.handleRedirect('?code=c&state=s1'), false);
+  assert.equal(await source.handleRedirect('?code=c&state=s1'), true);
   assert.equal(calls.length, 1);
   assert.equal(meta.map.get('onedrivePkce'), null);
+  assert.equal(meta.map.get('onedriveAuth').status, 'done');
+  assert.equal(source.authError, null);
+  assert.equal(source.authStage, null);
+});
+
+test('two documents loading the same redirect exchange the code once', async () => {
+  const now = 1_000_000;
+  const meta = memoryMeta({
+    onedrivePkce: { verifier: 'verifier', state: 's1', redirectUri: 'https://app.test/', at: now },
+  });
+  let releasePost;
+  const postGate = new Promise((resolve) => {
+    releasePost = resolve;
+  });
+  let fetchCalls = 0;
+  const fetchImpl = async () => {
+    fetchCalls += 1;
+    await postGate;
+    return jsonResponse(200, { access_token: 'new-access', expires_in: 3600 });
+  };
+
+  const first = makeSource({ meta, fetchImpl, now: () => now });
+  const pendingFirst = first.handleRedirect('?code=c&state=s1');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(fetchCalls, 1);
+
+  let releaseWait;
+  const second = makeSource({
+    meta,
+    fetchImpl,
+    now: () => now,
+    wait: () =>
+      new Promise((resolve) => {
+        releaseWait = resolve;
+      }),
+  });
+  const pendingSecond = second.handleRedirect('?code=c&state=s1');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(typeof releaseWait, 'function');
+
+  releasePost();
+  assert.equal(await pendingFirst, true);
+  releaseWait();
+  assert.equal(await pendingSecond, true);
+
+  assert.equal(fetchCalls, 1);
+  assert.equal(meta.map.get('onedriveToken').accessToken, 'new-access');
+  assert.equal(first.authError, null);
+  assert.equal(second.authError, null);
+  assert.equal(second.authStage, null);
+});
+
+test('an in-flight posting record times out as pending without a second POST', async () => {
+  const now = 1_000_000;
+  let clock = now;
+  let fetchCalls = 0;
+  const meta = memoryMeta({
+    onedrivePkce: { verifier: 'verifier', state: 's1', redirectUri: 'https://app.test/', at: now },
+    onedriveAuth: { state: 's1', code: 'c', at: now, status: 'posting' },
+  });
+  const source = makeSource({
+    meta,
+    now: () => clock,
+    wait: async (ms) => {
+      clock += ms;
+    },
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error('must not fetch');
+    },
+  });
+
+  assert.equal(await source.handleRedirect('?code=c&state=s1'), false);
+  assert.equal(fetchCalls, 0);
+  assert.equal(source.authStage, 'pending');
+  assert.equal(source.authError, 'auth exchange still in progress');
+  assert.equal(meta.map.get('onedriveAuth').status, 'posting');
+});
+
+test('a recorded token failure is reported without re-POSTing the code', async () => {
+  const now = 1_000_000;
+  let fetchCalls = 0;
+  const meta = memoryMeta({
+    onedrivePkce: { verifier: 'verifier', state: 's1', redirectUri: 'https://app.test/', at: now },
+    onedriveAuth: {
+      state: 's1',
+      code: 'c',
+      at: now,
+      status: 'error',
+      stage: 'token',
+      error: 'AADSTS70008: the code has expired',
+    },
+  });
+  const source = makeSource({
+    meta,
+    now: () => now,
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error('must not fetch');
+    },
+  });
+
+  assert.equal(await source.handleRedirect('?code=c&state=s1'), false);
+  assert.equal(fetchCalls, 0);
+  assert.equal(source.authError, 'AADSTS70008: the code has expired');
+  assert.equal(source.authStage, 'token');
+});
+
+test('a document destroyed before claiming leaves the PKCE verifier usable', async () => {
+  const now = 1_000_000;
+  let fetchCalls = 0;
+  const meta = memoryMeta({
+    onedrivePkce: { verifier: 'verifier', state: 's1', redirectUri: 'https://app.test/', at: now },
+  });
+  const source = makeSource({
+    meta,
+    now: () => now,
+    fetchImpl: async (url, init) => {
+      fetchCalls += 1;
+      assert.equal(new URLSearchParams(init.body).get('code_verifier'), 'verifier');
+      return jsonResponse(200, { access_token: 'new-access', expires_in: 3600 });
+    },
+  });
+
+  assert.equal(await source.handleRedirect('?code=c&state=s1'), true);
+  assert.equal(fetchCalls, 1);
+  assert.equal(meta.map.get('onedriveToken').accessToken, 'new-access');
+  assert.equal(meta.map.get('onedriveAuth').status, 'done');
+  assert.equal(meta.map.get('onedrivePkce'), null);
+});
+
+test('a claimed record is taken over and posted once by the next document', async () => {
+  const now = 1_000_000;
+  let fetchCalls = 0;
+  const meta = memoryMeta({
+    onedrivePkce: { verifier: 'verifier', state: 's1', redirectUri: 'https://app.test/', at: now },
+    onedriveAuth: { state: 's1', code: 'c', at: now, status: 'claimed' },
+  });
+  const source = makeSource({
+    meta,
+    now: () => now,
+    fetchImpl: async (url, init) => {
+      fetchCalls += 1;
+      assert.equal(new URLSearchParams(init.body).get('code_verifier'), 'verifier');
+      return jsonResponse(200, { access_token: 'new-access', expires_in: 3600 });
+    },
+  });
+
+  assert.equal(await source.handleRedirect('?code=c&state=s1'), true);
+  assert.equal(fetchCalls, 1);
+  assert.equal(meta.map.get('onedriveToken').accessToken, 'new-access');
+  assert.equal(meta.map.get('onedriveAuth').status, 'done');
+});
+
+test('a done record for another state does not sign in the redirect', async () => {
+  const now = 1_000_000;
+  let fetchCalls = 0;
+  const meta = memoryMeta({
+    onedrivePkce: null,
+    onedriveAuth: { state: 'other', code: 'old', at: now, status: 'done' },
+    onedriveToken: validToken(),
+  });
+  const source = makeSource({
+    meta,
+    now: () => now,
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error('must not fetch');
+    },
+  });
+
+  assert.equal(await source.handleRedirect('?code=c&state=s1'), false);
+  assert.equal(fetchCalls, 0);
+  assert.equal(source.authError, 'state mismatch');
+  assert.equal(source.authStage, 'redirect');
+  assert.equal(source.permission(), 'none');
 });
 
 test('handleRedirect rejects a PKCE entry older than the TTL', async () => {
