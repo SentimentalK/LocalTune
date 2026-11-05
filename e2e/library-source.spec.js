@@ -11,7 +11,7 @@ async function signInAndPickMusic(page, { count = '2' } = {}) {
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
 
   await page.locator('[data-testid="settings-open"]').click();
-  await page.locator('[data-testid="settings-source-onedrive"]').click();
+  await page.locator('[data-testid="source-connect-onedrive"]').click();
 
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeVisible();
   await expect(page.locator('[data-testid="onedrive-folder"]').first()).toHaveText('Music');
@@ -142,7 +142,7 @@ test('lists OneDrive tracks while tags are pending and plays from the cache', as
   await backToFolders(page);
 
   // Sync cached both whole files; tag reads are still parked at the gate.
-  expect(mock.wholeRequests).toHaveLength(2);
+  await expect.poll(() => mock.wholeRequests.length, { timeout: 10_000 }).toBe(2);
   expect(mock.rangeDone).toBe(0);
 
   await openSource(page, 'onedrive');
@@ -255,7 +255,7 @@ test('local and OneDrive rows show source names together', async ({ page }) => {
   await expect(page.locator('[data-testid="folder-source-local"] b')).toHaveText('本地');
 
   await page.locator('[data-testid="settings-open"]').click();
-  await page.locator('[data-testid="settings-source-onedrive"]').click();
+  await page.locator('[data-testid="source-connect-onedrive"]').click();
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeVisible();
   await page.locator('[data-testid="onedrive-folder"]').first().click();
   await page.locator('[data-testid="onedrive-picker-choose"]').click();

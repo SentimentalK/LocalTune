@@ -10,13 +10,20 @@ test('settings view covers library, storage, language and about', async ({ page 
     await expect(page.locator(`[data-testid="settings-section-${section}"]`)).toBeVisible();
   }
 
-  // Library rows keep exactly sync / change / remove; tag re-reading is gone.
+  // Library rows show one connect button until a source is connected; the
+  // sync / change / remove icons appear only for a connected source.
   await expect(page.locator('[data-testid="settings-rescan-tags"]')).toHaveCount(0);
   const sourceRows = page.locator('[data-testid^="source-row-"]');
   await expect(sourceRows).toHaveCount(2);
   for (const row of await sourceRows.all()) {
-    await expect(row.locator('button')).toHaveCount(3);
+    await expect(row.locator('button')).toHaveCount(1);
   }
+  await expect(page.locator('[data-testid="source-connect-local"]')).toBeVisible();
+  await expect(page.locator('[data-testid="source-connect-onedrive"]')).toBeVisible();
+  await expect(page.locator('[data-testid="settings-sync-local"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="settings-sync-onedrive"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="settings-source-change"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="settings-source-remove"]')).toHaveCount(0);
 
   // Playback card: sleep timer plus the leveling and gapless toggles.
   await expect(page.locator('[data-testid="setting-leveling"]')).toBeVisible();

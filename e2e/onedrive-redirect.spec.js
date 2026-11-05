@@ -30,7 +30,7 @@ test('a redirect caught by a new browsing context completes and opens the picker
   const authorize = page.waitForRequest((request) =>
     request.url().startsWith('https://login.microsoftonline.com/'),
   );
-  await page.locator('[data-testid="settings-source-onedrive"]').click();
+  await page.locator('[data-testid="source-connect-onedrive"]').click();
   const state = new URL((await authorize).url()).searchParams.get('state');
   expect(state).toBeTruthy();
 
@@ -53,7 +53,7 @@ test('two documents loading the same redirect exchange the code once', async ({ 
   const authorize = page.waitForRequest((request) =>
     request.url().startsWith('https://login.microsoftonline.com/'),
   );
-  await page.locator('[data-testid="settings-source-onedrive"]').click();
+  await page.locator('[data-testid="source-connect-onedrive"]').click();
   const state = new URL((await authorize).url()).searchParams.get('state');
   expect(state).toBeTruthy();
 
@@ -104,6 +104,6 @@ test('a mismatched state shows the cloud account error and never exchanges the c
   const error = returned.locator('[data-testid="source-row-onedrive"] .settings-error');
   await expect(error).toBeVisible();
   await expect(error).toHaveText('OneDrive 登录状态丢失，请重试');
-  await expect(returned.locator('[data-testid="settings-source-onedrive"]')).toBeEnabled();
+  await expect(returned.locator('[data-testid="source-connect-onedrive"]')).toBeEnabled();
   expect(mock.tokenRequests ?? []).toHaveLength(0);
 });

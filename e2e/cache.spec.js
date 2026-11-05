@@ -19,7 +19,7 @@ async function signInAndPickMusic(page) {
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
 
   await page.locator('[data-testid="settings-open"]').click();
-  await page.locator('[data-testid="settings-source-onedrive"]').click();
+  await page.locator('[data-testid="source-connect-onedrive"]').click();
 
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeVisible();
   await expect(page.locator('[data-testid="onedrive-folder"]').first()).toHaveText('Music');
@@ -27,7 +27,17 @@ async function signInAndPickMusic(page) {
   await page.locator('[data-testid="onedrive-picker-choose"]').click();
 
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
-  await expect(page.locator('[data-testid="source-row-onedrive"]')).toContainText('2');
+  const cloudRow = page.locator('[data-testid="source-row-onedrive"]');
+  await expect(cloudRow).toContainText('2');
+  await expect(cloudRow.locator('button')).toHaveCount(3);
+  await expect(page.locator('[data-testid="source-connect-onedrive"]')).toBeHidden();
+  await expect(page.locator('[data-testid="settings-sync-onedrive"]')).toBeVisible();
+  await expect(page.locator('[data-testid="settings-source-onedrive"]')).toBeVisible();
+  await expect(page.locator('[data-testid="settings-onedrive-remove"]')).toBeVisible();
+  await expect(page.locator('[data-testid="settings-source-onedrive"]')).toHaveAttribute(
+    'aria-label',
+    '更换文件夹',
+  );
   await page.locator('[data-testid="settings-close"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();
 }

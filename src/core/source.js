@@ -50,10 +50,20 @@ export class FsaSource {
     if (typeof picker !== 'function') {
       throw new Error(t('error.source.unsupportedFsa'));
     }
+    const previous = this.#root;
     const handle = await picker({ mode: 'read' });
     this.#root = handle;
     this.name = handle.name ?? '';
     this.#dirs = new Map();
+
+    let changed = true;
+    if (previous) {
+      if (typeof previous.isSameEntry === 'function') {
+        changed = !(await previous.isSameEntry(handle).catch(() => false));
+      } else {
+        changed = previous.name !== (handle.name ?? '');
+      }
+    }
 
     let state = 'granted';
     if (typeof handle.queryPermission === 'function') {
@@ -78,7 +88,7 @@ export class FsaSource {
     if (state !== 'granted') throw new Error(t('error.source.permissionDenied'));
 
     if (this.#db) await setMeta(this.#db, DIR_HANDLE_KEY, handle);
-    return handle;
+    return { changed, name: this.name };
   }
 
   async restore() {

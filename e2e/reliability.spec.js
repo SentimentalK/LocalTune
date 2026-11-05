@@ -130,7 +130,7 @@ test('import mode copies files into OPFS and survives a reload', async ({ page }
     await page.locator('[data-testid="settings-open"]').click();
 
     const chooserPromise = page.waitForEvent('filechooser');
-    await page.locator('[data-testid="settings-source-change"]').click();
+    await page.locator('[data-testid="source-connect-local"]').click();
     const chooser = await chooserPromise;
     await chooser.setFiles(dir);
 

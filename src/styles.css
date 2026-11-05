@@ -623,10 +623,12 @@ time {
 }
 
 .settings-card-title {
-  margin: 0 2px;
-  font-size: 17px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  margin: 0 2px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .settings-sources {
@@ -644,8 +646,9 @@ time {
 .source-summary {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px 16px 14px;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
 }
 
 .settings-view .muted {
@@ -661,13 +664,18 @@ time {
 
 .source-icon {
   flex: none;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--accent);
+}
+
+.source-icon-onedrive {
+  background: color-mix(in srgb, #0364b8 12%, transparent);
+  color: #0364b8;
 }
 
 .source-icon svg {
@@ -719,31 +727,58 @@ time {
 }
 
 .source-actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  margin-left: auto;
 }
 
-.source-actions .btn-pill {
-  border-radius: 0;
-  padding: 12px 8px;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: none;
+.source-actions-icons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.icon-action {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
   background: transparent;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.icon-action:hover,
+.icon-action:active {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
   color: var(--fg);
 }
 
-.source-actions .btn-pill + .btn-pill {
-  box-shadow: inset 1px 0 0 var(--line);
-}
-
-.source-actions .btn-pill:last-child {
+.icon-action[data-testid$='-remove']:hover,
+.icon-action[data-testid$='-remove']:active {
   color: #7d2b26;
 }
 
-.source-actions .btn-pill:disabled {
+.icon-action svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.icon-action:disabled {
   opacity: 0.4;
+  cursor: default;
+}
+
+.source-connect {
+  white-space: nowrap;
+  font-size: 13px;
+  padding: 8px 12px;
 }
 
 .source-card-body > .settings-error,

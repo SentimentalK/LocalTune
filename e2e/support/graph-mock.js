@@ -49,10 +49,21 @@ function downloadId(url) {
   }
 }
 
+function rootItem(root) {
+  return {
+    id: root.id,
+    name: root.name,
+    folder: { childCount: root.files.length },
+    lastModifiedDateTime: '2024-01-02T03:04:05Z',
+    size: 0,
+  };
+}
+
 /**
  * @param {import('@playwright/test').Page} page
  * @param {{
  *   files?: Array<{ id: string, name: string }>,
+ *   roots?: Array<{ id: string, name: string, files: Array<{ id: string, name: string }> }>,
  *   holdRanges?: boolean,
  *   failRangeIds?: string[],
  *   failWholeIds?: string[],
@@ -60,8 +71,18 @@ function downloadId(url) {
  */
 export async function installGraphMock(
   page,
-  { files = DEFAULT_FILES, holdRanges = false, failRangeIds = [], failWholeIds = [] } = {},
+  {
+    files = DEFAULT_FILES,
+    roots = null,
+    holdRanges = false,
+    failRangeIds = [],
+    failWholeIds = [],
+  } = {},
 ) {
+  // A spec that names several roots drives the folder picker; the default is
+  // the single Music folder every older spec expects.
+  const rootList = roots ?? [{ id: 'folder-music', name: 'Music', files }];
+  const allFiles = rootList.flatMap((root) => root.files);
   let openGate = () => {};
   const gate = new Promise((resolve) => {
     openGate = resolve;
@@ -126,36 +147,24 @@ export async function installGraphMock(
       pathname === '/v1.0/drives/drive-1/root/children' ||
       pathname === '/v1.0/drives/drive-1/items/root/children'
     ) {
-      return json(route, 200, {
-        value: [
-          {
-            id: 'folder-music',
-            name: 'Music',
-            folder: { childCount: files.length },
-            lastModifiedDateTime: '2024-01-02T03:04:05Z',
-            size: 0,
-          },
-        ],
-      });
+      return json(route, 200, { value: rootList.map(rootItem) });
     }
 
-    if (pathname === '/v1.0/drives/drive-1/root:/Music:') {
-      return json(route, 200, {
-        id: 'folder-music',
-        name: 'Music',
-        folder: { childCount: files.length },
-        lastModifiedDateTime: '2024-01-02T03:04:05Z',
-        size: 0,
-      });
+    const rootMatch = /^\/v1\.0\/drives\/drive-1\/root:\/(.+):$/.exec(pathname);
+    if (rootMatch) {
+      const root = rootList.find((entry) => entry.name === rootMatch[1]);
+      if (root) return json(route, 200, rootItem(root));
     }
 
-    if (pathname === '/v1.0/drives/drive-1/items/folder-music/children') {
-      return json(route, 200, { value: files.map(driveItem) });
+    const childrenMatch = /^\/v1\.0\/drives\/drive-1\/items\/([^/]+)\/children$/.exec(pathname);
+    if (childrenMatch) {
+      const root = rootList.find((entry) => entry.id === childrenMatch[1]);
+      if (root) return json(route, 200, { value: root.files.map(driveItem) });
     }
 
     const itemMatch = /^\/v1\.0\/drives\/drive-1\/items\/([^/]+)$/.exec(pathname);
     if (itemMatch) {
-      const file = files.find((entry) => entry.id === itemMatch[1]);
+      const file = allFiles.find((entry) => entry.id === itemMatch[1]);
       if (file) return json(route, 200, driveItem(file));
     }
 

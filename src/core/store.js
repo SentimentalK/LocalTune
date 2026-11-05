@@ -24,6 +24,7 @@ import {
   getAllPlaylists,
 } from './db.js';
 import { createSource, hasDirectoryPicker } from './source.js';
+import { purgeSourceRows } from './purge.js';
 import { OpfsSource } from './sources/opfs/source.js';
 import { defaultLocalMode } from './sources/opfs/mode.js';
 import { OneDriveSource } from './sources/onedrive/source.js';
@@ -655,7 +656,8 @@ export class Store extends EventTarget {
           this._emit();
         };
       }
-      await this.local.connect();
+      const result = await this.local.connect();
+      if (result?.changed) await this._purgeSource('local');
       this._refreshSource('local');
       this._emit();
       await this.rescan('local');
@@ -729,17 +731,15 @@ export class Store extends EventTarget {
   }
 
   async chooseOneDriveRoot({ id, path, name }) {
-    const currentRoot = this.onedrive.root();
-    await this.onedrive.setRoot({
-      driveId: currentRoot?.driveId ?? null,
-      itemId: id,
-      path,
-      name,
-    });
+    const previous = this.onedrive.root();
+    const cleanPath = String(path ?? '').replace(/^\/+|\/+$/g, '');
+    const changed = !previous || previous.itemId !== id || previous.path !== cleanPath;
+    if (changed) await this._purgeSource('onedrive');
+    await this.onedrive.setRoot({ driveId: previous?.driveId ?? null, itemId: id, path, name });
     this._refreshSource('onedrive');
     this._emit();
-    await this.rescan('onedrive');
     this.closeOneDrivePicker();
+    await this.rescan('onedrive');
   }
 
   async reauthenticateOneDrive() {
@@ -1103,6 +1103,37 @@ export class Store extends EventTarget {
   }
 
   /**
+   * Drop one source's index rows, cached audio and pending tag reads without
+   * touching its stored root. Used by remove and by every folder switch.
+   */
+  async _purgeSource(kind) {
+    const adapter = this.sources[kind];
+    if (!adapter) return [];
+    const trackSource = adapter.trackSource ?? trackSourceOf(kind);
+    const removedIds = await purgeSourceRows({
+      source: trackSource,
+      tracks: this._state.tracks,
+      deleteTracks: (ids) => deleteTracksById(this.db, ids),
+      cache: this.cache,
+      onRemoved: (ids) => {
+        const removed = new Set(ids);
+        this._state.tracks = this._state.tracks.filter((track) => !removed.has(track.id));
+        this._reconcileQueue(ids);
+      },
+    });
+    const queue = this._enrichQueues.get(kind);
+    if (queue) {
+      queue.cancelled = true;
+      queue.pending.clear();
+      this._enrichQueues.delete(kind);
+    }
+    if (kind === 'onedrive') this._pickerIndex.clear();
+    this._refreshSource(kind);
+    this._emit();
+    return removedIds;
+  }
+
+  /**
    * Disconnect one source and drop everything derived from it: its track
    * index rows, its cached audio, its pins and its pending tag reads.
    */
@@ -1111,29 +1142,12 @@ export class Store extends EventTarget {
     if (!adapter) return;
     const trackSource = adapter.trackSource ?? trackSourceOf(kind);
 
-    const removedIds = this._state.tracks
-      .filter((track) => track.source === trackSource)
-      .map((track) => track.id);
-    if (removedIds.length) {
-      await deleteTracksById(this.db, removedIds);
-      const removed = new Set(removedIds);
-      this._state.tracks = this._state.tracks.filter((track) => !removed.has(track.id));
-    }
-
-    await this.cache.removeBySource(trackSource).catch(() => 0);
+    await this._purgeSource(kind);
 
     const pins = this._state.pins.filter((pin) => pin.source === trackSource);
     this._state.pins = this._state.pins.filter((pin) => pin.source !== trackSource);
     for (const pin of pins) await this.pinStore.delete(pin.id).catch(() => {});
 
-    const queue = this._enrichQueues.get(kind);
-    if (queue) {
-      queue.cancelled = true;
-      queue.pending.clear();
-      this._enrichQueues.delete(kind);
-    }
-
-    this._reconcileQueue(removedIds);
     await adapter.forget().catch(() => {});
     this._refreshSource(kind, {
       error: null,

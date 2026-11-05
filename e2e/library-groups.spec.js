@@ -20,6 +20,6 @@ test('library shows a local group before the cloud group', async ({ page }) => {
   });
   expect(localFirst).toBe(true);
 
-  await expect(page.locator('[data-testid="settings-source-onedrive"]')).toHaveText('更换');
-  await expect(page.locator('[data-testid="settings-source-change"]')).toHaveText('更换');
+  await expect(page.locator('[data-testid="source-connect-onedrive"]')).toHaveText('连接 OneDrive');
+  await expect(page.locator('[data-testid="source-connect-local"]')).toHaveText('选择本地文件夹');
 });

@@ -13,7 +13,7 @@ test('OneDrive sync caches the files and playback downloads nothing', async ({ p
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
 
   await page.locator('[data-testid="settings-open"]').click();
-  await page.locator('[data-testid="settings-source-onedrive"]').click();
+  await page.locator('[data-testid="source-connect-onedrive"]').click();
 
   // The login navigation is mocked with a 302 back to the app; init reopens
   // settings and the folder picker automatically.
@@ -27,9 +27,9 @@ test('OneDrive sync caches the files and playback downloads nothing', async ({ p
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
   await expect(page.locator('[data-testid="source-row-onedrive"]')).toContainText('2');
 
-  // Sync pulls both files into the audio cache; the picker closes only after
-  // the warm pass finished.
-  expect(mock.wholeRequests).toHaveLength(2);
+  // Sync pulls both files into the audio cache; the picker closes before the
+  // warm pass, so wait for both downloads instead of reading the recorder now.
+  await expect.poll(() => mock.wholeRequests.length, { timeout: 10_000 }).toBe(2);
 
   await page.locator('[data-testid="settings-close"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();
@@ -61,7 +61,7 @@ test('the OneDrive button starts the Microsoft login when signed out', async ({ 
   const login = page.waitForRequest((request) =>
     request.url().startsWith('https://login.microsoftonline.com/'),
   );
-  await page.locator('[data-testid="settings-source-onedrive"]').click();
+  await page.locator('[data-testid="source-connect-onedrive"]').click();
 
   const request = await login;
   expect(request.url()).toContain('/authorize');

@@ -14,7 +14,7 @@ async function signInAndPickMusic(page, mock) {
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
 
   await page.locator('[data-testid="settings-open"]').click();
-  await page.locator('[data-testid="settings-source-onedrive"]').click();
+  await page.locator('[data-testid="source-connect-onedrive"]').click();
 
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeVisible();
   await expect(page.locator('[data-testid="onedrive-folder"]').first()).toHaveText('Music');
@@ -94,8 +94,11 @@ test('expired OneDrive token keeps the cached library visible and playable', asy
 
   const authorizeBefore = mock.authorizeRequests.length;
   await page.locator('[data-testid="settings-open"]').click();
+  const row = page.locator('[data-testid="source-row-onedrive"]');
+  await expect(row.locator('button')).toHaveCount(3);
   const change = page.locator('[data-testid="settings-source-onedrive"]');
-  await expect(change).toHaveText(RECONNECT);
+  await expect(change).toHaveAttribute('aria-label', RECONNECT);
+  await expect(page.locator('[data-testid="source-connect-onedrive"]')).toBeHidden();
   await expect(page.locator('[data-testid="source-row-onedrive"] [data-testid="source-hint-onedrive"]')).toBeVisible();
 
   await change.click();

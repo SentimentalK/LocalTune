@@ -54,4 +54,16 @@ test('settings cards fill the width and controls hug the trailing edge', async (
   await expect(gapless).toBeVisible();
   await expect(leveling).toHaveAttribute('role', 'switch');
   await expect(gapless).toHaveAttribute('role', 'switch');
+
+  // The compact source rows must not overflow a 360px phone viewport.
+  const rows = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid^="source-row-"]')].map((row) => ({
+      id: row.dataset.testid,
+      overflow: row.scrollWidth - row.clientWidth,
+    })),
+  );
+  expect(rows.length).toBe(2);
+  for (const row of rows) {
+    expect(row.overflow, `${row.id} horizontal overflow`).toBeLessThanOrEqual(0);
+  }
 });

@@ -93,64 +93,99 @@ export function createSettingsView(store, sw) {
       progressLabel,
       progressBar,
       syncing: false,
+      connected: null,
     };
 
-    view.syncButton = el('button', {
-      class: 'btn-pill ghost',
+    // Disconnected rows show one text button; connected rows show three icon
+    // buttons. The actions node is swapped rather than hidden so the row never
+    // carries buttons the user cannot see.
+    view.connectButton = el('button', {
+      class: 'btn-pill source-connect',
       type: 'button',
-      'data-testid': `settings-sync-${kind}`,
-      text: t('settings.source.sync'),
-      onclick: async () => {
-        if (view.syncing) return;
-        view.syncing = true;
-        view.syncButton.disabled = true;
-        setText(view.syncButton, t('settings.source.syncing'));
-        try {
-          const result = await store.syncSource(kind);
-          if (result) {
-            toast(
-              t('settings.source.syncResult', {
-                added: result.added,
-                removed: result.removed,
-              }),
-            );
-          }
-        } finally {
-          view.syncing = false;
-          view.syncButton.disabled = false;
-          setText(view.syncButton, t('settings.source.sync'));
-        }
-      },
-    });
-
-    view.changeButton = el('button', {
-      class: 'btn-pill ghost',
-      type: 'button',
-      'data-testid': kind === 'local' ? 'settings-source-change' : 'settings-source-onedrive',
-      text: t('settings.source.change'),
+      'data-testid': `source-connect-${kind}`,
+      text: kind === 'onedrive'
+        ? t('settings.source.connectOneDrive')
+        : t('settings.source.connectLocal'),
       onclick: () => changeSource(kind),
     });
 
-    view.removeButton = el('button', {
-      class: 'btn-pill ghost',
-      type: 'button',
-      'data-testid': kind === 'local' ? 'settings-source-remove' : 'settings-onedrive-remove',
-      text: t('settings.source.remove'),
-      onclick: () => {
-        if (!confirmed(t('settings.source.removeConfirm'))) return;
-        run(store.removeSource(kind));
+    view.syncButton = el(
+      'button',
+      {
+        class: 'icon-action',
+        type: 'button',
+        'data-testid': `settings-sync-${kind}`,
+        'aria-label': t('settings.source.sync'),
+        title: t('settings.source.sync'),
+        onclick: async () => {
+          if (view.syncing) return;
+          view.syncing = true;
+          view.syncButton.disabled = true;
+          view.syncButton.classList.add('is-busy');
+          try {
+            const result = await store.syncSource(kind);
+            if (result) {
+              toast(
+                t('settings.source.syncResult', {
+                  added: result.added,
+                  removed: result.removed,
+                }),
+              );
+            }
+          } finally {
+            view.syncing = false;
+            view.syncButton.disabled = false;
+            view.syncButton.classList.remove('is-busy');
+          }
+        },
       },
-    });
+      [icon('refresh')],
+    );
+
+    view.changeButton = el(
+      'button',
+      {
+        class: 'icon-action',
+        type: 'button',
+        'data-testid': kind === 'local' ? 'settings-source-change' : 'settings-source-onedrive',
+        onclick: () => changeSource(kind),
+      },
+      [icon('pencil')],
+    );
+
+    view.removeButton = el(
+      'button',
+      {
+        class: 'icon-action',
+        type: 'button',
+        'data-testid': kind === 'local' ? 'settings-source-remove' : 'settings-onedrive-remove',
+        'aria-label': t('settings.source.remove'),
+        title: t('settings.source.remove'),
+        onclick: () => {
+          if (!confirmed(t('settings.source.removeConfirm'))) return;
+          run(store.removeSource(kind));
+        },
+      },
+      [icon('trash')],
+    );
+
+    view.iconGroup = el('div', { class: 'source-actions-icons' }, [
+      view.syncButton,
+      view.changeButton,
+      view.removeButton,
+    ]);
+    setHidden(view.iconGroup, true);
+
+    view.actions = el('div', { class: 'source-actions' }, [view.connectButton]);
 
     view.node = el('div', { class: 'source-card-body', 'data-testid': `source-row-${kind}` }, [
       el('div', { class: 'source-summary' }, [
-        el('span', { class: 'source-icon', 'aria-hidden': 'true' }, [icon('folder')]),
+        el('span', {
+          class: `source-icon source-icon-${kind}`,
+          'aria-hidden': 'true',
+        }, [icon(kind === 'onedrive' ? 'onedrive' : 'folder')]),
         el('span', { class: 'source-body' }, [name, count]),
-      ]),
-      el('div', { class: 'source-actions' }, [
-        view.syncButton,
-        view.changeButton,
-        view.removeButton,
+        view.actions,
       ]),
       progress,
       hint,
@@ -159,6 +194,15 @@ export function createSettingsView(store, sw) {
 
     sourceViews.set(kind, view);
     return view.node;
+  }
+
+  /** Swap the actions between the connect button and the icon trio. */
+  function syncActions(view, connected) {
+    if (view.connected === connected) return;
+    view.connected = connected;
+    view.actions.replaceChildren(...(connected ? [view.iconGroup] : [view.connectButton]));
+    setHidden(view.connectButton, connected);
+    setHidden(view.iconGroup, !connected);
   }
 
   function changeSource(kind) {
@@ -975,18 +1019,31 @@ export function createSettingsView(store, sw) {
 
       const permission = row.permission;
       const scanning = Boolean(row.scanning);
-      const needsReconnect = permission !== 'granted' && (row.trackCount ?? 0) > 0;
+      const trackCount = row.trackCount ?? 0;
+      const connected = permission === 'granted' || trackCount > 0;
+      const needsReconnect = permission !== 'granted' && trackCount > 0;
+      syncActions(view, connected);
       setHidden(view.hint, !needsReconnect);
       if (needsReconnect) setText(view.hint, t('library.expiredHint'));
+
+      const connectLabel =
+        permission === 'prompt'
+          ? t('settings.source.reconnect')
+          : kind === 'onedrive'
+            ? t('settings.source.connectOneDrive')
+            : t('settings.source.connectLocal');
+      setText(view.connectButton, connectLabel);
+      view.connectButton.setAttribute('aria-label', connectLabel);
+      view.connectButton.setAttribute('title', connectLabel);
+
       view.syncButton.disabled = view.syncing || scanning || permission === 'none';
-      if (!view.syncing) setText(view.syncButton, t('settings.source.sync'));
       view.changeButton.disabled = scanning;
       const changeLabel = needsReconnect
         ? t('library.reconnect')
-        : t('settings.source.change');
-      setText(view.changeButton, changeLabel);
+        : t('settings.source.changeFolder');
       view.changeButton.setAttribute('aria-label', changeLabel);
-      view.removeButton.disabled = scanning || permission === 'none';
+      view.changeButton.setAttribute('title', changeLabel);
+      view.removeButton.disabled = scanning || (permission === 'none' && trackCount === 0);
       setHidden(view.progress, !scanning);
       if (scanning) {
         const { done, total, phase } = row.progress ?? { done: 0, total: 0 };
