@@ -49,6 +49,9 @@ test('audio cache hits, offline replay, folder pins and clearing', async ({ page
   await signInAndPickMusic(page);
   await waitForServiceWorker(page);
 
+  // Sync already pulled both files into the audio cache.
+  expect(mock.wholeRequests).toHaveLength(2);
+
   // ---- 0. a returning user lands on the library, not the picker ----------
   await page.reload();
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
@@ -59,14 +62,17 @@ test('audio cache hits, offline replay, folder pins and clearing', async ({ page
   await expect(page.locator('[data-testid="track-row"]')).toHaveCount(1);
   await expect(page.locator('[data-testid="folder-dir-Jazz"]')).toBeVisible();
 
-  // ---- 1. one whole download per track, none on replay -------------------
+  // ---- 1. playback after the sync downloads nothing ----------------------
   await page.locator('[data-testid="track-row"] .row-hit').first().click();
-  await expect.poll(() => mock.wholeRequests.length, { timeout: 10_000 }).toBe(1);
   await expectPlaying(page);
+  await page.waitForTimeout(500);
+  expect(mock.wholeRequests).toHaveLength(2);
 
   await page.locator('[data-testid="folder-dir-Jazz"]').click();
   await page.locator('[data-testid="track-row"] .row-hit').first().click();
-  await expect.poll(() => mock.wholeRequests.length, { timeout: 10_000 }).toBe(2);
+  await expectPlaying(page);
+  await page.waitForTimeout(500);
+  expect(mock.wholeRequests).toHaveLength(2);
 
   await page.locator('[data-testid="folder-up"]').click();
   await page.locator('[data-testid="track-row"] .row-hit').first().click();

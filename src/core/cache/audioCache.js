@@ -168,6 +168,22 @@ export class AudioCache {
     }
   }
 
+  /** Whether Cache Storage holds a response for `key`; no blob read, no LRU touch. */
+  async has(key) {
+    let cache;
+    try {
+      cache = await this._openCache();
+    } catch {
+      return false;
+    }
+    if (!cache) return false;
+    try {
+      return Boolean(await cache.match(cacheRequest(key)));
+    } catch {
+      return false;
+    }
+  }
+
   async write({ key, source, path, blob }) {
     await this._ensurePersisted();
 

@@ -1122,8 +1122,17 @@ export function createSettingsView(store, sw) {
         );
       }
 
-      setHidden(view.error, !row.error);
-      if (row.error) setText(view.error, row.error);
+      const failures = Array.isArray(row.cacheFailures) ? row.cacheFailures : [];
+      const warning =
+        failures.length > 0
+          ? t('settings.source.cacheFailed', {
+              count: failures.length,
+              paths: `${failures.slice(0, 3).join('、')}${failures.length > 3 ? '…' : ''}`,
+            })
+          : '';
+      const message = row.error || warning;
+      setHidden(view.error, !message);
+      if (message) setText(view.error, message);
     }
 
     for (const button of localModeButtons) {
@@ -1198,12 +1207,14 @@ export function createSettingsView(store, sw) {
 
     setHidden(progress, !anyScanning);
     if (scanningRow) {
-      const { done, total } = scanningRow.progress ?? { done: 0, total: 0 };
+      const { done, total, phase } = scanningRow.progress ?? { done: 0, total: 0 };
       setText(
         progressLabel,
-        total > 0
-          ? t('common.scanProgress', { done, total })
-          : t('common.scanCount', { done }),
+        phase === 'cache'
+          ? t('settings.source.caching', { done, total })
+          : total > 0
+            ? t('common.scanProgress', { done, total })
+            : t('common.scanCount', { done }),
       );
       const ratio = total > 0 ? Math.min(done / total, 1) : 0.12;
       progressBar.style.width = `${Math.round(ratio * 100)}%`;

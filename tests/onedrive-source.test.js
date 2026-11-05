@@ -696,6 +696,55 @@ test('getFile downloads a whole file on a cache miss and writes the cache', asyn
   assert.equal(writes[0].blob, blob);
 });
 
+test('getFile with awaitCache waits for the cache write', async () => {
+  const meta = memoryMeta({
+    onedriveToken: validToken(),
+    onedriveRoot: { driveId: 'drive-1', itemId: 'root', path: '', name: 'OneDrive' },
+    onedriveItems: { 'a.mp3': 'item-1' },
+  });
+  const blob = new Blob(['audio']);
+  const writes = [];
+  let release = () => {};
+  let markWritten = () => {};
+  const written = new Promise((resolve) => {
+    markWritten = resolve;
+  });
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const source = makeSource({
+    meta,
+    cache: {
+      read: async () => null,
+      write: (row) => {
+        writes.push(row);
+        markWritten();
+        return gate;
+      },
+    },
+    fetchImpl: async (url, init = {}) => {
+      if (init.headers?.Range) throw new Error('unexpected range');
+      if (url.startsWith('https://download.test/')) {
+        return { status: 200, ok: true, async blob() { return blob; } };
+      }
+      return jsonResponse(200, {
+        id: 'item-1',
+        '@microsoft.graph.downloadUrl': 'https://download.test/file',
+      });
+    },
+  });
+  await source.restore();
+
+  const pending = source.getFile('a.mp3', { awaitCache: true });
+  const raced = await Promise.race([pending.then(() => 'done'), Promise.resolve('tick')]);
+  assert.equal(raced, 'tick');
+  await written;
+  assert.equal(writes.length, 1);
+
+  release();
+  assert.equal(await pending, blob);
+});
+
 test('browse lists only folders sorted by name at the drive root', async () => {
   const meta = memoryMeta({
     onedriveToken: validToken(),

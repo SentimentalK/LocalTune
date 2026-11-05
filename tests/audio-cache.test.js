@@ -265,6 +265,24 @@ test('pinned entries survive eviction pressure', async () => {
   assert.equal(await cache.total(), 100);
 });
 
+test('has reports Cache Storage presence without reading the blob', async () => {
+  const caches = memoryCaches();
+  const index = memoryIndex();
+  let clock = 0;
+  const cache = new AudioCache({ caches, index, pins: memoryPins(), now: () => ++clock });
+  const key = cacheKey('onedrive', 'a.mp3');
+
+  assert.equal(await cache.has(key), false);
+
+  await cache.write({ key, source: 'onedrive', path: 'a.mp3', blob: blob(32) });
+  assert.equal(await cache.has(key), true);
+  // A presence check must not look like a playback hit in the LRU index.
+  assert.equal(index.map.get(key).lastAccess, 1);
+
+  await cache.remove(key);
+  assert.equal(await cache.has(key), false);
+});
+
 test('remove deletes the cache entry and index row', async () => {
   const caches = memoryCaches();
   const index = memoryIndex();

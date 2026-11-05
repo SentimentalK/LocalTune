@@ -122,6 +122,7 @@ export class FileListSource {
 export class OneDriveSource {
   kind = 'onedrive';
   trackSource = 'onedrive';
+  cacheWholeFiles = true;
   name = '';
   constructor({ meta, fetchImpl, cache = null, sessionStore, location, history, now })
   async startLogin({ prompt = 'select_account' }) // 生成 PKCE，写 sessionStorage，location.assign 授权页
@@ -134,7 +135,7 @@ export class OneDriveSource {
   async setRoot({ driveId, itemId, path, name })
   async forget()
   async *scan({ signal })                         // 递归 children，过滤非音频与点开头项
-  async getFile(path)                             // 先查缓存（token 过期也能播），未命中再鉴权下载
+  async getFile(path, { awaitCache = false })   // 先查缓存（token 过期也能播），未命中再鉴权下载；awaitCache 等缓存写入完成（同步用，播放不用）
   async silentReauth()                            // 仅 init：prompt=none 整页跳转，10 分钟防循环
 }
 ```
@@ -142,7 +143,7 @@ export class OneDriveSource {
 - token 只存 `meta.onedriveToken`（`{accessToken,refreshToken,expiresAt,scope}`），不写日志、不进 DOM；`meta.onedriveAuthAt` 记录最近一次写入时间。
 - 消费级 SPA 的 refresh token 有效期 24 h；过期后 `ensurePermission()` 失败，用户需在设置里重新走顶层授权。
 - `getFile()` 的缓存键是 `cacheKey('onedrive', path)`；命中直接返回 Blob，不调用 `ensurePermission()`、不发网络请求。
-- 整首下载失败（非 2xx 或网络错误）时重取一次 item 的 `@microsoft.graph.downloadUrl` 再试一次；成功后 `void cache.write(...)`，不阻塞播放。
+- 整首下载失败（非 2xx 或网络错误）时重取一次 item 的 `@microsoft.graph.downloadUrl` 再试一次；成功后默认只启动 `cache.write(...)`、不阻塞播放（`awaitCache: false`），同步传 `awaitCache: true` 时等待写入完成再返回。
 - `_fetchRange` 的任一次 Range 请求失败同样重取一次 downloadUrl 再试一次，第二次失败才向上抛。
 - `src/core/sources/onedrive/remoteFile.js` 的 `createRemoteFile()` 把下载 URL 包装成 `{name,size,slice(start,end).arrayBuffer()}`：首次 `slice` 预取头 256 KB（大文件再取尾 128 B），缓冲外切片现取；`status === 200` 表示服务端忽略 Range，小文件当整文件缓冲，超过 `maxRangeBytes`（32 MB）抛 `range ignored for large file`。
 
@@ -224,11 +225,13 @@ export async function clearAudioCache(cachesImpl = globalThis.caches)     // 删
 
 - 命名：音频 blob 全部放在 Cache Storage 的 `audio-v1`（`AUDIO_CACHE_NAME`）中，key 为同源合成 URL `/__audio/<encodeURIComponent(cacheKey(source, path))>`，从不发出网络请求；`cacheKey` = `<source>:<path 去前导 />`。
 - `cacheIndex`：keyPath `key`；每行 `{ key, source, path, size, lastAccess }`。`size` 来自 blob；`lastAccess` 在每次命中时刷新。
+- `AudioCache.has(key)`：只问 Cache Storage 有没有该 key 的响应，不读 blob、不刷 `lastAccess`；缓存不可用时返回 `false`。同步预热靠它判断是否需要下载。
 - `pins`：keyPath `id`；每行 `{ id: "<source>:<dir>", source, dir, at }`，`dir === ''` 表示该来源的整个根。固定条目永不被 LRU 选中。
 - LRU：写入后立即 `enforceLimit()`；超限时按 `lastAccess` 升序（同值按 key）驱逐，直到总量 ≤ 上限；全部固定且超限时一个都不驱逐。
 - 上限：`CACHE_LIMIT_OPTIONS` = `[512 MiB, 1 GiB, 2 GiB, 5 GiB, 0(不限)]`，默认 `2 GiB`（`DEFAULT_CACHE_LIMIT`）。`persist.js` 直接 re-export 这两个常量（`CACHE_LIMIT_VALUES` / `DEFAULT_CACHE_LIMIT_BYTES`），`meta.settings.cacheLimitBytes` 缺失或非法一律回落到默认值；`0` 表示不限。
 - 状态与动作：`state.pins` 是 `{ id, source, dir, running, done, total, error }` 的数组；`pinFolder` 先落库再逐首 `getFile`（并发 1，单曲失败跳过，全部失败保留 pin 并写 `error`），`unpinFolder` 只删 pin、缓存保留；`isPinned(source, dir)` 对 `dir === ''` 的根 pin 返回 true。
 - 启动同步：`init()` 只在 `meta.lastScanBySource.onedrive.at` 距今超过 1 小时（或缺失）时后台 `syncSource('onedrive')`，不阻塞首屏。
+- 同步预热缓存：`rescan(kind)` 在展示列表（`_syncStats()` 后 emit）之后、比对歌单之前，对 `adapter.cacheWholeFiles` 为真的来源 await `_warmCache`：先 `cache.has(cacheKey(source, path))`，缺失才顺序 `getFile(path, { awaitCache: true })`（并发 1，鉴权中途失效即停止剩余）；成功后仍以 `cache.has` 判定是否真进缓存。单曲失败只跳过、不中断，曲目仍留在列表里，路径进 `state.sources[*].cacheFailures`（`cacheFailed` 为数量）。同步摘要因此多出 `cached` / `cacheFailed`（`lastScanBySource` 仍只存摘要，不存路径）。本地来源（`fsa`/`files`/`opfs`）没有 `cacheWholeFiles`，永不预热，因此文件不会被复制进 `audio-v1`。
 - 清除：`store.clearAudioCache()` = `cache.clear()` + 删除全部 pins（`state.pins = []`）+ `playlog.clear()`，返回释放字节数；不触碰源文件。移除来源用 `cache.removeBySource(source)`：按 `cacheIndex.source` 取 key，再用 Cache Storage 的 `keyFromRequest` 前缀 `${source}:` 兜底，删除条目与索引行并返回删除数。
 
 ### `src/core/migrate.js` — 乱码标签迁移

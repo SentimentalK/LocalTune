@@ -100,6 +100,8 @@ export default {
   'settings.source.sync': 'Sync',
   'settings.source.syncing': 'Syncing…',
   'settings.source.syncResult': '+{added} / -{removed}',
+  'settings.source.caching': 'Caching {done} / {total}',
+  'settings.source.cacheFailed': '{count} not cached: {paths}',
   'settings.source.retry': 'Retry',
   'settings.source.trackCount': '{count} tracks',
   'settings.onedrive.title': 'Choose a OneDrive folder',

@@ -54,6 +54,7 @@ export { PKCE_TTL_MS };
 export class OneDriveSource {
   kind = 'onedrive';
   trackSource = 'onedrive';
+  cacheWholeFiles = true;
   name = '';
 
   constructor({
@@ -301,9 +302,11 @@ export class OneDriveSource {
   /**
    * Whole-file read. The cache is consulted before authorization, so a cached
    * track still plays after the token expired. Failures refetch the item once
-   * (a fresh `@microsoft.graph.downloadUrl`) before giving up.
+   * (a fresh `@microsoft.graph.downloadUrl`) before giving up. Playback lets
+   * the cache write run in the background; sync passes `awaitCache` so the
+   * file is really in Cache Storage when the pass moves on.
    */
-  async getFile(path) {
+  async getFile(path, { awaitCache = false } = {}) {
     const key = cacheKey('onedrive', path);
     let cached = null;
     if (this.cache?.read) {
@@ -334,7 +337,10 @@ export class OneDriveSource {
 
     if (this.cache?.write) {
       const pending = this.cache.write({ key, source: 'onedrive', path, blob });
-      if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+      if (pending && typeof pending.then === 'function') {
+        pending.catch(() => {});
+        if (awaitCache) await pending;
+      }
     }
     return blob;
   }

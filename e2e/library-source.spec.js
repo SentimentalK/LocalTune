@@ -133,7 +133,7 @@ async function seedLocalLibrary(page) {
   });
 }
 
-test('lists OneDrive tracks before tags finish and plays without pre-downloading', async ({
+test('lists OneDrive tracks while tags are pending and plays from the cache', async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -142,8 +142,8 @@ test('lists OneDrive tracks before tags finish and plays without pre-downloading
   await signInAndPickMusic(page);
   await backToFolders(page);
 
-  // Sync listed the files and downloaded nothing: no whole requests yet.
-  expect(mock.wholeRequests).toHaveLength(0);
+  // Sync cached both whole files; tag reads are still parked at the gate.
+  expect(mock.wholeRequests).toHaveLength(2);
   expect(mock.rangeDone).toBe(0);
 
   await openSource(page, 'onedrive');
@@ -151,7 +151,8 @@ test('lists OneDrive tracks before tags finish and plays without pre-downloading
   await page.locator('[data-testid="track-row"] .row-hit').first().click();
   await expectPlaying(page);
 
-  // Tag reads are still parked at the gate, yet the track already plays.
+  // Playback read Cache Storage, and tag reads are still parked.
+  expect(mock.wholeRequests).toHaveLength(2);
   expect(mock.rangeDone).toBe(0);
   mock.releaseRanges();
 });
@@ -183,23 +184,37 @@ test('a single failed playback never marks the source or blocks the next track',
   const mock = await installGraphMock(page, { files: FILES, failWholeIds: ['track-2'] });
 
   await signInAndPickMusic(page);
+  // The cache pass retried the broken file once; track-1 is cached.
+  await expect.poll(() => mock.wholeRequests.length, { timeout: 10_000 }).toBe(3);
+
+  // The uncached path is reported on the source row without an error state.
+  await expect(page.locator('[data-testid="source-row-onedrive"] .settings-error')).toBeVisible();
+  await expect(page.locator('[data-testid="source-row-onedrive"] .settings-error')).toContainText(
+    'two.mp3',
+  );
+
   await backToFolders(page);
   await openSource(page, 'onedrive');
+  await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
+
+  await page.locator('[data-testid="track-row"] .row-hit').first().click();
+  await expectPlaying(page);
+  // track-1 came from the cache: no extra whole request.
+  await page.waitForTimeout(300);
+  expect(mock.wholeRequests).toHaveLength(3);
 
   await page.locator('[data-testid="track-row"] .row-hit').nth(1).click();
   // The download is retried once, then playback gives up on this track only.
-  await expect.poll(() => mock.wholeRequests.length, { timeout: 10_000 }).toBe(2);
+  await expect.poll(() => mock.wholeRequests.length, { timeout: 10_000 }).toBe(5);
   await expect(page.locator('.controls .btn.main')).toHaveAttribute('aria-label', '播放');
+  await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
 
   await page.locator('[data-testid="settings-open"]').click();
-  await expect(page.locator('[data-testid="source-row-onedrive"] .settings-error')).toBeHidden();
+  await expect(page.locator('[data-testid="source-row-onedrive"] .settings-error')).toBeVisible();
   await backToFolders(page);
 
   await page.locator('[data-testid="track-row"] .row-hit').first().click();
   await expectPlaying(page);
-
-  await page.locator('[data-testid="settings-open"]').click();
-  await expect(page.locator('[data-testid="source-row-onedrive"] .settings-error')).toBeHidden();
 });
 
 test('local and OneDrive rows show source names together', async ({ page }) => {
@@ -238,6 +253,16 @@ test('local and OneDrive rows show source names together', async ({ page }) => {
   await expect(localRow.locator('b')).toHaveText('本地');
   await expect(cloudRow.locator('b')).toHaveText('OneDrive');
   await expect(cloudRow).not.toContainText('Music');
+
+  // The sync cached the cloud files only; local files stay where they are.
+  const keys = await page.evaluate(async () => {
+    const cache = await caches.open('audio-v1');
+    return (await cache.keys()).map((request) =>
+      decodeURIComponent(new URL(request.url).pathname.replace('/__audio/', '')),
+    );
+  });
+  expect(keys.filter((key) => key.startsWith('fsa:'))).toHaveLength(0);
+  expect(keys.filter((key) => key.startsWith('onedrive:'))).toHaveLength(2);
 });
 
 test('a granted source with zero tracks still gets a row', async ({ page }) => {

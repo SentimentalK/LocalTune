@@ -27,7 +27,7 @@ import { createSource, hasDirectoryPicker } from './source.js';
 import { OpfsSource } from './sources/opfs/source.js';
 import { defaultLocalMode } from './sources/opfs/mode.js';
 import { OneDriveSource } from './sources/onedrive/source.js';
-import { AudioCache } from './cache/audioCache.js';
+import { AudioCache, cacheKey } from './cache/audioCache.js';
 import { createCacheIndex, createPinStore } from './cache/index.js';
 import { createPlaylistRepo } from './playlist/repo.js';
 import {
@@ -133,6 +133,8 @@ function emptyRow(kind, adapter) {
     error: null,
     errorStage: null,
     sync: null,
+    cacheFailed: 0,
+    cacheFailures: [],
     root: kind === 'onedrive' ? adapter.root()?.path ?? null : null,
   };
 }
@@ -693,7 +695,12 @@ export class Store extends EventTarget {
       for (const item of items) this._pickerIndex.set(item.path, item);
       const current = path ? this._pickerIndex.get(path) ?? null : null;
       this._state.onedrivePicker = { open: true, path, items, loading: false, current };
-      this._refreshSource('onedrive', { error: null, errorStage: null });
+      this._refreshSource('onedrive', {
+        error: null,
+        errorStage: null,
+        cacheFailed: 0,
+        cacheFailures: [],
+      });
       this._emit();
       return items;
     } catch (error) {
@@ -705,7 +712,11 @@ export class Store extends EventTarget {
         loading: false,
         current: null,
       };
-      this._refreshSource('onedrive', { error: errorMessage(error) });
+      this._refreshSource('onedrive', {
+        error: errorMessage(error),
+        cacheFailed: 0,
+        cacheFailures: [],
+      });
       this._emit();
       return [];
     }
@@ -738,7 +749,13 @@ export class Store extends EventTarget {
 
   async reauthenticateOneDrive() {
     await this.onedrive.forget();
-    this._refreshSource('onedrive', { error: null, errorStage: null, sync: null });
+    this._refreshSource('onedrive', {
+      error: null,
+      errorStage: null,
+      sync: null,
+      cacheFailed: 0,
+      cacheFailures: [],
+    });
     this._emit();
     return this.connectOneDrive();
   }
@@ -746,7 +763,7 @@ export class Store extends EventTarget {
   async rescan(kind = 'local') {
     const adapter = this.sources[kind];
     if (!adapter || this._scanning.has(kind)) return null;
-    this._patchSource(kind, { error: null });
+    this._patchSource(kind, { error: null, cacheFailed: 0, cacheFailures: [] });
     this._emit();
 
     if (adapter.permission() !== 'granted') {
@@ -805,12 +822,19 @@ export class Store extends EventTarget {
       const others = this._state.tracks.filter((track) => track.source !== trackSource);
       this._state.tracks = sortTracks([...others, ...byId.values()]);
       this._syncStats();
+      this._emit();
+
+      // Pull every listed file into the shared audio cache. Only sources whose
+      // files are not already on the device opt in; local files are never copied.
+      let warm = null;
+      if (adapter.cacheWholeFiles) warm = await this._warmCache(kind, entries);
 
       const summary = {
         at: Date.now(),
         added: diff.added.length,
         updated: diff.updated.length,
         removed: diff.removedIds.length,
+        ...(warm ? { cached: warm.cached, cacheFailed: warm.uncached.length } : {}),
       };
       const lastScanBySource = (await getMeta(this.db, 'lastScanBySource').catch(() => null)) ?? {};
       await setMeta(this.db, 'lastScanBySource', { ...lastScanBySource, [kind]: summary });
@@ -841,7 +865,11 @@ export class Store extends EventTarget {
       }
 
       this._reconcileQueue(diff.removedIds);
-      this._refreshSource(kind, { scanning: false, progress: { done: 0, total: 0 } });
+      this._refreshSource(kind, {
+        scanning: false,
+        progress: { done: 0, total: 0 },
+        ...(warm ? { cacheFailed: warm.uncached.length, cacheFailures: warm.uncached } : {}),
+      });
       this._emit();
       this._savePlayback();
       if (diff.added.length || diff.updated.length) {
@@ -954,6 +982,55 @@ export class Store extends EventTarget {
     }
   }
 
+  /**
+   * Pull every listed file into `AudioCache` so playback reads the cache.
+   * Sequential on purpose: one failed track never stops the rest, and the
+   * source itself stays healthy. A path counts as cached only when the Cache
+   * Storage response is present after the write.
+   */
+  async _warmCache(kind, entries) {
+    const adapter = this.sources[kind];
+    const trackSource = adapter.trackSource ?? trackSourceOf(kind);
+    const total = entries.length;
+    const uncached = [];
+    let cached = 0;
+    let done = 0;
+    if (total > 0) {
+      this._patchSource(kind, { progress: { done: 0, total, phase: 'cache' } });
+      this._emit();
+    }
+    for (const entry of entries) {
+      const key = cacheKey(trackSource, entry.path);
+      let present = false;
+      try {
+        present = await this.cache.has(key);
+      } catch {
+        present = false;
+      }
+      if (!present) {
+        try {
+          await adapter.getFile(entry.path, { awaitCache: true });
+          present = await this.cache.has(key);
+        } catch {
+          present = false;
+        }
+      }
+      if (present) cached += 1;
+      else uncached.push(entry.path);
+      done += 1;
+      if (done % 5 === 0 || done === total) {
+        this._patchSource(kind, { progress: { done, total, phase: 'cache' } });
+        this._emit();
+      }
+      if (adapter.permission() !== 'granted') {
+        // Auth died mid-pass; retrying the rest would only storm the network.
+        for (const rest of entries.slice(done)) uncached.push(rest.path);
+        break;
+      }
+    }
+    return { cached, uncached };
+  }
+
   async syncSource(kind = 'onedrive') {
     const result = await this.rescan(kind);
     if (result) this._patchSource(kind, { sync: result });
@@ -1000,7 +1077,12 @@ export class Store extends EventTarget {
 
     this._reconcileQueue(removedIds);
     await adapter.forget().catch(() => {});
-    this._refreshSource(kind, { error: null, sync: null });
+    this._refreshSource(kind, {
+      error: null,
+      sync: null,
+      cacheFailed: 0,
+      cacheFailures: [],
+    });
     this._emit();
     this._savePlayback();
   }

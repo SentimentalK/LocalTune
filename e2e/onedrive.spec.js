@@ -6,7 +6,7 @@ const FILES = [
   { id: 'track-2', name: 'two.mp3' },
 ];
 
-test('OneDrive sign-in, folder pick, sync and playback', async ({ page }) => {
+test('OneDrive sync caches the files and playback downloads nothing', async ({ page }) => {
   const mock = await installGraphMock(page, { files: FILES });
 
   await page.goto('/');
@@ -28,6 +28,10 @@ test('OneDrive sign-in, folder pick, sync and playback', async ({ page }) => {
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
   await expect(page.locator('[data-testid="source-row-onedrive"]')).toContainText('2');
 
+  // Sync pulls both files into the audio cache; the picker closes only after
+  // the warm pass finished.
+  expect(mock.wholeRequests).toHaveLength(2);
+
   await page.locator('[data-testid="settings-back"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();
 
@@ -44,8 +48,9 @@ test('OneDrive sign-in, folder pick, sync and playback', async ({ page }) => {
     .poll(async () => page.locator('.progress time').first().textContent(), { timeout: 10_000 })
     .not.toBe('0:00');
 
-  // Playback fetches the whole file once; tag reads used Range requests.
-  expect(mock.wholeRequests).toHaveLength(1);
+  // Playback reads Cache Storage: no extra whole-file download.
+  await page.waitForTimeout(300);
+  expect(mock.wholeRequests).toHaveLength(2);
 });
 
 test('the OneDrive button starts the Microsoft login when signed out', async ({ page }) => {

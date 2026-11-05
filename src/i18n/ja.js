@@ -99,6 +99,8 @@ export default {
   'settings.source.sync': '同期',
   'settings.source.syncing': '同期中…',
   'settings.source.syncResult': '+{added} / -{removed}',
+  'settings.source.caching': 'キャッシュ中 {done} / {total}',
+  'settings.source.cacheFailed': '未キャッシュ {count} 件：{paths}',
   'settings.source.retry': '再試行',
   'settings.source.trackCount': '{count} 曲',
   'settings.onedrive.title': 'OneDrive フォルダーを選択',

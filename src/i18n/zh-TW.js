@@ -96,6 +96,8 @@ export default {
   'settings.source.sync': '同步',
   'settings.source.syncing': '同步中…',
   'settings.source.syncResult': '+{added} / -{removed}',
+  'settings.source.caching': '正在快取 {done} / {total}',
+  'settings.source.cacheFailed': '未快取 {count} 首：{paths}',
   'settings.source.retry': '重試',
   'settings.source.trackCount': '{count} 首',
   'settings.onedrive.title': '選擇 OneDrive 資料夾',
