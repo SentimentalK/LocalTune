@@ -2,23 +2,57 @@
  * Tiny runtime string table. Pure module: importing it never touches the DOM
  * (document access is guarded), so Node tests can use it directly.
  *
+ * English is the only statically imported table (first-paint fallback); every
+ * other locale is a lazy `import()` chunk loaded on boot, on an explicit pick,
+ * or by `languagechange` while the setting is `auto`.
+ *
  * Resolution: explicit setting → navigator languages → 'en'. A missing key in
  * the active table falls back to English, then to the key itself (warned once).
  */
 
 import en from './en.js';
-import zhCN from './zh-CN.js';
-import zhTW from './zh-TW.js';
-import ja from './ja.js';
 
-export const LOCALES = ['zh-CN', 'zh-TW', 'ja', 'en'];
+export const LOCALES = [
+  'zh-CN',
+  'zh-TW',
+  'ja',
+  'en',
+  'ko',
+  'es',
+  'fr',
+  'de',
+  'pt-BR',
+  'ru',
+];
 
-const TABLES = {
-  'zh-CN': zhCN,
-  'zh-TW': zhTW,
-  ja,
-  en,
+export const LOCALE_LABELS = {
+  en: 'English',
+  'zh-CN': '简体中文',
+  'zh-TW': '繁體中文',
+  ja: '日本語',
+  ko: '한국어',
+  es: 'Español',
+  fr: 'Français',
+  de: 'Deutsch',
+  'pt-BR': 'Português (Brasil)',
+  ru: 'Русский',
 };
+
+const LOADERS = {
+  'zh-CN': () => import('./zh-CN.js'),
+  'zh-TW': () => import('./zh-TW.js'),
+  ja: () => import('./ja.js'),
+  ko: () => import('./ko.js'),
+  es: () => import('./es.js'),
+  fr: () => import('./fr.js'),
+  de: () => import('./de.js'),
+  'pt-BR': () => import('./pt-BR.js'),
+  ru: () => import('./ru.js'),
+};
+
+const TABLES = { en };
+/** In-flight load per locale, so concurrent callers share one chunk request. */
+const loading = new Map();
 
 const warned = new Set();
 
@@ -34,9 +68,15 @@ export function resolveLocale(languages = []) {
   for (const raw of list) {
     if (typeof raw !== 'string' || !raw) continue;
     const value = raw.toLowerCase();
-    if (value === 'zh-tw' || value === 'zh-hk' || value.startsWith('zh-hant')) return 'zh-TW';
+    if (value.startsWith('zh-hant') || value === 'zh-tw' || value === 'zh-hk') return 'zh-TW';
     if (value.startsWith('zh')) return 'zh-CN';
     if (value.startsWith('ja')) return 'ja';
+    if (value.startsWith('ko')) return 'ko';
+    if (value.startsWith('es')) return 'es';
+    if (value.startsWith('fr')) return 'fr';
+    if (value.startsWith('de')) return 'de';
+    if (value.startsWith('pt')) return 'pt-BR';
+    if (value.startsWith('ru')) return 'ru';
   }
   return 'en';
 }
@@ -47,15 +87,57 @@ export function resolveLanguage(setting, languages = []) {
   return resolveLocale(languages);
 }
 
+export function localeLabel(next) {
+  return LOCALE_LABELS[next] ?? LOCALE_LABELS.en;
+}
+
+/** The language the browser asks for, with its display label. */
+export function systemLocale(languages = navigatorLanguages()) {
+  const locale = resolveLocale(languages);
+  return { locale, label: localeLabel(locale) };
+}
+
+/** True once the table for `next` is resident. */
+export function hasLocale(next) {
+  return Object.hasOwn(TABLES, next);
+}
+
+/**
+ * Load the chunk for `next` (idempotent, one in-flight request per locale).
+ * Falls back to 'en' for unknown locales or a failed chunk.
+ */
+export async function ensureLocale(next) {
+  if (next === 'en' || !LOCALES.includes(next)) return 'en';
+  if (Object.hasOwn(TABLES, next)) return next;
+  let promise = loading.get(next);
+  if (!promise) {
+    promise = Promise.resolve()
+      .then(LOADERS[next])
+      .then((mod) => {
+        TABLES[next] = mod.default;
+        return next;
+      });
+    loading.set(next, promise);
+  }
+  try {
+    return await promise;
+  } catch {
+    return 'en';
+  } finally {
+    // A failed chunk may be retried later; a resolved one stays cached.
+    if (!Object.hasOwn(TABLES, next)) loading.delete(next);
+  }
+}
+
 let locale = resolveLocale(navigatorLanguages());
 
 export function getLocale() {
   return locale;
 }
 
-/** @param {string} next one of LOCALES; anything else is ignored. */
+/** @param {string} next one of LOCALES with a loaded table; anything else is ignored. */
 export function setLocale(next) {
-  if (!LOCALES.includes(next)) return;
+  if (!Object.hasOwn(TABLES, next)) return;
   locale = next;
 }
 

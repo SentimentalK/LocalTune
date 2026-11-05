@@ -15,7 +15,16 @@ import { createPlaylistSettings } from './playlist-settings.js';
 import { createVipView } from './vip.js';
 import { createImportDialog, createPlaylistView } from './playlist.js';
 import { openTagInfo } from './diagnostics.js';
-import { applyDocumentLang, getLocale, resolveLanguage, setLocale, t } from '../i18n/index.js';
+import {
+  applyDocumentLang,
+  ensureLocale,
+  getLocale,
+  hasLocale,
+  resolveLanguage,
+  resolveLocale,
+  setLocale,
+  t,
+} from '../i18n/index.js';
 
 const TABS = [
   { id: 'folders', labelKey: 'tabs.folders' },
@@ -1207,7 +1216,7 @@ export function mountUi(root, store, sw) {
 
   function render(state) {
     const next = resolveLanguage(state.settings.language, navigator.languages);
-    if (next !== getLocale()) {
+    if (next !== getLocale() && hasLocale(next)) {
       setLocale(next);
       applyDocumentLang();
       remount();
@@ -1319,6 +1328,25 @@ export function mountUi(root, store, sw) {
     ui.bar.addEventListener('click', seekFromPointer);
     ui.bar.addEventListener('keydown', seekFromKeyboard);
   }
+
+  // Registered exactly once per app mount, never per remount: a browser
+  // language change only moves the app while the setting stays `auto`.
+  let languageChangeBusy = false;
+  async function followBrowserLanguage() {
+    if (store.state.settings.language !== 'auto' || languageChangeBusy) return;
+    languageChangeBusy = true;
+    try {
+      const next = resolveLocale(navigator.languages);
+      const loaded = await ensureLocale(next);
+      if (loaded !== next || getLocale() === next) return;
+      setLocale(next);
+      applyDocumentLang();
+      remount();
+    } finally {
+      languageChangeBusy = false;
+    }
+  }
+  window.addEventListener('languagechange', followBrowserLanguage);
 
   bindShellEvents();
   bindSeek();

@@ -41,12 +41,12 @@ test('settings cards fill the width and controls hug the trailing edge', async (
 
   const languageCard = cards.find((card) => card.testid === 'settings-section-language');
   expect(languageCard).toBeTruthy();
-  const segmented = await page
-    .locator('[data-testid="settings-section-language"] .segmented')
-    .boundingBox();
-  expect(segmented).toBeTruthy();
+  const languageList = page.locator('[data-testid="settings-section-language"] .language-list');
+  await expect(languageList).toHaveAttribute('role', 'radiogroup');
+  const languageListBox = await languageList.boundingBox();
+  expect(languageListBox).toBeTruthy();
   const contentWidth = languageCard.width - languageCard.paddingLeft - languageCard.paddingRight;
-  expect(segmented.width).toBeGreaterThanOrEqual(0.9 * contentWidth);
+  expect(languageListBox.width).toBeGreaterThanOrEqual(0.9 * contentWidth);
 
   const leveling = page.locator('[data-testid="setting-leveling"]');
   const gapless = page.locator('[data-testid="setting-gapless"]');

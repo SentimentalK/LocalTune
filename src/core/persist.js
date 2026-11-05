@@ -6,12 +6,13 @@
 import { getMeta, setMeta } from './db.js';
 import { CACHE_LIMIT_OPTIONS, DEFAULT_CACHE_LIMIT } from './cache/audioCache.js';
 import { normalizeProxyUrl } from './playlist/sources/proxy.js';
+import { LOCALES } from '../i18n/index.js';
 
 const PLAYBACK_KEY = 'playback';
 const SETTINGS_KEY = 'settings';
 const SAVE_DELAY = 1000;
 const REPEAT_VALUES = new Set(['off', 'all', 'one']);
-const LANGUAGE_VALUES = new Set(['auto', 'zh-CN', 'zh-TW', 'ja', 'en']);
+const LANGUAGE_VALUES = new Set(['auto', ...LOCALES]);
 const DEFAULT_LANGUAGE = 'auto';
 const MAX_API_KEY = 200;
 

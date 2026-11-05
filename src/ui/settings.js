@@ -10,16 +10,15 @@ import { formatBytes } from '../core/storage.js';
 import { formatTime } from '../core/selectors.js';
 import { CACHE_LIMIT_VALUES } from '../core/persist.js';
 import { createBatteryGuide } from './batteryGuide.js';
-import { t } from '../i18n/index.js';
+import {
+  LOCALES,
+  LOCALE_LABELS,
+  ensureLocale,
+  resolveLocale,
+  systemLocale,
+  t,
+} from '../i18n/index.js';
 import { el, icon, setHidden, setText } from './dom.js';
-
-const LANGUAGES = [
-  { value: 'auto', label: () => t('settings.language.auto') },
-  { value: 'zh-CN', label: () => '简体中文' },
-  { value: 'zh-TW', label: () => '繁體中文' },
-  { value: 'ja', label: () => '日本語' },
-  { value: 'en', label: () => 'English' },
-];
 
 function run(result) {
   if (result && typeof result.catch === 'function') result.catch(() => {});
@@ -565,32 +564,78 @@ export function createSettingsView(store, sw) {
   );
 
   // ---- language ----
-  const languageButtons = LANGUAGES.map(({ value, label }) => {
-    const button = el('button', {
-      type: 'button',
-      class: 'segment',
-      'data-testid': `language-${value}`,
-      'aria-pressed': 'false',
-      text: label(),
-      onclick: () => store.setSetting('language', value),
+  const languageRows = ['auto', ...LOCALES].map((value) => {
+    const auto = value === 'auto';
+    const name = el('span', {
+      class: 'language-name',
+      text: auto
+        ? `${t('settings.language.auto')} · ${systemLocale().label}`
+        : LOCALE_LABELS[value],
     });
+    if (!auto) name.setAttribute('lang', value);
+    const check = icon('check');
+    check.classList.add('language-check');
+    const button = el(
+      'button',
+      {
+        type: 'button',
+        class: 'language-row',
+        role: 'radio',
+        'data-testid': `language-${value}`,
+        'aria-checked': 'false',
+        tabindex: '-1',
+        onclick: () => run(selectLanguage(value)),
+      },
+      [name, check],
+    );
     return { value, button };
+  });
+
+  async function selectLanguage(value) {
+    const target = value === 'auto' ? resolveLocale(navigator.languages) : value;
+    // Load first: a failed chunk leaves the setting untouched (the UI keeps
+    // showing English) instead of storing an unusable locale.
+    await ensureLocale(target);
+    store.setSetting('language', value);
+  }
+
+  const languageList = el(
+    'div',
+    {
+      class: 'language-list',
+      role: 'radiogroup',
+      'aria-label': t('settings.language.title'),
+    },
+    languageRows.map(({ button }) => button),
+  );
+
+  // Roving tabindex: one tab stop, arrows move focus and select in one step.
+  languageList.addEventListener('keydown', (event) => {
+    const buttons = languageRows.map(({ button }) => button);
+    let index = buttons.indexOf(event.target.closest?.('.language-row'));
+    if (index < 0) index = buttons.findIndex((button) => button.getAttribute('aria-checked') === 'true');
+    if (index < 0) index = 0;
+    let next = index;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') next = index + 1;
+    else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') next = index - 1;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = buttons.length - 1;
+    else return;
+    event.preventDefault();
+    // No wrap-around: the ends of the list hold focus.
+    next = Math.min(Math.max(next, 0), buttons.length - 1);
+    buttons.forEach((button, i) => {
+      button.tabIndex = i === next ? 0 : -1;
+    });
+    const row = languageRows[next];
+    row.button.focus();
+    run(selectLanguage(row.value));
   });
 
   const languageCard = el(
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-language' },
-    [
-      el(
-        'div',
-        {
-          class: 'segmented',
-          role: 'group',
-          'aria-label': t('settings.language.title'),
-        },
-        languageButtons.map(({ button }) => button),
-      ),
-    ],
+    [languageList],
   );
 
   // ---- about ----
@@ -945,10 +990,11 @@ export function createSettingsView(store, sw) {
       );
     }
 
-    for (const { value, button } of languageButtons) {
+    for (const { value, button } of languageRows) {
       const active = settings.language === value;
-      button.setAttribute('aria-pressed', String(active));
+      button.setAttribute('aria-checked', String(active));
       button.classList.toggle('is-active', active);
+      button.tabIndex = active ? 0 : -1;
     }
 
     const sleep = state.sleep ?? { mode: 'off', remaining: null, fading: false };
