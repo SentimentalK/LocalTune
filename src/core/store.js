@@ -26,6 +26,7 @@ import {
 } from './db.js';
 import { createSource, hasDirectoryPicker } from './source.js';
 import { purgeSourceRows } from './purge.js';
+import { detachSource } from './sources/detach.js';
 import { OpfsSource } from './sources/opfs/source.js';
 import { defaultLocalMode } from './sources/opfs/mode.js';
 import { OneDriveSource } from './sources/onedrive/source.js';
@@ -1129,7 +1130,7 @@ export class Store extends EventTarget {
 
     await this._purgeSource(kind);
 
-    await adapter.forget().catch(() => {});
+    await detachSource(adapter);
     this._refreshSource(kind, {
       error: null,
       sync: null,

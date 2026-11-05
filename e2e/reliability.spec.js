@@ -93,6 +93,27 @@ test('import mode copies files into OPFS and survives a reload', async ({ page }
     await expect
       .poll(() => page.evaluate(() => document.querySelector('audio')?.paused ?? true))
       .toBe(false);
+
+    // Removing an OPFS source must delete the imported copies, not just the
+    // index: there is no other UI left that could free that space.
+    await page.locator('[data-testid="settings-open"]').click();
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.locator('[data-testid="settings-source-remove"]').click();
+
+    await expect(page.locator('[data-testid="source-connect-local"]')).toBeVisible();
+    const opfs = await page.evaluate(async () => {
+      const base = await navigator.storage.getDirectory();
+      try {
+        await base.getDirectoryHandle('music', { create: false });
+        return { folderExists: true, files: 0 };
+      } catch {
+        return { folderExists: false, files: 0 };
+      }
+    });
+    expect(opfs.folderExists).toBe(false);
+
+    await page.locator('[data-testid="settings-close"]').click();
+    await expect(page.locator('[data-testid="folder-source-local"]')).toHaveCount(0);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

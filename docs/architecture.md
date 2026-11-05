@@ -160,7 +160,7 @@ Android Chrome 无法跨启动保留 File System Access 授权，因此提供“
   - `scan()` 递归产出 `{ path, file, mtime, size }`，跳过点开头目录/文件、按扩展名过滤。
   - `getFile(path)` 按路径段从 `music/` 取 `File`，失败抛 `error.source.fileMissing`。
   - `writeTextFile(path, text)` 写入 `music/` 下（`getDirectoryHandle('music', { create: true })`），目录段 `create: true`，`createWritable → write → close`；空文件名抛 `error.source.invalidPath`。
-  - `usage()` 递归统计 `music/` 的 `bytes/count`（存储卡）；`clear()` 递归删除 `music/`、清空 `opfsIndex`、`meta.opfsRootName = null`；`forget()` 只清索引与名称，**不删已导入文件**。
+  - `usage()` 递归统计 `music/` 的 `bytes/count`（存储卡）；`clear()` 递归删除 `music/`、清空 `opfsIndex`、`meta.opfsRootName = null`；`forget()` 只清索引与名称，**不删已导入文件**。移除来源用 `detachSource(adapter)`（`src/core/sources/detach.js`）：`trackSource === 'opfs'` 时调 `clear()` 把导入副本一起删掉（否则副本占空间且 UI 再无处可删），reference 来源仍走 `forget()`，磁盘文件不动；`store.clearAll()` 不删 OPFS 副本（副本不是音频缓存，属于来源）。
 - OPFS 目录固定为 `music/`；文件保持选择目录内的相对路径。`meta.opfsRootName` 记住所选根目录名用于显示。`meta.localMode` 持久化 `'import'|'reference'`，`defaultLocalMode()`：UA 含 `Android` → 导入；否则有 `showDirectoryPicker` → 引用，否则导入。
 - 非音频文件（`.lrc`、`.txt`、图片等）在选择与目录遍历时被忽略，不会导入；一次选择里没有任何音频时抛 `error.source.noAudio`。
 - `opfsIndex` 行结构：`{ path, size, mtime }`（keyPath `path`）。增量规则：`path` 相同且 `size` + `mtime` 都相同视为未变（`skipped`）；新路径或任一字段变化则重新复制；索引有而本次选择没有的路径删除 OPFS 文件与索引行。每个文件复制完成后立即写索引，中止/崩溃留下可续传的前缀。
@@ -487,7 +487,7 @@ export class Store extends EventTarget {
   async reauthenticateOneDrive()   // forget + connectOneDrive
   async rescan(kind = 'local')     // 只扫描该来源；added 立即落文件名占位曲目、updated 保留旧标签；标签读取转后台（见 _enrich）；返回 {at,added,updated,removed}|null
   async syncSource(kind = 'onedrive') // rescan(kind)，列表阶段结束即返回，结果同时写入该行 sync
-  async removeSource(kind = 'local') // _purgeSource(kind) → adapter.forget()；该行 error/sync/cacheFailures 复位
+  async removeSource(kind = 'local') // _purgeSource(kind) → detachSource(adapter)（OPFS 导入走 clear() 连带删除副本，其它来源 forget() 只丢句柄）；该行 error/sync/cacheFailures 复位
   async _purgeSource(kind)         // purgeSourceRows：删该来源索引行 → cache.removeBySource(trackSource) → _reconcileQueue；随后取消挂起的补标签队列并清 picker 索引；不动已存 root
   async clearAll()                 // 清全部曲目行（封面随行删除）→ cache.clear() → 清 stats → playlog.clear() → meta.lastScanBySource.onedrive.at 归 0 → 复位队列/当前曲目/rematch/migration → 各来源 trackCount 归 0 → _savePlayback()；保留 meta 与 playlists，不自动 rescan
   // 后台补标签：每来源一条串行队列（_enrich/_drainEnrich）；重复同步合并进 pending；单曲失败只计数，不写 sources[kind].error
