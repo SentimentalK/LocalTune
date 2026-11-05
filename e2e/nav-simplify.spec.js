@@ -1,13 +1,55 @@
 import { expect, test } from '@playwright/test';
 
-test('the shell has three tabs and no lyrics entry', async ({ page }) => {
+test('the shell has two tabs, one progress bar and three header actions', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
 
+  const header = page.locator('header.top');
+  for (const testid of ['search-open', 'vip-open', 'settings-open']) {
+    await expect(header.locator(`[data-testid="${testid}"]`)).toHaveCount(1);
+  }
+  await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
+  await expect(page.locator('.count')).toHaveCount(0);
+  await expect(page.locator('.source-name')).toHaveCount(0);
+  await expect(header.locator('.scan')).toHaveCount(1);
+  await expect(page.locator('.scan')).toHaveCount(1);
+  await expect(page.locator('#status')).toBeHidden();
+
   const tabs = page.locator('.tabs [role="tab"]');
-  await expect(tabs).toHaveCount(3);
-  await expect(tabs).toHaveText(['文件夹', '歌单', '队列']);
+  await expect(tabs).toHaveCount(2);
+  await expect(tabs).toHaveText(['文件夹', '队列']);
   await expect(page.locator('[data-testid="lyrics-open"]')).toHaveCount(0);
+});
+
+test('the header close button leaves settings', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('[data-testid="settings-open"]').click();
+
+  await expect(page.locator('[data-testid="settings-section-playback"]')).toBeVisible();
+  await expect(page.locator('[data-testid="settings-open"]')).toBeHidden();
+  await expect(page.locator('[data-testid="search-open"]')).toBeHidden();
+  await expect(page.locator('[data-testid="vip-open"]')).toBeHidden();
+  await expect(page.locator('[data-testid="settings-close"]')).toBeVisible();
+  await expect(page.locator('.settings-head')).toHaveCount(0);
+
+  await page.locator('[data-testid="settings-close"]').click();
+  await expect(page.locator('#tab-folders')).toBeVisible();
+  await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
+  await expect(page.locator('[data-testid="settings-open"]')).toBeVisible();
+});
+
+test('the VIP view hosts the playlists', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('[data-testid="vip-open"]').click();
+
+  await expect(page.locator('[data-testid="vip-view"]')).toBeVisible();
+  await expect(page.locator('[data-testid="vip-placeholder"]')).toBeVisible();
+  await expect(page.locator('[data-testid="playlist-view"]')).toBeVisible();
+  await expect(page.locator('[data-testid="import-open"]')).toBeVisible();
+  await expect(page.locator('[data-testid="settings-open"]')).toBeHidden();
+
+  await page.locator('[data-testid="settings-close"]').click();
+  await expect(page.locator('#tab-folders')).toBeVisible();
 });
 
 test.describe('360px viewport', () => {

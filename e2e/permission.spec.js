@@ -129,7 +129,7 @@ async function installFakes(page, permission) {
 test('granted at startup does not prompt', async ({ page }) => {
   await installFakes(page, 'granted');
   await page.goto('/');
-  await expect(page.locator('#status')).toHaveText('准备就绪');
+  await expect(page.locator('#status')).toBeHidden();
 
   const counters = await page.evaluate(() => ({
     query: window.__perm.query,
@@ -139,13 +139,13 @@ test('granted at startup does not prompt', async ({ page }) => {
   expect(counters.query).toBeGreaterThan(0);
   expect(counters.request).toBe(0);
   expect(counters.picker).toBe(0);
-  await expect(page.locator('.source-name')).toHaveText('Music');
+  await expect(page.locator('[data-testid="folder-source-local"]')).toBeVisible();
 });
 
 test('prompt uses only requestPermission', async ({ page }) => {
   await installFakes(page, 'prompt');
   await page.goto('/');
-  await expect(page.locator('#status')).toHaveText('准备就绪');
+  await expect(page.locator('#status')).toBeHidden();
 
   const action = page.locator('.empty button');
   await expect(action).toHaveText('继续使用 Music');
@@ -158,7 +158,7 @@ test('prompt uses only requestPermission', async ({ page }) => {
   ).toBeVisible();
 
   await action.click();
-  await expect(page.locator('.source-name')).toHaveText('Music');
+  await expect(page.locator('[data-testid="folder-source-local"]')).toBeVisible();
 
   const counters = await page.evaluate(() => ({
     request: window.__perm.request,

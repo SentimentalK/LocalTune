@@ -23,7 +23,7 @@ async function signInAndPickMusic(page, { count = '2' } = {}) {
 }
 
 async function backToFolders(page) {
-  await page.locator('[data-testid="settings-back"]').click();
+  await page.locator('[data-testid="settings-close"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();
 }
 

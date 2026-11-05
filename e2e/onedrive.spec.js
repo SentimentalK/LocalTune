@@ -31,7 +31,7 @@ test('OneDrive sync caches the files and playback downloads nothing', async ({ p
   // the warm pass finished.
   expect(mock.wholeRequests).toHaveLength(2);
 
-  await page.locator('[data-testid="settings-back"]').click();
+  await page.locator('[data-testid="settings-close"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();
 
   // The row names the source, not the folder the user picked inside it.

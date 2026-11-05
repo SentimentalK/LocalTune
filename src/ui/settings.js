@@ -56,22 +56,6 @@ async function copyText(text) {
 export function createSettingsView(store, sw) {
   const node = el('section', { class: 'settings-view' });
 
-  const backButton = el(
-    'button',
-    {
-      class: 'icon-btn',
-      type: 'button',
-      'data-testid': 'settings-back',
-      'aria-label': t('settings.back'),
-      onclick: () => {
-        node.dispatchEvent(new CustomEvent('settings-back', { bubbles: true }));
-      },
-    },
-    [el('span', { class: 'back-arrow', 'aria-hidden': 'true', text: '←' })],
-  );
-  const title = el('h2', { text: t('settings.title') });
-  const head = el('div', { class: 'settings-head' }, [backButton, title]);
-
   const toast = (text) => {
     node.dispatchEvent(new CustomEvent('toast', { bubbles: true, detail: { text } }));
   };
@@ -918,7 +902,6 @@ export function createSettingsView(store, sw) {
   }
 
   node.append(
-    head,
     libraryCard,
     pickerCard,
     settingsBlock(t('settings.background.title'), backgroundCard),

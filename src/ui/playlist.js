@@ -786,7 +786,7 @@ export function createImportDialog(store) {
         items: result.items,
       });
       close();
-      store.setView('playlists');
+      store.setView('vip');
       toastFrom(node, t('playlists.created'));
     } catch (error) {
       showError(error?.message ? String(error.message) : t('common.unknownError'));

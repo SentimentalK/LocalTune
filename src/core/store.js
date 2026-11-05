@@ -75,7 +75,7 @@ import { installMediaSession, syncMediaSession } from './mediaSession.js';
 import { normalizeProxyUrl } from './playlist/sources/proxy.js';
 import { t } from '../i18n/index.js';
 
-const VIEWS = new Set(['folders', 'playlists', 'queue', 'search', 'settings']);
+const VIEWS = new Set(['folders', 'queue', 'search', 'settings', 'vip']);
 const MEDIA_SYNC_INTERVAL = 1000;
 const LYRICS_CACHE_LIMIT = 20;
 const REPLAYGAIN_HEAD_BYTES = 1 << 19;

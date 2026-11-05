@@ -13,7 +13,6 @@ export default {
   'common.scanning': 'Scanning',
   'common.scanProgress': 'Scanning {done} / {total}',
   'common.scanCount': 'Scanning {done}',
-  'common.ready': 'Ready',
   'common.loading': 'Loading…',
   'common.musicFolder': 'Music folder',
   'common.playQueue': 'Play queue',
@@ -37,8 +36,10 @@ export default {
   'diagnostics.close': 'Close',
 
   'tabs.folders': 'Folders',
-  'tabs.playlists': 'Playlists',
   'tabs.queue': 'Queue',
+  'vip.open': 'VIP',
+  'vip.title': 'VIP',
+  'vip.subtitle': 'Playlists are being rebuilt',
 
   'folders.subfolders': 'Folders',
   'folders.tracks': 'Tracks',
@@ -71,7 +72,6 @@ export default {
   'queue.clear': 'Clear queue',
   'queue.clearConfirm': 'Clear the play queue? No files are deleted.',
 
-  'settings.title': 'Settings',
   'settings.open': 'Open settings',
   'settings.back': 'Back',
   'settings.library.title': 'Library',

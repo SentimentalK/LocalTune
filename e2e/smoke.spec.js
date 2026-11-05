@@ -33,7 +33,7 @@ test('shell renders without console errors', async ({ page }) => {
   const response = await page.goto('/');
   expect(response?.status()).toBe(200);
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
-  await expect(page.locator('#status')).toHaveText('准备就绪');
+  await expect(page.locator('#status')).toBeHidden();
   expect(await waitForServiceWorker(page)).toBe('activated');
 
   expect(errors).toEqual([]);

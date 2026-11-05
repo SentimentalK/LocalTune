@@ -93,11 +93,13 @@ time {
 }
 
 .top {
+  position: relative;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 12px 16px;
   flex-wrap: wrap;
+  padding-bottom: 10px;
 }
 
 .brand h1 {
@@ -135,18 +137,6 @@ time {
   color: var(--muted);
 }
 
-.count {
-  font-family: var(--font-num);
-  color: var(--fg);
-}
-
-.source-name {
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .btn-pill {
   padding: 8px 14px;
   border-radius: 999px;
@@ -176,19 +166,22 @@ time {
 }
 
 .scan {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 12px;
-  color: var(--muted);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
-.scan .bar {
-  flex: 1;
-}
-
-.scan-label {
-  flex: none;
+.scan i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.2s;
 }
 
 /* ---- layout ---- */
@@ -518,6 +511,52 @@ time {
 .settings-host {
   grid-column: 1 / -1;
   min-width: 0;
+}
+
+.vip-host {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.vip-view {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.vip-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.vip-crown {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-raised);
+}
+
+.vip-crown svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+}
+
+.vip-head h2 {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.vip-head p {
+  margin: 2px 0 0;
+  font-size: 13px;
 }
 
 .settings-view {

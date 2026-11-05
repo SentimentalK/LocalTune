@@ -12,7 +12,6 @@ export default {
   'common.scanning': 'スキャン中',
   'common.scanProgress': 'スキャン中 {done} / {total}',
   'common.scanCount': 'スキャン中 {done}',
-  'common.ready': '準備完了',
   'common.loading': '読み込み中…',
   'common.musicFolder': '音楽フォルダー',
   'common.playQueue': '再生キュー',
@@ -35,9 +34,11 @@ export default {
   'diagnostics.copy': 'コピー',
   'diagnostics.close': '閉じる',
 
-  'tabs.folders': 'フォルダー',
-  'tabs.playlists': 'プレイリスト',
+  'tabs.folders': 'フォルダ',
   'tabs.queue': 'キュー',
+  'vip.open': 'VIP',
+  'vip.title': 'VIP',
+  'vip.subtitle': 'プレイリストを再構築中',
 
   'folders.subfolders': 'サブフォルダー',
   'folders.tracks': '曲',
@@ -70,7 +71,6 @@ export default {
   'queue.clear': 'キューを空にする',
   'queue.clearConfirm': '再生キューを空にしますか？ファイルは削除されません。',
 
-  'settings.title': '設定',
   'settings.open': '設定を開く',
   'settings.back': '戻る',
   'settings.library.title': 'ライブラリ',

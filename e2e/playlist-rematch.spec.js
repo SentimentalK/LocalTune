@@ -195,7 +195,7 @@ test('rescan re-matches missing playlist rows and toasts the count', async ({ pa
   await page.locator('[data-testid="folder-dir-Music"]').click();
   await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
 
-  await page.locator('#tab-playlists').click();
+  await page.locator('[data-testid="vip-open"]').click();
   await page.locator('[data-testid="import-open"]').click();
   await expect(page.locator('[data-testid="import-dialog"]')).toBeVisible();
   await page.locator('[data-testid="import-name"]').fill('补齐测试');
@@ -222,6 +222,9 @@ test('rescan re-matches missing playlist rows and toasts the count', async ({ pa
   // The file and its row appear while the app is already running.
   await addLateArrival(page);
 
+  // VIP hides the other header actions, so leave it before opening settings.
+  await page.locator('[data-testid="settings-close"]').click();
+  await expect(page.locator('#tab-folders')).toBeVisible();
   await page.locator('[data-testid="settings-open"]').click();
   await page.locator('[data-testid="settings-sync-local"]').click();
 
@@ -229,7 +232,8 @@ test('rescan re-matches missing playlist rows and toasts the count', async ({ pa
   expect(expectedToast).toBe('补齐 1 首');
   await expect(page.locator('.toast')).toContainText(expectedToast);
 
-  await page.locator('[data-testid="settings-back"]').click();
+  await page.locator('[data-testid="settings-close"]').click();
+  await page.locator('[data-testid="vip-open"]').click();
   await expect(page.locator('[data-testid="playlist-detail"]')).toBeVisible();
   await expect(columnCount(page, 'result-matched')).toHaveText('3');
   await expect(columnCount(page, 'result-missing')).toHaveText('0');

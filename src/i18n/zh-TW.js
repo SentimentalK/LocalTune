@@ -12,7 +12,6 @@ export default {
   'common.scanning': '掃描中',
   'common.scanProgress': '掃描中 {done} / {total}',
   'common.scanCount': '掃描中 {done}',
-  'common.ready': '準備就緒',
   'common.loading': '正在載入…',
   'common.musicFolder': '音樂資料夾',
   'common.playQueue': '播放佇列',
@@ -34,9 +33,11 @@ export default {
   'diagnostics.copy': '複製',
   'diagnostics.close': '關閉',
 
-  'tabs.folders': '資料夾',
-  'tabs.playlists': '歌單',
+  'tabs.folders': '檔案',
   'tabs.queue': '佇列',
+  'vip.open': 'VIP',
+  'vip.title': 'VIP',
+  'vip.subtitle': '歌單重構中',
 
   'folders.subfolders': '子資料夾',
   'folders.tracks': '曲目',
@@ -66,7 +67,6 @@ export default {
   'queue.clear': '清空佇列',
   'queue.clearConfirm': '清空目前播放佇列？不會刪除任何檔案。',
 
-  'settings.title': '設定',
   'settings.open': '開啟設定',
   'settings.back': '返回',
   'settings.library.title': '曲庫',

@@ -55,7 +55,7 @@ test('setLocale switches the active table and ignores unknown locales', () => {
   setLocale('ja');
   assert.equal(getLocale(), 'ja');
   assert.equal(t('tabs.folders'), ja['tabs.folders']);
-  assert.equal(t('common.ready'), ja['common.ready']);
+  assert.equal(t('common.loading'), ja['common.loading']);
 
   setLocale('zh-CN');
   assert.equal(getLocale(), 'zh-CN');

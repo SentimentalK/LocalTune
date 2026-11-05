@@ -149,7 +149,7 @@ test('imports a text playlist, persists it and writes a m3u8', async ({ page }) 
   await page.locator('[data-testid="folder-dir-Music"]').click();
   await expect(page.locator('[data-testid="track-row"]')).toHaveCount(7);
 
-  await page.locator('#tab-playlists').click();
+  await page.locator('[data-testid="vip-open"]').click();
   await page.locator('[data-testid="import-open"]').click();
   await expect(page.locator('[data-testid="import-dialog"]')).toBeVisible();
   await page.locator('[data-testid="import-name"]').fill('E2E 歌单');
@@ -171,7 +171,7 @@ test('imports a text playlist, persists it and writes a m3u8', async ({ page }) 
 
   await page.locator('[data-testid="playlist-create"]').click();
   await expect(page.locator('[data-testid="playlist-row"]')).toHaveCount(1);
-  await expect(page.locator('#tab-playlists')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('[data-testid="vip-view"]')).toBeVisible();
 
   await page.locator('[data-testid="playlist-play"]').click();
   await expect
@@ -204,7 +204,7 @@ test('imports a text playlist, persists it and writes a m3u8', async ({ page }) 
 
   await page.reload();
   await expect(page.locator('#app h1')).toBeVisible();
-  await page.locator('#tab-playlists').click();
+  await page.locator('[data-testid="vip-open"]').click();
   await expect(page.locator('[data-testid="playlist-row"]')).toHaveCount(1);
 });
 
@@ -258,7 +258,7 @@ test.describe('same-origin proxy', () => {
     await page.locator('[data-testid="folder-dir-Music"]').click();
     await expect(page.locator('[data-testid="track-row"]')).toHaveCount(7);
 
-    await page.locator('#tab-playlists').click();
+    await page.locator('[data-testid="vip-open"]').click();
     await page.locator('[data-testid="import-open"]').click();
     await expect(page.locator('[data-testid="import-dialog"]')).toBeVisible();
     await page.locator('[data-testid="import-name"]').fill('E2E 代理歌单');

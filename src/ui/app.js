@@ -17,13 +17,13 @@ import {
 import { LYRICS_ENABLED } from '../core/flags.js';
 import { el, icon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
 import { createSettingsView } from './settings.js';
+import { createVipView } from './vip.js';
 import { createImportDialog, createPlaylistView } from './playlist.js';
 import { openTagInfo } from './diagnostics.js';
 import { applyDocumentLang, getLocale, resolveLanguage, setLocale, t } from '../i18n/index.js';
 
 const TABS = [
   { id: 'folders', labelKey: 'tabs.folders' },
-  { id: 'playlists', labelKey: 'tabs.playlists' },
   { id: 'queue', labelKey: 'tabs.queue' },
 ];
 
@@ -342,20 +342,26 @@ function folderSection(headerLabel, countLabel, children) {
 }
 
 function createShell(store, sw) {
-  const status = el('span', { class: 'status', id: 'status', text: t('common.ready') });
-  const count = el('span', { class: 'count', text: t('common.trackCount', { count: 0 }) });
-  const sourceName = el('span', { class: 'source-name', text: t('common.disconnected') });
+  const status = el('span', { class: 'status', id: 'status' });
   const deniedHint = el('p', {
     class: 'alert',
     role: 'status',
     text: t('common.deniedHint'),
   });
   const scanBar = el('i');
-  const scanLabel = el('span', { class: 'scan-label', text: t('common.scanning') });
-  const scan = el('div', { class: 'scan', role: 'status' }, [
-    scanLabel,
-    el('div', { class: 'bar' }, scanBar),
-  ]);
+  const scan = el(
+    'div',
+    {
+      class: 'scan',
+      role: 'progressbar',
+      'aria-valuemin': '0',
+      'aria-valuemax': '100',
+      'aria-valuenow': '0',
+      'data-testid': 'scan-progress',
+      hidden: true,
+    },
+    scanBar,
+  );
   const errorBox = el('p', { class: 'alert', role: 'alert' });
 
   const searchButton = el(
@@ -369,6 +375,17 @@ function createShell(store, sw) {
     [icon('search')],
   );
 
+  const vipButton = el(
+    'button',
+    {
+      class: 'icon-btn',
+      type: 'button',
+      'data-testid': 'vip-open',
+      'aria-label': t('vip.open'),
+    },
+    [icon('crown')],
+  );
+
   const settingsButton = el(
     'button',
     {
@@ -380,9 +397,27 @@ function createShell(store, sw) {
     [icon('gear')],
   );
 
+  const closeButton = el(
+    'button',
+    {
+      class: 'icon-btn',
+      type: 'button',
+      'data-testid': 'settings-close',
+      'aria-label': t('settings.back'),
+      hidden: true,
+    },
+    [icon('close')],
+  );
+
   const header = el('header', { class: 'top' }, [
     el('div', { class: 'brand' }, [el('h1', { text: 'LocalTune' }), status]),
-    el('div', { class: 'top-right' }, [count, sourceName, searchButton, settingsButton]),
+    el('div', { class: 'top-right' }, [
+      searchButton,
+      vipButton,
+      settingsButton,
+      closeButton,
+    ]),
+    scan,
   ]);
 
   // ---- player card ----
@@ -497,10 +532,12 @@ function createShell(store, sw) {
   // dialog lazily, so creating the dialog right after this is safe.
   const playlistView = createPlaylistView(store, { onImport: () => importDialog.open() });
   const importDialog = createImportDialog(store);
+  const vipView = createVipView(playlistView);
 
   // ---- settings view ----
   const settingsView = createSettingsView(store, sw);
   const settingsHost = el('div', { class: 'settings-host' }, settingsView.node);
+  const vipHost = el('div', { class: 'vip-host', hidden: true }, vipView.node);
   const lyricsHost = LYRICS_ENABLED ? el('div', { class: 'lyrics-host', hidden: true }) : null;
   const defaultView = el('div', { class: 'default-view' }, [
     el('div', { class: 'player-col' }, [player]),
@@ -523,9 +560,8 @@ function createShell(store, sw) {
   const app = el('div', { class: 'app' }, [
     header,
     errorBox,
-    scan,
     deniedHint,
-    el('main', { class: 'layout' }, [defaultView, settingsHost, lyricsHost]),
+    el('main', { class: 'layout' }, [defaultView, settingsHost, vipHost]),
     updateBanner,
     toast,
     importDialog.node,
@@ -534,11 +570,8 @@ function createShell(store, sw) {
   return {
     app,
     status,
-    count,
-    sourceName,
     deniedHint,
     scan,
-    scanLabel,
     scanBar,
     errorBox,
     player,
@@ -557,9 +590,13 @@ function createShell(store, sw) {
     repeatBadge,
     lyricsButton,
     searchButton,
+    vipButton,
     settingsButton,
+    closeButton,
     settingsView,
     settingsHost,
+    vipView,
+    vipHost,
     lyricsHost,
     playlistView,
     importDialog,
@@ -572,7 +609,6 @@ function createShell(store, sw) {
 }
 
 export function mountUi(root, store, sw) {
-  let prevView = 'folders';
   let menuNode = null;
   let menuCleanup = null;
   let toastTimer = null;
@@ -600,7 +636,6 @@ export function mountUi(root, store, sw) {
     permissions: null,
     installable: false,
     pins: null,
-    playlists: null,
     query: '',
     folderSource: null,
     folderDir: '',
@@ -620,7 +655,6 @@ export function mountUi(root, store, sw) {
     last.permissions = null;
     last.installable = false;
     last.pins = null;
-    last.playlists = null;
     last.query = '';
     last.folderSource = null;
     last.folderDir = '';
@@ -695,14 +729,10 @@ export function mountUi(root, store, sw) {
   }
 
   function bindShellEvents() {
-    ui.settingsButton.addEventListener('click', () => {
-      if (store.state.view !== 'settings') prevView = store.state.view;
-      store.setView('settings');
-    });
+    ui.settingsButton.addEventListener('click', () => store.setView('settings'));
     ui.searchButton.addEventListener('click', () => store.setView('search'));
-    ui.settingsView.node.addEventListener('settings-back', () => {
-      store.setView(prevView || 'folders');
-    });
+    ui.vipButton.addEventListener('click', () => store.setView('vip'));
+    ui.closeButton.addEventListener('click', () => store.setView('folders'));
     ui.settingsView.node.addEventListener('toast', (event) => {
       showToast(event.detail?.text ?? '');
     });
@@ -717,7 +747,6 @@ export function mountUi(root, store, sw) {
   function renderHeader(state) {
     const rows = state.sources ?? [];
     const local = rows.find((row) => row.id === 'local') ?? { permission: 'none', name: '' };
-    const onedrive = rows.find((row) => row.id === 'onedrive') ?? { permission: 'none', name: '' };
     const migration = state.migration;
     const scanningRow = rows.find((row) => row.scanning) ?? null;
 
@@ -738,35 +767,37 @@ export function mountUi(root, store, sw) {
             : t('common.scanCount', { done }),
       );
     } else {
-      setText(ui.status, state.ready ? t('common.ready') : t('common.loading'));
+      setText(ui.status, '');
     }
 
-    setText(ui.count, t('common.trackCount', { count: state.tracks.length }));
-
-    const granted = [local, onedrive].find((row) => row.permission === 'granted');
-    let nameText;
-    if (granted) nameText = granted.name || t('common.connected');
-    else if (local.permission === 'denied') nameText = t('common.permissionDenied');
-    else if (local.permission === 'prompt' || onedrive.permission === 'prompt') {
-      nameText = t('common.awaitingPermission');
-    } else nameText = t('common.disconnected');
-    setText(ui.sourceName, nameText);
     setHidden(ui.deniedHint, local.permission !== 'denied');
 
     setHidden(ui.scan, !scanningRow);
     if (scanningRow) {
-      const { done, total, phase } = scanningRow.progress ?? { done: 0, total: 0 };
+      const { done, total } = scanningRow.progress ?? { done: 0, total: 0 };
       const ratio = total > 0 ? Math.min(done / total, 1) : 0.12;
-      ui.scanBar.style.width = `${Math.round(ratio * 100)}%`;
-      setText(
-        ui.scanLabel,
-        phase === 'cache' ? t('settings.source.caching', { done, total }) : t('common.scanning'),
-      );
+      const percent = Math.round(ratio * 100);
+      ui.scanBar.style.width = `${percent}%`;
+      ui.scan.setAttribute('aria-valuenow', String(percent));
+    } else {
+      ui.scan.setAttribute('aria-valuenow', '0');
     }
 
     const error = rows.find((row) => row.error)?.error ?? null;
     setHidden(ui.errorBox, !error);
     if (error) setText(ui.errorBox, typeof error === 'string' ? error : error.message ?? String(error));
+  }
+
+  /** One place decides which header action is visible for the current view. */
+  function applyHeaderMode(state) {
+    const mode =
+      state.view === 'settings' ? 'settings' : state.view === 'vip' ? 'vip' : 'default';
+    const isDefault = mode === 'default';
+    setHidden(ui.searchButton, !isDefault);
+    setHidden(ui.vipButton, !isDefault);
+    setHidden(ui.settingsButton, !isDefault);
+    setHidden(ui.closeButton, isDefault);
+    setHidden(ui.status, !isDefault || !ui.status.textContent);
   }
 
   function renderPlayer(state) {
@@ -1348,7 +1379,7 @@ export function mountUi(root, store, sw) {
   }
 
   function renderView(state) {
-    if (state.view === 'settings') return;
+    if (state.view === 'settings' || state.view === 'vip') return;
     if (LYRICS_ENABLED && state.view === 'lyrics') {
       ensureLyricsView();
       return;
@@ -1366,7 +1397,6 @@ export function mountUi(root, store, sw) {
       installPromptSeen !== last.installable ||
       currentId !== last.currentId ||
       state.pins !== last.pins ||
-      state.playlists !== last.playlists ||
       searchQuery !== last.query ||
       searchResult !== last.searchResult ||
       folder.source !== last.folderSource ||
@@ -1383,7 +1413,6 @@ export function mountUi(root, store, sw) {
     last.installable = installPromptSeen;
     last.currentId = currentId;
     last.pins = state.pins;
-    last.playlists = state.playlists;
     last.query = searchQuery;
     last.searchResult = searchResult;
     last.folderSource = folder.source;
@@ -1392,12 +1421,6 @@ export function mountUi(root, store, sw) {
     last.queueIndex = state.queue.index;
 
     syncCoverCache(state.tracks.map((track) => track.cover).filter(Boolean));
-
-    if (state.view === 'playlists') {
-      ui.playlistView.render(state);
-      ui.panel.replaceChildren(ui.playlistView.node);
-      return;
-    }
 
     if (!libraryVisible(state)) {
       ui.panel.replaceChildren(renderEmpty(state));
@@ -1473,6 +1496,7 @@ export function mountUi(root, store, sw) {
       closeMenu();
     }
     renderHeader(state);
+    applyHeaderMode(state);
     renderPlayer(state);
     renderTabs(state);
     renderView(state);
@@ -1500,12 +1524,13 @@ export function mountUi(root, store, sw) {
       renderLyrics(state);
     }
     const settings = state.view === 'settings';
+    const vip = state.view === 'vip';
     const lyrics = state.view === 'lyrics';
-    setHidden(ui.defaultView, settings || lyrics);
+    setHidden(ui.defaultView, settings || vip || lyrics);
     setHidden(ui.settingsHost, !settings);
+    setHidden(ui.vipHost, !vip);
+    if (vip) ui.vipView.render(state);
     if (LYRICS_ENABLED) setHidden(ui.lyricsHost, !lyrics);
-    setHidden(ui.searchButton, settings);
-    setHidden(ui.settingsButton, settings);
     setHidden(ui.updateBanner, !state.updateReady);
 
     // rescan() re-matched missing playlist rows: announce the count once and

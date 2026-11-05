@@ -42,8 +42,7 @@ test('settings view covers library, storage, language and about', async ({ page 
 
   // Language switch rebuilds the shell without leaving the settings view.
   await page.locator('[data-testid="language-en"]').click();
-  await expect(page.locator('.settings-head h2')).toHaveText('Settings');
-  await page.locator('[data-testid="settings-back"]').click();
+  await page.locator('[data-testid="settings-close"]').click();
 
   await expect(page.locator('[data-testid="settings-section-library"]')).toBeHidden();
   await expect(page.locator('#tab-folders')).toBeVisible();
@@ -53,8 +52,7 @@ test('settings view covers library, storage, language and about', async ({ page 
   // Switch back to the configured Chinese locale for the remaining suite.
   await page.locator('[data-testid="settings-open"]').click();
   await page.locator('[data-testid="language-zh-CN"]').click();
-  await expect(page.locator('.settings-head h2')).toHaveText('设置');
-  await page.locator('[data-testid="settings-back"]').click();
+  await page.locator('[data-testid="settings-close"]').click();
 
   await expect(page.locator('[data-testid="settings-section-library"]')).toBeHidden();
   await expect(page.locator('#tab-folders')).toBeVisible();

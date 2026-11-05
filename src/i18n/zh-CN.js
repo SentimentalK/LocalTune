@@ -12,7 +12,6 @@ export default {
   'common.scanning': '扫描中',
   'common.scanProgress': '扫描中 {done} / {total}',
   'common.scanCount': '扫描中 {done}',
-  'common.ready': '准备就绪',
   'common.loading': '正在载入…',
   'common.musicFolder': '音乐文件夹',
   'common.playQueue': '播放队列',
@@ -35,8 +34,10 @@ export default {
   'diagnostics.close': '关闭',
 
   'tabs.folders': '文件夹',
-  'tabs.playlists': '歌单',
   'tabs.queue': '队列',
+  'vip.open': 'VIP',
+  'vip.title': 'VIP',
+  'vip.subtitle': '歌单重构中',
 
   'folders.subfolders': '子文件夹',
   'folders.tracks': '曲目',
@@ -66,7 +67,6 @@ export default {
   'queue.clear': '清空队列',
   'queue.clearConfirm': '清空当前播放队列？不会删除任何文件。',
 
-  'settings.title': '设置',
   'settings.open': '打开设置',
   'settings.back': '返回',
   'settings.library.title': '曲库',

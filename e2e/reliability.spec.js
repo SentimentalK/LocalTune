@@ -137,7 +137,7 @@ test('import mode copies files into OPFS and survives a reload', async ({ page }
     await expect(page.locator('[data-testid="import-progress"]')).toBeHidden({
       timeout: 20_000,
     });
-    await page.locator('[data-testid="settings-back"]').click();
+    await page.locator('[data-testid="settings-close"]').click();
     await page.locator('[data-testid="folder-source-local"]').click();
     await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
 

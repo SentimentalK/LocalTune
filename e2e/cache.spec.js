@@ -28,7 +28,7 @@ async function signInAndPickMusic(page) {
 
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
   await expect(page.locator('[data-testid="source-row-onedrive"]')).toContainText('2');
-  await page.locator('[data-testid="settings-back"]').click();
+  await page.locator('[data-testid="settings-close"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();
 }
 
@@ -56,7 +56,7 @@ test('audio cache hits, offline replay, folder pins and clearing', async ({ page
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
   await expect(page.locator('#tab-folders')).toBeVisible();
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
-  await expect(page.locator('[data-testid="settings-back"]')).toBeHidden();
+  await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
   await page.locator('[data-testid="folder-source-onedrive"]').click();
   await expect(page.locator('[data-testid="track-row"]')).toHaveCount(1);
   await expect(page.locator('[data-testid="folder-dir-Jazz"]')).toBeVisible();
@@ -85,7 +85,7 @@ test('audio cache hits, offline replay, folder pins and clearing', async ({ page
   await page.reload();
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
-  await expect(page.locator('[data-testid="settings-back"]')).toBeHidden();
+  await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
 
   await page.locator('[data-testid="folder-source-onedrive"]').click();
   await expect(page.locator('[data-testid="track-row"] .row-hit').first()).toBeVisible();
