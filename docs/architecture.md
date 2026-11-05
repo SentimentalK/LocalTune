@@ -799,3 +799,10 @@ export async function resolveLyrics({ track, getFile, readEmbedded = readEmbedde
 | OneDrive 授权 | refresh token 24 h 过期，之后需要重新授权；已缓存曲目不受影响 |
 
 - 不做承诺：受系统后台策略限制，iOS 上不能保证与 Android 同等的后台连续播放；真机验证以 `docs/device-test-checklist.md` 的 S31–S36 为准。
+
+### 曲库可见性（expired-auth）
+
+- 可见性规则集中在 `src/core/library.js`：`sourceVisible`（granted，或 `trackCount > 0`）、`visibleSources`、`sourceNeedsReconnect`（非 granted 且仍有索引曲目）、`libraryVisible`（有曲目或任一可见来源）。
+- 授权过期后 `open()` 先查 Cache Storage：命中直接返回 `{ file }`，不读 token、不发请求；只有未命中才调用 `ensurePermission()`，无 refresh token 时抛 `error.onedrive.authRequired`。
+- 因此非 granted 但有缓存曲目的来源仍出现在来源行，行内提示「需要重新连接」并给出重连按钮（`reauthenticateOneDrive`；`permission === 'none'` 时为 `connectOneDrive`）。进入该来源的文件夹时同一条提示出现在表头下方。
+- 只有既没有曲目、也没有可见来源时，空状态才接管面板。

@@ -99,6 +99,8 @@ export default {
   'settings.source.cacheFailed': '未快取 {count} 首：{paths}',
   'settings.source.retry': '重試',
   'settings.source.trackCount': '{count} 首',
+  'library.reconnect': '重新連線 OneDrive',
+  'library.expiredHint': 'OneDrive 登入已過期，快取曲目仍可播放。',
   'settings.onedrive.title': '選擇 OneDrive 資料夾',
   'settings.onedrive.up': '上一層',
   'settings.onedrive.choose': '使用此資料夾',

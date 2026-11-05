@@ -104,6 +104,8 @@ export default {
   'settings.source.cacheFailed': '{count} not cached: {paths}',
   'settings.source.retry': 'Retry',
   'settings.source.trackCount': '{count} tracks',
+  'library.reconnect': 'Reconnect OneDrive',
+  'library.expiredHint': 'OneDrive sign-in expired. Cached tracks still play.',
   'settings.onedrive.title': 'Choose a OneDrive folder',
   'settings.onedrive.up': 'Up',
   'settings.onedrive.choose': 'Use this folder',

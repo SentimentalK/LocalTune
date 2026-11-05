@@ -99,6 +99,8 @@ export default {
   'settings.source.cacheFailed': '未缓存 {count} 首：{paths}',
   'settings.source.retry': '重试',
   'settings.source.trackCount': '{count} 首',
+  'library.reconnect': '重新连接 OneDrive',
+  'library.expiredHint': 'OneDrive 登录已过期，缓存曲目仍可播放。',
   'settings.onedrive.title': '选择 OneDrive 文件夹',
   'settings.onedrive.up': '上一级',
   'settings.onedrive.choose': '使用此文件夹',

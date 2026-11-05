@@ -103,6 +103,8 @@ export default {
   'settings.source.cacheFailed': '未キャッシュ {count} 件：{paths}',
   'settings.source.retry': '再試行',
   'settings.source.trackCount': '{count} 曲',
+  'library.reconnect': 'OneDrive を再接続',
+  'library.expiredHint': 'OneDrive のサインインが切れました。キャッシュ済みの曲は再生できます。',
   'settings.onedrive.title': 'OneDrive フォルダーを選択',
   'settings.onedrive.up': '上へ',
   'settings.onedrive.choose': 'このフォルダーを使う',

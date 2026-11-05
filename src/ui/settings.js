@@ -84,6 +84,15 @@ export function createSettingsView(store, sw) {
     const count = el('span', { text: t('settings.source.trackCount', { count: 0 }) });
     const rowError = el('p', { class: 'settings-error muted', role: 'alert' });
     setHidden(rowError, true);
+    // Distinct from `.settings-error`: existing specs target that class to
+    // probe the sync failure, and a second match would break them.
+    const hint = el('p', {
+      class: 'settings-hint muted',
+      role: 'status',
+      'data-testid': `source-hint-${kind}`,
+      style: { margin: '0', padding: '0 16px 12px', fontSize: '12px' },
+    });
+    setHidden(hint, true);
     const progressLabel = el('span');
     const progressBar = el('i');
     const progress = el('div', { class: 'settings-progress', role: 'status' }, [
@@ -95,6 +104,7 @@ export function createSettingsView(store, sw) {
     const view = {
       name,
       count,
+      hint,
       error: rowError,
       progress,
       progressLabel,
@@ -160,6 +170,7 @@ export function createSettingsView(store, sw) {
         view.removeButton,
       ]),
       progress,
+      hint,
       rowError,
     ]);
 
@@ -1023,9 +1034,17 @@ export function createSettingsView(store, sw) {
 
       const permission = row.permission;
       const scanning = Boolean(row.scanning);
+      const needsReconnect = permission !== 'granted' && (row.trackCount ?? 0) > 0;
+      setHidden(view.hint, !needsReconnect);
+      if (needsReconnect) setText(view.hint, t('library.expiredHint'));
       view.syncButton.disabled = view.syncing || scanning || permission === 'none';
       if (!view.syncing) setText(view.syncButton, t('settings.source.sync'));
       view.changeButton.disabled = scanning;
+      const changeLabel = needsReconnect
+        ? t('library.reconnect')
+        : t('settings.source.change');
+      setText(view.changeButton, changeLabel);
+      view.changeButton.setAttribute('aria-label', changeLabel);
       view.removeButton.disabled = scanning || permission === 'none';
       setHidden(view.progress, !scanning);
       if (scanning) {

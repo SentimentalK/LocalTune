@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { OneDriveSource, PKCE_TTL_MS } from '../src/core/sources/onedrive/source.js';
 import { createRemoteFile } from '../src/core/sources/onedrive/remoteFile.js';
+import { t } from '../src/i18n/index.js';
 
 function memoryMeta(initial = {}) {
   const map = new Map(Object.entries(initial));
@@ -1018,4 +1019,66 @@ test('createRemoteFile rejects a whole-file response above maxRangeBytes', async
   });
 
   await assert.rejects(file.slice(0, 1).arrayBuffer(), /range ignored for large file/);
+});
+
+test('open returns the cached blob for an expired token without any network', async () => {
+  const meta = memoryMeta({
+    onedriveToken: { accessToken: 'expired', refreshToken: '', expiresAt: 1 },
+    onedriveRoot: { driveId: 'drive-1', itemId: 'folder-1', path: 'Music', name: 'Music' },
+  });
+  const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/mpeg' });
+  const reads = [];
+  const cache = {
+    async read(key) {
+      reads.push(key);
+      return key === 'onedrive:a.mp3' ? blob : null;
+    },
+    async write() {},
+  };
+  let fetches = 0;
+  const source = makeSource({
+    meta,
+    cache,
+    fetchImpl: async () => {
+      fetches += 1;
+      throw new Error('unexpected fetch');
+    },
+  });
+
+  await source.restore();
+  assert.equal(source.permission(), 'prompt');
+
+  const opened = await source.open('a.mp3');
+  assert.equal(opened.file, blob);
+  assert.equal(fetches, 0);
+  assert.deepEqual(reads, ['onedrive:a.mp3']);
+});
+
+test('open rejects with authRequired when the token expired and nothing is cached', async () => {
+  const meta = memoryMeta({
+    onedriveToken: { accessToken: 'expired', refreshToken: '', expiresAt: 1 },
+    onedriveRoot: { driveId: 'drive-1', itemId: 'folder-1', path: 'Music', name: 'Music' },
+  });
+  const cache = {
+    async read() {
+      return null;
+    },
+    async write() {},
+  };
+  let fetches = 0;
+  const source = makeSource({
+    meta,
+    cache,
+    fetchImpl: async () => {
+      fetches += 1;
+      throw new Error('unexpected fetch');
+    },
+  });
+
+  await source.restore();
+  await assert.rejects(
+    source.open('a.mp3'),
+    (error) => error.message === t('error.onedrive.authRequired'),
+  );
+  assert.equal(fetches, 0);
 });

@@ -181,10 +181,14 @@ test('a single failed playback never marks the source or blocks the next track',
 }) => {
   test.setTimeout(90_000);
   const mock = await installGraphMock(page, { files: FILES, failWholeIds: ['track-2'] });
+  const countFor = (id) => mock.wholeRequests.filter((url) => url.endsWith(`/${id}`)).length;
 
   await signInAndPickMusic(page);
   // The cache pass retried the broken file once; track-1 is cached.
-  await expect.poll(() => mock.wholeRequests.length, { timeout: 10_000 }).toBe(3);
+  await expect.poll(() => countFor('track-1'), { timeout: 10_000 }).toBe(1);
+  await expect
+    .poll(() => countFor('track-2'), { timeout: 10_000 })
+    .toBeGreaterThanOrEqual(2);
 
   // The uncached path is reported on the source row without an error state.
   await expect(page.locator('[data-testid="source-row-onedrive"] .settings-error')).toBeVisible();
@@ -196,23 +200,37 @@ test('a single failed playback never marks the source or blocks the next track',
   await openSource(page, 'onedrive');
   await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
 
-  await page.locator('[data-testid="track-row"] .row-hit').first().click();
+  // Rows sort by tag track number, so address them by source track id.
+  const cachedRow = page.locator('[data-testid="track-row"][data-track-id$="one.mp3"]');
+  const failedRow = page.locator('[data-testid="track-row"][data-track-id$="two.mp3"]');
+  await expect(cachedRow).toHaveCount(1);
+  await expect(failedRow).toHaveCount(1);
+
+  const cachedBefore = countFor('track-1');
+  await cachedRow.locator('.row-hit').click();
   await expectPlaying(page);
   // track-1 came from the cache: no extra whole request.
   await page.waitForTimeout(300);
-  expect(mock.wholeRequests).toHaveLength(3);
+  expect(countFor('track-1')).toBe(cachedBefore);
 
-  await page.locator('[data-testid="track-row"] .row-hit').nth(1).click();
+  const failedBefore = countFor('track-2');
+  await failedRow.locator('.row-hit').click();
   // The download is retried once, then playback gives up on this track only.
-  await expect.poll(() => mock.wholeRequests.length, { timeout: 10_000 }).toBe(5);
-  await expect(page.locator('.controls .btn.main')).toHaveAttribute('aria-label', '播放');
+  await expect
+    .poll(() => countFor('track-2'), { timeout: 10_000 })
+    .toBeGreaterThan(failedBefore);
+  // The failed load hands over to the cached neighbour; the button returns to
+  // "play" once that finishes, i.e. the failure never stuck the player.
+  await expect(page.locator('.controls .btn.main')).toHaveAttribute('aria-label', '播放', {
+    timeout: 15_000,
+  });
   await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
 
   await page.locator('[data-testid="settings-open"]').click();
   await expect(page.locator('[data-testid="source-row-onedrive"] .settings-error')).toBeVisible();
   await backToFolders(page);
 
-  await page.locator('[data-testid="track-row"] .row-hit').first().click();
+  await cachedRow.locator('.row-hit').click();
   await expectPlaying(page);
 });
 

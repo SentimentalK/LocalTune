@@ -2103,6 +2103,11 @@ export class Store extends EventTarget {
       this.log('loadfail', {
         error: String(error?.cause?.message ?? error?.message ?? error),
       });
+      // A missing grant is also reported on the source row, so the reconnect
+      // action is reachable from the library without a silent dead end.
+      if (kindOfTrack(track) === 'onedrive' && this.onedrive.permission() !== 'granted') {
+        this._refreshSource('onedrive', { error: t('error.onedrive.authRequired') });
+      }
       this._emit();
       return false;
     } finally {

@@ -9,6 +9,11 @@ import { formatTime } from '../core/selectors.js';
 import { subdirsOf, tracksDirect, tracksUnder } from '../core/folders.js';
 import { runSearch } from '../core/search.js';
 import { activeLineIndex } from '../core/lyrics/lrc.js';
+import {
+  libraryVisible,
+  sourceNeedsReconnect,
+  visibleSources,
+} from '../core/library.js';
 import { LYRICS_ENABLED } from '../core/flags.js';
 import { el, icon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
 import { createSettingsView } from './settings.js';
@@ -201,7 +206,11 @@ function trackRow(track, { now, onActivate, onMore }) {
     ],
   );
   const more = moreButton(track, onMore);
-  const row = el('li', { class: now ? 'row now' : 'row', 'data-testid': 'track-row' }, [hit, more]);
+  const row = el(
+    'li',
+    { class: now ? 'row now' : 'row', 'data-testid': 'track-row', 'data-track-id': track.id },
+    [hit, more],
+  );
   bindRowMenu(row, track, more, onMore);
   return row;
 }
@@ -285,8 +294,12 @@ function pinRowParts({ pinned, pin = null, testId, onToggle }) {
   return { status, button };
 }
 
-/** Source root row: opens the first level of that source's folder tree. */
-function sourceRow({ id, label, count, onOpen }) {
+/**
+ * Source root row: opens the first level of that source's folder tree. An
+ * expired grant keeps the row (cached tracks are still playable) and adds the
+ * reconnect action outside the hit button, so it never navigates.
+ */
+function sourceRow({ id, label, count, onOpen, needsReconnect = false, onReconnect = null }) {
   const hit = el(
     'button',
     {
@@ -303,7 +316,22 @@ function sourceRow({ id, label, count, onOpen }) {
       ]),
     ],
   );
-  return el('li', { class: 'row' }, [hit]);
+  if (!needsReconnect) return el('li', { class: 'row' }, [hit]);
+  const note = el('div', { class: 'row-note' }, [
+    el('span', {
+      class: 'muted',
+      'data-testid': `source-hint-${id}`,
+      text: t('library.expiredHint'),
+    }),
+    el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': `source-reconnect-${id}`,
+      text: t('library.reconnect'),
+      onclick: onReconnect,
+    }),
+  ]);
+  return el('li', { class: 'row has-note' }, [hit, note]);
 }
 
 function folderSection(headerLabel, countLabel, children) {
@@ -741,12 +769,6 @@ export function mountUi(root, store, sw) {
     if (error) setText(ui.errorBox, typeof error === 'string' ? error : error.message ?? String(error));
   }
 
-  function sourcePermission(state, track) {
-    const kind = track?.source === 'onedrive' ? 'onedrive' : 'local';
-    const row = (state.sources ?? []).find((item) => item.id === kind);
-    return row?.permission ?? 'none';
-  }
-
   function renderPlayer(state) {
     const { current, queue } = state;
     const track = current.track;
@@ -782,7 +804,7 @@ export function mountUi(root, store, sw) {
     }
     setHidden(ui.playIcon, playing);
     setHidden(ui.pauseIcon, !playing);
-    ui.playButton.disabled = !track || sourcePermission(state, track) !== 'granted';
+    ui.playButton.disabled = !track;
     if (LYRICS_ENABLED) ui.lyricsButton.disabled = !track;
 
     ui.shuffleButton.classList.toggle('is-on', queue.shuffle);
@@ -1109,17 +1131,25 @@ export function mountUi(root, store, sw) {
     ]);
   }
 
+  /** Refresh the grant when only the token expired; sign in when signed out. */
+  function reconnectAction(row) {
+    return () =>
+      run(row?.permission === 'prompt' ? store.reauthenticateOneDrive() : store.connectOneDrive());
+  }
+
   function renderFolders(state) {
     if (folder.source === null) {
       const rows = [];
-      for (const row of state.sources ?? []) {
-        if (row.permission !== 'granted') continue;
+      for (const row of visibleSources(state.sources)) {
         const list = kindTracks(state, row.id);
+        const needsReconnect = sourceNeedsReconnect(row);
         rows.push(
           sourceRow({
             id: row.id,
             label: sourceDisplayName(state, row.id),
             count: list.length,
+            needsReconnect,
+            onReconnect: needsReconnect ? reconnectAction(row) : null,
             onOpen: () => {
               folder = { source: row.id, dir: '' };
               render(store.state);
@@ -1182,6 +1212,21 @@ export function mountUi(root, store, sw) {
     );
 
     const children = [folderHeader(state, kind, dir, all)];
+    const sourceState = (state.sources ?? []).find((row) => row.id === kind) ?? null;
+    if (sourceNeedsReconnect(sourceState)) {
+      children.push(
+        el('p', { class: 'alert', 'data-testid': `folder-reconnect-${kind}` }, [
+          el('span', { text: t('library.expiredHint') }),
+          el('button', {
+            class: 'btn-pill ghost',
+            type: 'button',
+            'data-testid': `folder-reconnect-button-${kind}`,
+            text: t('library.reconnect'),
+            onclick: reconnectAction(sourceState),
+          }),
+        ]),
+      );
+    }
     if (subs.length) {
       children.push(el('h3', { class: 'folder-subhead', text: t('folders.subfolders') }));
       children.push(el('ul', { class: 'rows' }, dirRows));
@@ -1310,7 +1355,9 @@ export function mountUi(root, store, sw) {
     }
     const currentId = state.current.track?.id ?? null;
     const queueView = state.view === 'queue';
-    const permissions = (state.sources ?? []).map((row) => row.permission).join(',');
+    const permissions = (state.sources ?? [])
+      .map((row) => `${row.permission}:${row.trackCount ?? 0}`)
+      .join(',');
     const rebuild =
       state.view !== last.view ||
       state.tracks !== last.tracks ||
@@ -1352,7 +1399,7 @@ export function mountUi(root, store, sw) {
       return;
     }
 
-    if (!(state.sources ?? []).some((row) => row.permission === 'granted')) {
+    if (!libraryVisible(state)) {
       ui.panel.replaceChildren(renderEmpty(state));
       return;
     }
