@@ -32,7 +32,7 @@ test('the header close button leaves settings', async ({ page }) => {
   await expect(page.locator('[data-testid="search-open"]')).toBeHidden();
   await expect(page.locator('[data-testid="vip-open"]')).toBeHidden();
   await expect(page.locator('[data-testid="settings-close"]')).toBeVisible();
-  await expect(page.locator('.settings-head')).toHaveCount(0);
+  await expect(page.locator('.settings-view h2')).toHaveCount(0);
 
   await page.locator('[data-testid="settings-close"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();

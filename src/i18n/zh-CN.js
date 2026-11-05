@@ -278,7 +278,7 @@ export default {
   'playlists.source.spotify': 'Spotify',
   'playlists.source.netease': '网易云音乐',
   'playlists.source.qq': 'QQ 音乐',
-  'playlists.error.needApiKey': '请先在 设置 → 关于 里填入 YouTube API key',
+  'playlists.error.needApiKey': '请先在 VIP → 歌单解析设置里填入 YouTube API key',
   'playlists.error.youtubeFailed': 'YouTube 请求失败（{status}）',
   'playlists.error.proxyFailed': '歌单代理请求失败（{status}）',
   'playlists.error.proxyBadResponse': '歌单代理返回了无法识别的响应',

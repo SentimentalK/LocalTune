@@ -566,27 +566,10 @@ time {
   gap: 10px;
 }
 
-.vip-playlist-settings .about-hint {
-  color: var(--muted);
-}
-
 .settings-view {
   display: flex;
   flex-direction: column;
   gap: 28px;
-}
-
-.settings-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 2px 2px 0;
-}
-
-.settings-head h2 {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
 }
 
 .icon-btn {
@@ -1712,21 +1695,22 @@ textarea.text-input {
   min-height: 96px;
 }
 
-.about-field {
+.settings-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-bottom: 10px;
 }
 
-.about-field label {
+.settings-field label {
   color: var(--muted);
   font-size: 12px;
 }
 
-.about-hint {
+.settings-field-hint {
   margin: 0;
   font-size: 12px;
+  color: var(--muted);
 }
 
 @media (max-width: 720px) {

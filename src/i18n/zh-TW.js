@@ -278,7 +278,7 @@ export default {
   'playlists.source.spotify': 'Spotify',
   'playlists.source.netease': '網易雲音樂',
   'playlists.source.qq': 'QQ 音樂',
-  'playlists.error.needApiKey': '請先在 設定 → 關於 裡填入 YouTube API key',
+  'playlists.error.needApiKey': '請先在 VIP → 歌單解析設定裡填入 YouTube API key',
   'playlists.error.youtubeFailed': 'YouTube 請求失敗（{status}）',
   'playlists.error.proxyFailed': '歌單代理請求失敗（{status}）',
   'playlists.error.proxyBadResponse': '歌單代理回傳了無法辨識的回應',

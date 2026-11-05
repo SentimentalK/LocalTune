@@ -661,7 +661,7 @@ export function createPlaylistSettings(store)  // → { node, render(state) }；
 
 `sw` 是 `registerServiceWorker()` 的返回值（`{ applyUpdate, checkForUpdate }`），UI 只通过它触发更新，不直接碰 `navigator.serviceWorker`。
 
-设置视图是全屏视图（`state.view === 'settings'`），不重建壳。它没有自己的标题/返回头：设置视图没有 `.settings-head`，返回由头部 `settings-close` 接管，`.scan` 绿条在设置里也保持可见：
+设置视图是全屏视图（`state.view === 'settings'`），不重建壳。它没有标题/返回头（没有 Settings 标题，返回由头部 `settings-close` 接管），`.scan` 绿条在设置里也保持可见：
 
 - 头部只有四个动作，顺序固定为 `search-open|vip-open|settings-open|settings-close`。`default` 视图显示前三个、隐藏关闭；`settings` 与 `vip` 视图只显示 `settings-close`（落在齿轮原来的槽位），点击一律 `store.setView('folders')`。三态由 `applyHeaderMode(state)` 一处切换，渲染分支不再各自 `setHidden`。头部子节点顺序为 `brand(h1 + #status)`、`.top-right`、`.scan`；品牌区只有 `h1 LocalTune` 与一行 `#status` 小字，`#status` 在未 ready 时显示 `common.loading`，扫描/缓存/迁移时显示对应进度，ready 且无进度时写空并被隐藏。`.top` 常驻 1px 底边线（`box-shadow: inset 0 -1px 0 var(--line)`），扫描绿条（`.scan`，绝对定位 `bottom: 0`、3px 高）覆盖其上，settings / vip 视图同样保有这条线。
 - 六张卡（`settings-section-library|background|storage|playback|language|about`，OneDrive picker 另有独立 card）只创建一次；`render(state)` 只改文本、数值、chip 与 disabled，不重建节点。顺序固定为曲库 → picker → 后台播放 → 存储 → 播放 → 语言 → 关于。

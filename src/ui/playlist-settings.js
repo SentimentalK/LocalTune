@@ -41,10 +41,10 @@ export function createPlaylistSettings(store) {
   });
 
   function field(input, labelKey, hintKey) {
-    return el('div', { class: 'about-field' }, [
+    return el('div', { class: 'settings-field' }, [
       el('label', { for: input.id, text: t(labelKey) }),
       input,
-      el('p', { class: 'about-hint muted', text: t(hintKey) }),
+      el('p', { class: 'settings-field-hint muted', text: t(hintKey) }),
     ]);
   }
 

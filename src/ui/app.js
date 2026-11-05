@@ -717,9 +717,6 @@ export function mountUi(root, store, sw) {
     ui.settingsView.node.addEventListener('toast', (event) => {
       showToast(event.detail?.text ?? '');
     });
-    ui.playlistView.node.addEventListener('toast', (event) => {
-      showToast(event.detail?.text ?? '');
-    });
     ui.vipView.node.addEventListener('toast', (event) => {
       showToast(event.detail?.text ?? '');
     });

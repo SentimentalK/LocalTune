@@ -295,7 +295,7 @@ export default {
   'playlists.source.spotify': 'Spotify',
   'playlists.source.netease': 'NetEase',
   'playlists.source.qq': 'QQ Music',
-  'playlists.error.needApiKey': '先に 設定 → このアプリについて で YouTube API キーを入力してください',
+  'playlists.error.needApiKey': '先に VIP → プレイリスト解決の設定 で YouTube API キーを入力してください',
   'playlists.error.youtubeFailed': 'YouTube へのリクエストに失敗しました（{status}）',
   'playlists.error.proxyFailed': 'プレイリストプロキシに失敗しました（{status}）',
   'playlists.error.proxyBadResponse': 'プレイリストプロキシから想定外の応答が返りました',

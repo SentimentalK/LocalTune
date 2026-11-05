@@ -289,7 +289,7 @@ export default {
   'playlists.source.spotify': 'Spotify',
   'playlists.source.netease': 'NetEase',
   'playlists.source.qq': 'QQ Music',
-  'playlists.error.needApiKey': 'Add a YouTube API key in Settings → About first',
+  'playlists.error.needApiKey': 'Add a YouTube API key in VIP → Playlist resolving first',
   'playlists.error.youtubeFailed': 'YouTube request failed ({status})',
   'playlists.error.proxyFailed': 'The playlist proxy failed ({status})',
   'playlists.error.proxyBadResponse': 'The playlist proxy returned an unexpected response',
