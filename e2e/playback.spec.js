@@ -119,7 +119,9 @@ test('auto-advance plays three tracks gaplessly and logs the run', async ({ page
   await page.reload();
 
   await expect(page.locator('#app h1')).toBeVisible();
-  const rows = page.locator('li.row .row-hit');
+  await page.locator('[data-testid="folder-source-local"]').click();
+  await page.locator('[data-testid="folder-dir-Music"]').click();
+  const rows = page.locator('[data-testid="track-row"] .row-hit');
   await expect(rows).toHaveCount(3);
   const nowTitle = page.locator('.player .meta h2');
   await expect(nowTitle).toHaveText('a');

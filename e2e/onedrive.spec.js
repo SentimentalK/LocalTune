@@ -29,9 +29,10 @@ test('OneDrive sign-in, folder pick, sync and playback', async ({ page }) => {
   await expect(page.locator('[data-testid="source-row-onedrive"]')).toContainText('2');
 
   await page.locator('[data-testid="settings-back"]').click();
-  await expect(page.locator('#tab-tracks')).toBeVisible();
+  await expect(page.locator('#tab-folders')).toBeVisible();
 
-  await page.locator('.row-hit').first().click();
+  await page.locator('[data-testid="folder-source-onedrive"]').click();
+  await page.locator('[data-testid="track-row"] .row-hit').first().click();
   const playButton = page.locator('.controls .btn.main');
   await expect(playButton).toHaveAttribute('aria-label', '暂停');
   await expect

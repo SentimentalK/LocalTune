@@ -191,8 +191,11 @@ test('rescan re-matches missing playlist rows and toasts the count', async ({ pa
   await seedLibrary(page);
   await page.reload();
 
-  await expect(page.locator('li.row .row-hit')).toHaveCount(2);
+  await page.locator('[data-testid="folder-source-local"]').click();
+  await page.locator('[data-testid="folder-dir-Music"]').click();
+  await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
 
+  await page.locator('#tab-playlists').click();
   await page.locator('[data-testid="import-open"]').click();
   await expect(page.locator('[data-testid="import-dialog"]')).toBeVisible();
   await page.locator('[data-testid="import-name"]').fill('补齐测试');

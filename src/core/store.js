@@ -73,7 +73,7 @@ import { installMediaSession, syncMediaSession } from './mediaSession.js';
 import { normalizeProxyUrl } from './playlist/sources/proxy.js';
 import { t } from '../i18n/index.js';
 
-const VIEWS = new Set(['tracks', 'albums', 'artists', 'folders', 'playlists', 'queue', 'settings', 'lyrics']);
+const VIEWS = new Set(['folders', 'playlists', 'queue', 'search', 'settings']);
 const MEDIA_SYNC_INTERVAL = 1000;
 const LYRICS_CACHE_LIMIT = 20;
 const REPLAYGAIN_HEAD_BYTES = 1 << 19;
@@ -209,7 +209,7 @@ export class Store extends EventTarget {
 
     this._state = {
       ready: false,
-      view: 'tracks',
+      view: 'folders',
       pendingView: null,
       tracks: [],
       queue: { tracks: [], index: -1, shuffle: false, repeat: 'off' },
@@ -1032,6 +1032,25 @@ export class Store extends EventTarget {
     for (const kind of SOURCE_KINDS) this._refreshSource(kind);
     this._emit();
     this._savePlayback();
+  }
+
+  /** Empty the play queue; the library and the playing file stay untouched. */
+  clearQueue() {
+    if (!this.queue.tracks.length) return;
+    this.player?.pause();
+    this._loadedId = null;
+    this.queue = createQueue([]);
+    this._reflectQueue();
+    this._state.current = {
+      ...this._state.current,
+      track: null,
+      playing: false,
+      position: 0,
+      duration: 0,
+    };
+    this._emit();
+    this._savePlayback();
+    this._syncMediaSession(true);
   }
 
   /** Index, cover, cached-audio and browser quota figures for the settings view. */

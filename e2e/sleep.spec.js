@@ -92,7 +92,9 @@ test('sleep timer set to end of track stops after one song', async ({ page }) =>
   await seedLibrary(page);
   await page.reload();
 
-  const rows = page.locator('li.row .row-hit');
+  await page.locator('[data-testid="folder-source-local"]').click();
+  await page.locator('[data-testid="folder-dir-Music"]').click();
+  const rows = page.locator('[data-testid="track-row"] .row-hit');
   await expect(rows).toHaveCount(2);
 
   await page.locator('[data-testid="settings-open"]').click();

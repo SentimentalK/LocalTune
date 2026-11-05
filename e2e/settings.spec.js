@@ -38,8 +38,8 @@ test('settings view covers library, storage, language and about', async ({ page 
   await page.locator('[data-testid="settings-back"]').click();
 
   await expect(page.locator('[data-testid="settings-section-library"]')).toBeHidden();
-  await expect(page.locator('#tab-tracks')).toBeVisible();
-  await expect(page.locator('#tab-tracks')).toHaveText('Songs');
+  await expect(page.locator('#tab-folders')).toBeVisible();
+  await expect(page.locator('#tab-folders')).toHaveText('Folders');
   expect(await page.evaluate(() => document.documentElement.lang)).toBe('en');
 
   // Switch back to the configured Chinese locale for the remaining suite.
@@ -49,7 +49,7 @@ test('settings view covers library, storage, language and about', async ({ page 
   await page.locator('[data-testid="settings-back"]').click();
 
   await expect(page.locator('[data-testid="settings-section-library"]')).toBeHidden();
-  await expect(page.locator('#tab-tracks')).toBeVisible();
-  await expect(page.locator('#tab-tracks')).toHaveText('歌曲');
+  await expect(page.locator('#tab-folders')).toBeVisible();
+  await expect(page.locator('#tab-folders')).toHaveText('文件夹');
   expect(await page.evaluate(() => document.documentElement.lang)).toBe('zh-CN');
 });

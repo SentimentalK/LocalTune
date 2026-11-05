@@ -81,7 +81,7 @@ async function seedLibrary(page) {
   }, TRACKS);
 }
 
-const firstRowTitle = (page) => page.locator('li.row b').first();
+const searchRows = (page) => page.locator('[data-testid="track-row"]');
 
 test('search filters the library and auto lists sort by stats', async ({ page }) => {
   await page.addInitScript(() => {
@@ -97,33 +97,36 @@ test('search filters the library and auto lists sort by stats', async ({ page })
   await seedLibrary(page);
   await page.reload();
 
-  const rows = page.locator('li.row');
-  await expect(rows).toHaveCount(3);
+  // The folders view opens on the source list; the seeds live in Music/.
+  await page.locator('[data-testid="folder-source-local"]').click();
+  await page.locator('[data-testid="folder-dir-Music"]').click();
+  await expect(searchRows(page)).toHaveCount(3);
 
-  // Search inside the "all" list.
+  // Search covers the whole library, whatever the folder position.
+  await page.locator('[data-testid="search-open"]').click();
   const input = page.locator('[data-testid="search-input"]');
   await input.fill('周');
-  await expect(rows).toHaveCount(1);
-  await expect(page.locator('li.row b')).toHaveText('晴天');
+  await expect(searchRows(page)).toHaveCount(1);
+  await expect(page.locator('[data-testid="track-row"] b')).toHaveText('晴天');
   await expect(page.locator('[data-testid="search-count"]')).toContainText('1');
   await expect(page.locator('[data-testid="search-group-artist"]')).toBeVisible();
 
   await page.locator('[data-testid="search-clear"]').click();
-  await expect(rows).toHaveCount(3);
+  await expect(searchRows(page)).toHaveCount(0);
   await expect(input).toHaveValue('');
 
-  await page.locator('[data-testid="auto-list-most"]').click();
-  await expect(firstRowTitle(page)).toHaveText('晴天');
+  // Auto lists live under Playlists and open as a detail panel.
+  await page.locator('#tab-playlists').click();
+  await page.locator('[data-testid="auto-list-open-most"]').click();
+  const detailRows = page.locator('[data-testid="auto-list-detail"] [data-testid="track-row"]');
+  await expect(detailRows.first().locator('b')).toHaveText('晴天');
 
-  await page.locator('[data-testid="auto-list-never"]').click();
-  await expect(rows).toHaveCount(1);
-  await expect(page.locator('li.row b')).toHaveText('江南');
+  await page.locator('[data-testid="auto-list-open-never"]').click();
+  await expect(detailRows).toHaveCount(1);
+  await expect(detailRows.first().locator('b')).toHaveText('江南');
 
-  await page.locator('[data-testid="auto-list-recent"]').click();
-  await expect(firstRowTitle(page)).toHaveText('夜に駆ける');
-
-  await page.locator('[data-testid="auto-list-all"]').click();
-  await expect(rows).toHaveCount(3);
+  await page.locator('[data-testid="auto-list-open-recent"]').click();
+  await expect(detailRows.first().locator('b')).toHaveText('夜に駆ける');
 });
 
 test('search shows an empty state and Escape clears the query', async ({ page }) => {
@@ -140,15 +143,14 @@ test('search shows an empty state and Escape clears the query', async ({ page })
   await seedLibrary(page);
   await page.reload();
 
-  const rows = page.locator('li.row');
-  await expect(rows).toHaveCount(3);
-
+  await page.locator('[data-testid="search-open"]').click();
   const input = page.locator('[data-testid="search-input"]');
   await input.fill('不存在');
   await expect(page.locator('[data-testid="search-empty"]')).toBeVisible();
-  await expect(rows).toHaveCount(0);
+  await expect(searchRows(page)).toHaveCount(0);
 
   await input.press('Escape');
-  await expect(rows).toHaveCount(3);
   await expect(input).toHaveValue('');
+  await expect(page.locator('[data-testid="search-empty"]')).toBeHidden();
+  await expect(page.locator('[data-testid="search-count"]')).toBeHidden();
 });

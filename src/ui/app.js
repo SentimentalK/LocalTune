@@ -5,11 +5,11 @@
  * timeupdate does not recreate a thousand-row library.
  */
 
-import { groupByAlbum, groupByArtist, formatTime } from '../core/selectors.js';
-import { groupByFolder } from '../core/folders.js';
+import { formatTime } from '../core/selectors.js';
+import { subdirsOf, tracksDirect, tracksUnder } from '../core/folders.js';
 import { runSearch } from '../core/search.js';
-import { recentlyAdded, mostPlayed, neverPlayed } from '../core/stats.js';
 import { activeLineIndex } from '../core/lyrics/lrc.js';
+import { LYRICS_ENABLED } from '../core/flags.js';
 import { el, icon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
 import { createSettingsView } from './settings.js';
 import { createImportDialog, createPlaylistView } from './playlist.js';
@@ -17,9 +17,6 @@ import { openTagInfo } from './diagnostics.js';
 import { applyDocumentLang, getLocale, resolveLanguage, setLocale, t } from '../i18n/index.js';
 
 const TABS = [
-  { id: 'tracks', labelKey: 'tabs.tracks' },
-  { id: 'albums', labelKey: 'tabs.albums' },
-  { id: 'artists', labelKey: 'tabs.artists' },
   { id: 'folders', labelKey: 'tabs.folders' },
   { id: 'playlists', labelKey: 'tabs.playlists' },
   { id: 'queue', labelKey: 'tabs.queue' },
@@ -32,16 +29,6 @@ const REPEAT_LABEL_KEY = {
 };
 const REPEAT_BADGE = { off: '', all: '∞', one: '1' };
 const SEEK_STEP = 5;
-
-/** Auto lists in display order; ids double as `autoList.<id>` keys. */
-const AUTO_LISTS = ['all', 'recent', 'most', 'never'];
-
-const AUTO_LIST_TESTID = {
-  all: 'auto-list-all',
-  recent: 'auto-list-recent',
-  most: 'auto-list-most',
-  never: 'auto-list-never',
-};
 
 /** Search groups in priority order; ids double as `search.group*` keys. */
 const SEARCH_GROUPS = [
@@ -214,12 +201,12 @@ function trackRow(track, { now, onActivate, onMore }) {
     ],
   );
   const more = moreButton(track, onMore);
-  const row = el('li', { class: now ? 'row now' : 'row' }, [hit, more]);
+  const row = el('li', { class: now ? 'row now' : 'row', 'data-testid': 'track-row' }, [hit, more]);
   bindRowMenu(row, track, more, onMore);
   return row;
 }
 
-function queueRow(track, index, { now, onActivate, onRemove, onMore }) {
+function queueRow(track, index, { now, onActivate, onRemove }) {
   const hit = el(
     'button',
     {
@@ -245,9 +232,7 @@ function queueRow(track, index, { now, onActivate, onRemove, onMore }) {
     'aria-label': t('aria.removeFromQueue', { title: track.title }),
     onclick: onRemove,
   });
-  const more = moreButton(track, onMore);
-  const row = el('li', { class: now ? 'row queue now' : 'row queue' }, [hit, remove, more]);
-  bindRowMenu(row, track, more, onMore);
+  const row = el('li', { class: now ? 'row queue now' : 'row queue' }, [hit, remove]);
   return row;
 }
 
@@ -263,94 +248,68 @@ function pinIcon() {
   return svg;
 }
 
-function folderRow(group, { onPlay, onEnqueue, onPin, pinned = false, pin = null }) {
-  const label = group.dir || t('common.rootFolder');
+/**
+ * Pin control for one directory. The status text sits next to the button so the
+ * row reports progress and the pinned state without a second render pass.
+ */
+function pinRowParts({ pinned, pin = null, testId, onToggle }) {
+  const status = el('span', { class: 'row-pin-status' });
+  if (pin?.running) {
+    setText(
+      status,
+      t('settings.storage.pinning', { done: pin.done ?? 0, total: pin.total ?? 0 }),
+    );
+  } else if (pin?.error) {
+    setText(status, pin.error);
+  } else if (pinned) {
+    setText(status, t('settings.storage.pinned'));
+  } else {
+    setHidden(status, true);
+  }
+
+  const button = el(
+    'button',
+    {
+      class: pinned ? 'row-pin is-on' : 'row-pin',
+      type: 'button',
+      'data-testid': testId,
+      'aria-pressed': String(pinned),
+      'aria-label': pinned ? t('settings.storage.unpin') : t('settings.storage.pin'),
+      'title': pinned ? t('settings.storage.unpin') : t('settings.storage.pin'),
+      disabled: Boolean(pin?.running),
+      onclick: onToggle,
+    },
+    [pinIcon()],
+  );
+
+  return { status, button };
+}
+
+/** Source root row: opens the first level of that source's folder tree. */
+function sourceRow({ id, label, count, onOpen }) {
   const hit = el(
     'button',
     {
       class: 'row-hit',
       type: 'button',
-      'aria-label': t('aria.playFolder', { name: label }),
-      onclick: onPlay,
+      'data-testid': `folder-source-${id}`,
+      onclick: onOpen,
     },
     [
       artNode(null),
       el('span', { class: 't' }, [
         el('b', { text: label }),
-        el('span', { text: t('common.trackCount', { count: group.count }) }),
+        el('span', { text: t('common.trackCount', { count }) }),
       ]),
     ],
   );
-  const add = el('button', {
-    class: 'row-add',
-    type: 'button',
-    text: t('common.addToQueue'),
-    'aria-label': t('aria.enqueueFolder', { name: label }),
-    onclick: onEnqueue,
-  });
-
-  const pinState = pin ?? {};
-  const pinStatus = el('span', { class: 'row-pin-status' });
-  if (pinState.running) {
-    setText(
-      pinStatus,
-      t('settings.storage.pinning', {
-        done: pinState.done ?? 0,
-        total: pinState.total ?? 0,
-      }),
-    );
-  } else if (pinState.error) {
-    setText(pinStatus, pinState.error);
-  } else if (pinned) {
-    setText(pinStatus, t('settings.storage.pinned'));
-  } else {
-    setHidden(pinStatus, true);
-  }
-
-  const pinButton = el(
-    'button',
-    {
-      class: pinned ? 'row-pin is-on' : 'row-pin',
-      type: 'button',
-      'data-testid': `pin-${group.dir || 'root'}`,
-      'aria-pressed': String(pinned),
-      'aria-label': pinned ? t('settings.storage.unpin') : t('settings.storage.pin'),
-      'title': pinned ? t('settings.storage.unpin') : t('settings.storage.pin'),
-      disabled: Boolean(pinState.running),
-      onclick: onPin,
-    },
-    [pinIcon()],
-  );
-
-  return el('li', { class: pinned ? 'row is-pinned' : 'row' }, [
-    hit,
-    pinStatus,
-    add,
-    pinButton,
-  ]);
+  return el('li', { class: 'row' }, [hit]);
 }
 
-function listSection(headerLabel, countLabel, rows) {
-  return el('section', { class: 'list' }, [
-    el('header', {}, [
-      el('span', { text: headerLabel }),
-      el('span', { text: countLabel }),
-    ]),
-    el('ul', { class: 'rows' }, rows),
-  ]);
-}
-
-function cardItem({ title, meta, cover, label, onPlay }) {
-  return el('li', {}, [
-    el(
-      'button',
-      { class: 'card-item', type: 'button', 'aria-label': label, onclick: onPlay },
-      [
-        artNode(cover, 'art'),
-        el('b', { text: title }),
-        el('span', { class: 'card-meta', text: meta }),
-      ],
-    ),
+function folderSection(headerLabel, countLabel, children) {
+  return el('section', { class: 'list folder-view' }, [
+    el('header', {}, [el('span', { text: headerLabel }), el('span', { text: countLabel })]),
+    ...children,
   ]);
 }
 
@@ -380,6 +339,17 @@ function createShell(store, sw) {
   ]);
   const errorBox = el('p', { class: 'alert', role: 'alert' });
 
+  const searchButton = el(
+    'button',
+    {
+      class: 'icon-btn',
+      type: 'button',
+      'data-testid': 'search-open',
+      'aria-label': t('search.label'),
+    },
+    [icon('search')],
+  );
+
   const settingsButton = el(
     'button',
     {
@@ -393,7 +363,7 @@ function createShell(store, sw) {
 
   const header = el('header', { class: 'top' }, [
     el('div', { class: 'brand' }, [el('h1', { text: 'LocalTune' }), status]),
-    el('div', { class: 'top-right' }, [count, sourceName, authButton, settingsButton]),
+    el('div', { class: 'top-right' }, [count, sourceName, authButton, searchButton, settingsButton]),
   ]);
 
   // ---- player card ----
@@ -454,17 +424,21 @@ function createShell(store, sw) {
     { class: 'btn', type: 'button', 'aria-label': t('player.repeatOff'), onclick: () => store.cycleRepeat() },
     [icon('repeat'), repeatBadge],
   );
-  const lyricsButton = el('button', {
-    class: 'btn-pill ghost lyrics-btn',
-    type: 'button',
-    'data-testid': 'lyrics-open',
-    text: t('lyrics.open'),
-    onclick: () => {
-      const trackId = store.state.current.track?.id ?? null;
-      store.setView('lyrics');
-      if (trackId) void store.loadLyrics(trackId);
-    },
-  });
+  // Lyrics are a build-time opt-in; with the flag off (the default) this whole
+  // node is folded away by esbuild and the controls keep five buttons.
+  const lyricsButton = LYRICS_ENABLED
+    ? el('button', {
+        class: 'btn-pill ghost lyrics-btn',
+        type: 'button',
+        'data-testid': 'lyrics-open',
+        text: t('lyrics.open'),
+        onclick: () => {
+          const trackId = store.state.current.track?.id ?? null;
+          store.setView('lyrics');
+          if (trackId) void store.loadLyrics(trackId);
+        },
+      })
+    : null;
   const controls = el('div', { class: 'controls' }, [
     shuffleButton,
     prevButton,
@@ -493,27 +467,22 @@ function createShell(store, sw) {
       onclick: () => store.setView(id),
     }),
   );
-  const tabs = el('div', { class: 'tabs', role: 'tablist', 'aria-label': t('aria.libraryViews') }, [
-    ...tabButtons,
-    el('button', {
-      class: 'btn-pill tabs-import',
-      type: 'button',
-      'data-testid': 'import-open',
-      text: t('playlists.import'),
-      onclick: () => importDialog.open(),
-    }),
-  ]);
+  const tabs = el('div', { class: 'tabs', role: 'tablist', 'aria-label': t('aria.libraryViews') },
+    tabButtons,
+  );
   const panel = el('div', { id: 'view-panel', role: 'tabpanel', tabindex: '-1' });
   const library = el('section', { class: 'library', 'aria-label': t('aria.library') }, [tabs, panel]);
 
   // ---- playlists ----
-  const playlistView = createPlaylistView(store);
+  // The import button lives in the playlists view now; the callback reads the
+  // dialog lazily, so creating the dialog right after this is safe.
+  const playlistView = createPlaylistView(store, { onImport: () => importDialog.open() });
   const importDialog = createImportDialog(store);
 
   // ---- settings view ----
   const settingsView = createSettingsView(store, sw);
   const settingsHost = el('div', { class: 'settings-host' }, settingsView.node);
-  const lyricsHost = el('div', { class: 'lyrics-host', hidden: true });
+  const lyricsHost = LYRICS_ENABLED ? el('div', { class: 'lyrics-host', hidden: true }) : null;
   const defaultView = el('div', { class: 'default-view' }, [
     el('div', { class: 'player-col' }, [player]),
     library,
@@ -568,6 +537,7 @@ function createShell(store, sw) {
     repeatButton,
     repeatBadge,
     lyricsButton,
+    searchButton,
     settingsButton,
     settingsView,
     settingsHost,
@@ -583,21 +553,21 @@ function createShell(store, sw) {
 }
 
 export function mountUi(root, store, sw) {
-  let prevView = 'tracks';
+  let prevView = 'folders';
   let menuNode = null;
   let menuCleanup = null;
   let toastTimer = null;
   let renderedView = null;
   let ui = createShell(store, sw);
 
-  // Search and auto lists live only in this UI closure, so a language switch
-  // (which rebuilds the shell) starts from a clean tracks view.
+  // Search and the folder position live only in this UI closure, so a language
+  // switch (which rebuilds the shell) starts from a clean folders view.
   let searchQuery = '';
-  let activeList = 'all';
   let searchResult = null;
   let searchTimer = 0;
   let searchToken = 0;
-  let tracksView = null;
+  let searchView = null;
+  let folder = { source: null, dir: '' };
   let lyricsView = null;
 
   const last = {
@@ -613,10 +583,9 @@ export function mountUi(root, store, sw) {
     pins: null,
     playlists: null,
     query: '',
-    list: 'all',
+    folderSource: null,
+    folderDir: '',
     searchResult: null,
-    lyricsSource: null,
-    lyricsLines: null,
   };
 
   // A rebuilt shell has an empty panel, so the view cache must forget
@@ -634,17 +603,16 @@ export function mountUi(root, store, sw) {
     last.pins = null;
     last.playlists = null;
     last.query = '';
-    last.list = 'all';
+    last.folderSource = null;
+    last.folderDir = '';
     last.searchResult = null;
-    last.lyricsSource = null;
-    last.lyricsLines = null;
     clearTimeout(searchTimer);
     searchTimer = 0;
     searchToken += 1;
     searchQuery = '';
-    activeList = 'all';
     searchResult = null;
-    tracksView = null;
+    searchView = null;
+    folder = { source: null, dir: '' };
     lyricsView = null;
   }
 
@@ -712,8 +680,9 @@ export function mountUi(root, store, sw) {
       if (store.state.view !== 'settings') prevView = store.state.view;
       store.setView('settings');
     });
+    ui.searchButton.addEventListener('click', () => store.setView('search'));
     ui.settingsView.node.addEventListener('settings-back', () => {
-      store.setView(prevView || 'tracks');
+      store.setView(prevView || 'folders');
     });
     ui.settingsView.node.addEventListener('toast', (event) => {
       showToast(event.detail?.text ?? '');
@@ -826,7 +795,7 @@ export function mountUi(root, store, sw) {
     setHidden(ui.playIcon, playing);
     setHidden(ui.pauseIcon, !playing);
     ui.playButton.disabled = !track || sourcePermission(state, track) !== 'granted';
-    ui.lyricsButton.disabled = !track;
+    if (LYRICS_ENABLED) ui.lyricsButton.disabled = !track;
 
     ui.shuffleButton.classList.toggle('is-on', queue.shuffle);
     ui.shuffleButton.setAttribute('aria-pressed', String(queue.shuffle));
@@ -893,15 +862,7 @@ export function mountUi(root, store, sw) {
     });
   }
 
-  // ---- tracks view: search + auto lists ----
-  function listTracks(state) {
-    const tracks = state.tracks ?? [];
-    if (activeList === 'recent') return recentlyAdded(tracks, state.stats, 50);
-    if (activeList === 'most') return mostPlayed(tracks, state.stats, 50);
-    if (activeList === 'never') return neverPlayed(tracks, state.stats);
-    return tracks;
-  }
-
+  // ---- search view ----
   function rerunQuery() {
     searchToken += 1;
     const token = searchToken;
@@ -911,11 +872,10 @@ export function mountUi(root, store, sw) {
       render(store.state);
       return;
     }
-    const listId = activeList;
     run(
-      runSearch(listTracks(store.state), query).then((result) => {
+      runSearch(store.state.tracks ?? [], query).then((result) => {
         if (token !== searchToken) return;
-        searchResult = { query, listId, items: result.items, total: result.total };
+        searchResult = { query, items: result.items, total: result.total };
         render(store.state);
       }),
     );
@@ -927,14 +887,8 @@ export function mountUi(root, store, sw) {
     rerunQuery();
   }
 
-  function selectList(id) {
-    if (activeList === id) return;
-    activeList = id;
-    rerunQuery();
-  }
-
-  function ensureTracksView() {
-    if (tracksView) return tracksView;
+  function ensureSearchView() {
+    if (searchView) return searchView;
 
     const input = el('input', {
       class: 'search-input',
@@ -955,26 +909,10 @@ export function mountUi(root, store, sw) {
         setQuery('');
       },
     });
-    const chipButtons = AUTO_LISTS.map((id) => ({
-      id,
-      button: el('button', {
-        class: 'segment',
-        type: 'button',
-        'data-testid': AUTO_LIST_TESTID[id],
-        'aria-pressed': 'false',
-        text: t(`autoList.${id}`),
-        onclick: () => selectList(id),
-      }),
-    }));
     const countLine = el('p', { class: 'search-count', 'data-testid': 'search-count' });
     const listBox = el('div', { class: 'search-results' });
-    const root = el('div', { class: 'tracks-view' }, [
+    const root = el('div', { class: 'search-view' }, [
       el('div', { class: 'search-bar' }, [input, clearButton]),
-      el(
-        'div',
-        { class: 'chips', 'data-testid': 'auto-lists', role: 'group', 'aria-label': t('search.label') },
-        chipButtons.map(({ button }) => button),
-      ),
       countLine,
       listBox,
     ]);
@@ -996,56 +934,28 @@ export function mountUi(root, store, sw) {
       setQuery('');
     });
 
-    tracksView = { root, input, clearButton, chipButtons, countLine, listBox };
-    return tracksView;
+    searchView = { root, input, clearButton, countLine, listBox };
+    return searchView;
   }
 
-  function renderTracksView(state) {
-    const view = ensureTracksView();
+  function renderSearch(state) {
+    const view = ensureSearchView();
     if (ui.panel.firstElementChild !== view.root) ui.panel.replaceChildren(view.root);
 
     setHidden(view.clearButton, !searchQuery);
-    for (const { id, button } of view.chipButtons) {
-      const active = id === activeList;
-      button.setAttribute('aria-pressed', String(active));
-      button.classList.toggle('is-active', active);
-    }
-
-    const currentId = state.current.track?.id ?? null;
-    const rowFor = (track) =>
-      trackRow(track, {
-        now: track.id === currentId,
-        onActivate: () => run(store.playTrack(track.id)),
-        onMore: openTrackMenu,
-      });
-
-    const base = listTracks(state);
-    if (!base.length) {
-      setHidden(view.countLine, true);
-      view.listBox.replaceChildren(
-        el('p', { class: 'muted', 'data-testid': 'auto-list-empty', text: t('autoList.empty') }),
-      );
-      return;
-    }
 
     const query = searchQuery.trim() ? searchQuery : '';
     if (!query) {
+      // A blank query shows nothing: the search bar is the whole view.
       setHidden(view.countLine, true);
-      view.listBox.replaceChildren(
-        listSection(
-          t(`autoList.${activeList}`),
-          t('common.trackCount', { count: base.length }),
-          base.map(rowFor),
-        ),
-      );
+      view.listBox.replaceChildren();
       return;
     }
 
     const result = searchResult;
-    const valid = result && result.query === query && result.listId === activeList;
-    if (!valid) {
+    if (!result || result.query !== query) {
       // The debounced search has not resolved yet; keep the previous frame's
-      // rows out of the DOM so a stale list never answers a new query.
+      // rows out of the DOM so a stale result never answers a new query.
       setHidden(view.countLine, true);
       view.listBox.replaceChildren();
       return;
@@ -1059,6 +969,14 @@ export function mountUi(root, store, sw) {
       );
       return;
     }
+
+    const currentId = state.current.track?.id ?? null;
+    const rowFor = (track) =>
+      trackRow(track, {
+        now: track.id === currentId,
+        onActivate: () => run(store.playQueue(state.tracks, track.id)),
+        onMore: openTrackMenu,
+      });
 
     const sections = [];
     for (const group of SEARCH_GROUPS) {
@@ -1074,96 +992,329 @@ export function mountUi(root, store, sw) {
     view.listBox.replaceChildren(...sections);
   }
 
-  // ---- lyrics view ----
-  function buildLyricsView() {
-    const backButton = el(
+  // ---- folders view ----
+  function trackKind(track) {
+    return track.source === 'onedrive' ? 'onedrive' : 'local';
+  }
+
+  function sourceLabel(state, kind) {
+    const row = (state.sources ?? []).find((item) => item.id === kind);
+    return row?.name || t('common.rootFolder');
+  }
+
+  function kindTracks(state, kind) {
+    return (state.tracks ?? []).filter((track) => trackKind(track) === kind);
+  }
+
+  function shuffleOf(list) {
+    const copy = list.slice();
+    for (let i = copy.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
+
+  /** Pin progress row state for one directory across every source it holds. */
+  function pinInfo(state, sources, dir) {
+    const pins = sources
+      .map((source) => (state.pins ?? []).find((pin) => pin.id === `${source}:${dir}`))
+      .filter(Boolean);
+    if (pins.some((pin) => pin.running)) {
+      return {
+        running: true,
+        done: pins.reduce((sum, item) => sum + (item.done ?? 0), 0),
+        total: pins.reduce((sum, item) => sum + (item.total ?? 0), 0),
+      };
+    }
+    return { error: pins.find((item) => item.error)?.error ?? null };
+  }
+
+  function pinToggle(list, dir) {
+    const sources = [...new Set(list.map((track) => track.source))];
+    const pinned =
+      sources.length > 0 && sources.every((source) => store.isPinned(source, dir));
+    return () => {
+      for (const source of sources) {
+        if (pinned) {
+          run(store.unpinFolder(`${source}:${dir}`));
+          continue;
+        }
+        run(
+          store.pinFolder({
+            source,
+            dir,
+            trackIds: list.filter((track) => track.source === source).map((track) => track.id),
+          }),
+        );
+      }
+    };
+  }
+
+  function pinFor(state, list, dir, testId) {
+    const sources = [...new Set(list.map((track) => track.source))];
+    const pinned =
+      sources.length > 0 && sources.every((source) => store.isPinned(source, dir));
+    const parts = pinRowParts({
+      pinned,
+      pin: pinInfo(state, sources, dir),
+      testId,
+      onToggle: pinToggle(list, dir),
+    });
+    return { pinned, parts };
+  }
+
+  function folderHeader(state, kind, dir, all) {
+    const up = el(
       'button',
       {
         class: 'icon-btn',
         type: 'button',
-        'data-testid': 'lyrics-back',
-        'aria-label': t('lyrics.back'),
-        onclick: () => store.setView('tracks'),
+        'data-testid': 'folder-up',
+        'aria-label': t('common.back'),
+        onclick: () => {
+          if (dir === '') {
+            folder = { source: null, dir: '' };
+          } else {
+            const cut = dir.lastIndexOf('/');
+            folder = { source: kind, dir: cut < 0 ? '' : dir.slice(0, cut) };
+          }
+          render(store.state);
+        },
       },
       [el('span', { class: 'back-arrow', 'aria-hidden': 'true', text: '←' })],
     );
-    const headText = el('div', { class: 'lyrics-head-text' }, [
-      el('h2', { text: t('lyrics.title') }),
-      el('p', { class: 'lyrics-track' }),
+
+    const { parts } = pinFor(state, all, dir, `pin-${dir || 'root'}`);
+
+    return el('div', { class: 'folder-head' }, [
+      up,
+      el('span', { class: 'folder-name', text: dir || sourceLabel(state, kind) }),
+      el('div', { class: 'folder-actions' }, [
+        el('button', {
+          class: 'btn-pill',
+          type: 'button',
+          'data-testid': 'folder-play-all',
+          text: t('common.playAll'),
+          disabled: !all.length,
+          onclick: () => {
+            if (all.length) run(store.playQueue(all, all[0].id));
+          },
+        }),
+        el('button', {
+          class: 'btn-pill ghost',
+          type: 'button',
+          'data-testid': 'folder-shuffle',
+          text: t('common.shufflePlay'),
+          disabled: !all.length,
+          onclick: () => {
+            if (!all.length) return;
+            const shuffled = shuffleOf(all);
+            run(store.playQueue(shuffled, shuffled[0].id));
+          },
+        }),
+        parts.button,
+      ]),
     ]);
-    const linesBox = el('div', { class: 'lyrics', 'data-testid': 'lyrics-lines' });
-    const root = el('section', { class: 'settings-view lyrics-view', 'data-testid': 'lyrics-view' }, [
-      el('div', { class: 'settings-head lyrics-head' }, [backButton, headText]),
-      linesBox,
-    ]);
-    return { root, trackLine: headText.lastElementChild, linesBox, rows: [], active: -1, key: null, linesRef: null, plain: null };
   }
 
-  function ensureLyricsView() {
-    if (!lyricsView) lyricsView = buildLyricsView();
-    if (ui.lyricsHost.firstElementChild !== lyricsView.root) {
-      ui.lyricsHost.replaceChildren(lyricsView.root);
-    }
-    return lyricsView;
-  }
-
-  function renderLyrics(state) {
-    if (state.view !== 'lyrics') return;
-    const view = ensureLyricsView();
-    const track = state.current.track;
-    setText(view.trackLine, track ? `${track.title} · ${subtitleOf(track)}` : t('player.noTrack'));
-
-    const lyrics = state.lyrics ?? {};
-    const lines = Array.isArray(lyrics.lines) ? lyrics.lines : [];
-    const key = `${lyrics.trackId ?? ''}|${lyrics.source ?? 'none'}|${lyrics.loading ? 1 : 0}`;
-    if (view.key !== key || view.linesRef !== lines || view.plain !== lyrics.plain) {
-      view.key = key;
-      view.linesRef = lines;
-      view.plain = lyrics.plain;
-      view.active = -1;
-      view.rows = [];
-      view.linesBox.replaceChildren();
-      if (lyrics.loading) {
-        view.linesBox.append(el('p', { class: 'muted', text: t('lyrics.loading') }));
-      } else if (lines.length) {
-        for (const line of lines) {
-          const node = el('p', {
-            class: 'lyric-line',
-            'data-testid': 'lyric-line',
-            'data-time': String(line.time),
-            text: line.text,
-          });
-          view.rows.push(node);
-          view.linesBox.append(node);
-        }
-      } else if (lyrics.plain) {
-        view.linesBox.append(el('pre', { 'data-testid': 'lyrics-plain', text: lyrics.plain }));
-      } else {
-        view.linesBox.append(
-          el('p', { class: 'muted', 'data-testid': 'lyrics-empty', text: t('lyrics.empty') }),
+  function renderFolders(state) {
+    if (folder.source === null) {
+      const rows = [];
+      for (const row of state.sources ?? []) {
+        if (row.permission !== 'granted') continue;
+        const list = kindTracks(state, row.id);
+        if (!list.length) continue;
+        rows.push(
+          sourceRow({
+            id: row.id,
+            label: row.name || t('common.rootFolder'),
+            count: list.length,
+            onOpen: () => {
+              folder = { source: row.id, dir: '' };
+              render(store.state);
+            },
+          }),
         );
       }
+
+      ui.panel.replaceChildren(
+        folderSection(
+          t('tabs.folders'),
+          t('common.trackCount', { count: state.tracks.length }),
+          rows.length
+            ? [el('ul', { class: 'rows' }, rows)]
+            : [el('p', { class: 'muted', 'data-testid': 'folder-empty', text: t('autoList.empty') })],
+        ),
+      );
+      return;
     }
 
-    const index = lines.length ? activeLineIndex(lines, state.current.position) : -1;
-    if (index === view.active) return;
-    const previous = view.rows[view.active];
-    if (previous) {
-      previous.classList.remove('is-active');
-      previous.removeAttribute('aria-current');
+    const kind = folder.source;
+    const dir = folder.dir;
+    const list = kindTracks(state, kind);
+    const all = tracksUnder(list, dir);
+    const direct = tracksDirect(list, dir);
+    const subs = subdirsOf(list, dir);
+
+    const dirRows = subs.map((entry) => {
+      const subTracks = tracksUnder(list, entry.dir);
+      const { pinned, parts } = pinFor(state, subTracks, entry.dir, `pin-${entry.dir}`);
+      const hit = el(
+        'button',
+        {
+          class: 'row-hit',
+          type: 'button',
+          'data-testid': `folder-dir-${entry.dir}`,
+          onclick: () => {
+            folder = { source: kind, dir: entry.dir };
+            render(store.state);
+          },
+        },
+        [
+          artNode(null),
+          el('span', { class: 't' }, [
+            el('b', { text: entry.name }),
+            el('span', { text: t('common.trackCount', { count: entry.count }) }),
+          ]),
+        ],
+      );
+      return el('li', { class: pinned ? 'row is-pinned' : 'row' }, [hit, parts.status, parts.button]);
+    });
+
+    const currentId = state.current.track?.id ?? null;
+    const trackRows = direct.map((track) =>
+      trackRow(track, {
+        now: track.id === currentId,
+        onActivate: () => run(store.playQueue(all, track.id)),
+        onMore: openTrackMenu,
+      }),
+    );
+
+    const children = [folderHeader(state, kind, dir, all)];
+    if (subs.length) {
+      children.push(el('h3', { class: 'folder-subhead', text: t('folders.subfolders') }));
+      children.push(el('ul', { class: 'rows' }, dirRows));
     }
-    const next = view.rows[index];
-    if (next) {
-      next.classList.add('is-active');
-      next.setAttribute('aria-current', 'true');
-      if (next.isConnected) next.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (direct.length) {
+      children.push(el('h3', { class: 'folder-subhead', text: t('folders.tracks') }));
+      children.push(el('ul', { class: 'rows' }, trackRows));
     }
-    view.active = index;
+    if (!subs.length && !direct.length) {
+      children.push(el('p', { class: 'muted', 'data-testid': 'folder-empty', text: t('autoList.empty') }));
+    }
+
+    ui.panel.replaceChildren(
+      folderSection(t('tabs.folders'), t('common.trackCount', { count: all.length }), children),
+    );
+  }
+
+  // ---- lyrics view (build-time opt-in; the default build drops this block) ----
+  let buildLyricsView = null;
+  let ensureLyricsView = null;
+  let renderLyrics = null;
+
+  if (LYRICS_ENABLED) {
+    buildLyricsView = () => {
+      const backButton = el(
+        'button',
+        {
+          class: 'icon-btn',
+          type: 'button',
+          'data-testid': 'lyrics-back',
+          'aria-label': t('lyrics.back'),
+          onclick: () => store.setView('folders'),
+        },
+        [el('span', { class: 'back-arrow', 'aria-hidden': 'true', text: '←' })],
+      );
+      const headText = el('div', { class: 'lyrics-head-text' }, [
+        el('h2', { text: t('lyrics.title') }),
+        el('p', { class: 'lyrics-track' }),
+      ]);
+      const linesBox = el('div', { class: 'lyrics', 'data-testid': 'lyrics-lines' });
+      const root = el(
+        'section',
+        { class: 'settings-view lyrics-view', 'data-testid': 'lyrics-view' },
+        [el('div', { class: 'settings-head lyrics-head' }, [backButton, headText]), linesBox],
+      );
+      return {
+        root,
+        trackLine: headText.lastElementChild,
+        linesBox,
+        rows: [],
+        active: -1,
+        key: null,
+        linesRef: null,
+        plain: null,
+      };
+    };
+
+    ensureLyricsView = () => {
+      if (!lyricsView) lyricsView = buildLyricsView();
+      if (ui.lyricsHost.firstElementChild !== lyricsView.root) {
+        ui.lyricsHost.replaceChildren(lyricsView.root);
+      }
+      return lyricsView;
+    };
+
+    renderLyrics = (state) => {
+      if (state.view !== 'lyrics') return;
+      const view = ensureLyricsView();
+      const track = state.current.track;
+      setText(view.trackLine, track ? `${track.title} · ${subtitleOf(track)}` : t('player.noTrack'));
+
+      const lyrics = state.lyrics ?? {};
+      const lines = Array.isArray(lyrics.lines) ? lyrics.lines : [];
+      const key = `${lyrics.trackId ?? ''}|${lyrics.source ?? 'none'}|${lyrics.loading ? 1 : 0}`;
+      if (view.key !== key || view.linesRef !== lines || view.plain !== lyrics.plain) {
+        view.key = key;
+        view.linesRef = lines;
+        view.plain = lyrics.plain;
+        view.active = -1;
+        view.rows = [];
+        view.linesBox.replaceChildren();
+        if (lyrics.loading) {
+          view.linesBox.append(el('p', { class: 'muted', text: t('lyrics.loading') }));
+        } else if (lines.length) {
+          for (const line of lines) {
+            const node = el('p', {
+              class: 'lyric-line',
+              'data-testid': 'lyric-line',
+              'data-time': String(line.time),
+              text: line.text,
+            });
+            view.rows.push(node);
+            view.linesBox.append(node);
+          }
+        } else if (lyrics.plain) {
+          view.linesBox.append(el('pre', { 'data-testid': 'lyrics-plain', text: lyrics.plain }));
+        } else {
+          view.linesBox.append(
+            el('p', { class: 'muted', 'data-testid': 'lyrics-empty', text: t('lyrics.empty') }),
+          );
+        }
+      }
+
+      const index = lines.length ? activeLineIndex(lines, state.current.position) : -1;
+      if (index === view.active) return;
+      const previous = view.rows[view.active];
+      if (previous) {
+        previous.classList.remove('is-active');
+        previous.removeAttribute('aria-current');
+      }
+      const next = view.rows[index];
+      if (next) {
+        next.classList.add('is-active');
+        next.setAttribute('aria-current', 'true');
+        if (next.isConnected) next.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+      view.active = index;
+    };
   }
 
   function renderView(state) {
     if (state.view === 'settings') return;
-    if (state.view === 'lyrics') {
+    if (LYRICS_ENABLED && state.view === 'lyrics') {
       ensureLyricsView();
       return;
     }
@@ -1180,10 +1331,9 @@ export function mountUi(root, store, sw) {
       state.pins !== last.pins ||
       state.playlists !== last.playlists ||
       searchQuery !== last.query ||
-      activeList !== last.list ||
       searchResult !== last.searchResult ||
-      state.lyrics.source !== last.lyricsSource ||
-      state.lyrics.lines !== last.lyricsLines ||
+      folder.source !== last.folderSource ||
+      folder.dir !== last.folderDir ||
       (queueView &&
         (state.queue.tracks !== last.queueTracks || state.queue.index !== last.queueIndex));
 
@@ -1198,10 +1348,9 @@ export function mountUi(root, store, sw) {
     last.pins = state.pins;
     last.playlists = state.playlists;
     last.query = searchQuery;
-    last.list = activeList;
     last.searchResult = searchResult;
-    last.lyricsSource = state.lyrics.source;
-    last.lyricsLines = state.lyrics.lines;
+    last.folderSource = folder.source;
+    last.folderDir = folder.dir;
     last.queueTracks = state.queue.tracks;
     last.queueIndex = state.queue.index;
 
@@ -1223,104 +1372,8 @@ export function mountUi(root, store, sw) {
       return;
     }
 
-    if (state.view === 'albums') {
-      const groups = groupByAlbum(state.tracks);
-      const cards = groups.map((group) => {
-        const name = albumLabel(group.name);
-        return cardItem({
-          title: name,
-          meta: `${artistLabel(group.artist)} · ${t('common.trackCount', { count: group.tracks.length })}`,
-          cover: group.cover,
-          label: t('aria.playAlbum', { name }),
-          onPlay: () => run(store.playQueue(group.tracks, group.tracks[0]?.id)),
-        });
-      });
-      ui.panel.replaceChildren(
-        el('section', { class: 'list' }, [
-          el('header', {}, [
-            el('span', { text: t('tabs.albums') }),
-            el('span', { text: t('common.albumCount', { count: groups.length }) }),
-          ]),
-          el('ul', { class: 'grid' }, cards),
-        ]),
-      );
-      return;
-    }
-
-    if (state.view === 'artists') {
-      const groups = groupByArtist(state.tracks);
-      const cards = groups.map((group) => {
-        const name = artistLabel(group.name);
-        return cardItem({
-          title: name,
-          meta: t('common.trackCount', { count: group.tracks.length }),
-          cover: group.cover,
-          label: t('aria.playArtist', { name }),
-          onPlay: () => run(store.playQueue(group.tracks, group.tracks[0]?.id)),
-        });
-      });
-      ui.panel.replaceChildren(
-        el('section', { class: 'list' }, [
-          el('header', {}, [
-            el('span', { text: t('tabs.artists') }),
-            el('span', { text: t('common.artistCount', { count: groups.length }) }),
-          ]),
-          el('ul', { class: 'grid' }, cards),
-        ]),
-      );
-      return;
-    }
-
     if (state.view === 'folders') {
-      const groups = groupByFolder(state.tracks);
-      const byId = new Map(state.tracks.map((track) => [track.id, track]));
-      const rows = groups.map((group) => {
-        const list = group.trackIds.map((id) => byId.get(id)).filter(Boolean);
-        const sources = [...new Set(list.map((track) => track.source))];
-        const pinned =
-          sources.length > 0 && sources.every((source) => store.isPinned(source, group.dir));
-        const pins = sources
-          .map((source) => (state.pins ?? []).find((pin) => pin.id === `${source}:${group.dir}`))
-          .filter(Boolean);
-        const running = pins.some((pin) => pin.running);
-        const pin = running
-          ? {
-              running: true,
-              done: pins.reduce((sum, item) => sum + (item.done ?? 0), 0),
-              total: pins.reduce((sum, item) => sum + (item.total ?? 0), 0),
-            }
-          : { error: pins.find((item) => item.error)?.error ?? null };
-        return folderRow(group, {
-          onPlay: () => run(store.playQueue(list, list[0]?.id)),
-          onEnqueue: () => store.appendQueue(list),
-          pinned,
-          pin,
-          onPin: () => {
-            for (const source of sources) {
-              if (pinned) {
-                run(store.unpinFolder(`${source}:${group.dir}`));
-              } else {
-                run(
-                  store.pinFolder({
-                    source,
-                    dir: group.dir,
-                    trackIds: list
-                      .filter((track) => track.source === source)
-                      .map((track) => track.id),
-                  }),
-                );
-              }
-            }
-          },
-        });
-      });
-      ui.panel.replaceChildren(
-        listSection(
-          t('tabs.folders'),
-          t('common.folderCount', { count: groups.length }),
-          rows,
-        ),
-      );
+      renderFolders(state);
       return;
     }
 
@@ -1332,7 +1385,7 @@ export function mountUi(root, store, sw) {
             title: t('empty.queueTitle'),
             text: t('empty.queueText'),
             actionLabel: t('empty.queueAction'),
-            onAction: () => store.setView('tracks'),
+            onAction: () => store.setView('folders'),
           }),
         );
         return;
@@ -1342,20 +1395,31 @@ export function mountUi(root, store, sw) {
           now: index === state.queue.index,
           onActivate: () => run(store.jumpTo(index)),
           onRemove: () => store.removeQueueAt(index),
-          onMore: openTrackMenu,
         }),
       );
+      const head = el('header', {}, [
+        el('span', { text: t('common.playQueue') }),
+        el('div', { class: 'queue-head' }, [
+          el('span', { text: t('common.trackCount', { count: tracks.length }) }),
+          el('button', {
+            class: 'btn-pill ghost queue-clear',
+            type: 'button',
+            'data-testid': 'queue-clear',
+            text: t('queue.clear'),
+            onclick: () => {
+              if (typeof window !== 'undefined' && !window.confirm(t('queue.clearConfirm'))) return;
+              store.clearQueue();
+            },
+          }),
+        ]),
+      ]);
       ui.panel.replaceChildren(
-        listSection(
-          t('common.playQueue'),
-          t('common.trackCount', { count: tracks.length }),
-          rows,
-        ),
+        el('section', { class: 'list' }, [head, el('ul', { class: 'rows' }, rows)]),
       );
       return;
     }
 
-    renderTracksView(state);
+    renderSearch(state);
   }
 
   function render(state) {
@@ -1389,7 +1453,7 @@ export function mountUi(root, store, sw) {
       }
       store.clearPendingView();
     }
-    if (state.view === 'lyrics') {
+    if (LYRICS_ENABLED && state.view === 'lyrics') {
       // A track change inside the lyrics view resolves once; the store sets
       // `lyrics.trackId` synchronously, so the 4 Hz position updates do not
       // issue another request.
@@ -1401,7 +1465,8 @@ export function mountUi(root, store, sw) {
     const lyrics = state.view === 'lyrics';
     setHidden(ui.defaultView, settings || lyrics);
     setHidden(ui.settingsHost, !settings);
-    setHidden(ui.lyricsHost, !lyrics);
+    if (LYRICS_ENABLED) setHidden(ui.lyricsHost, !lyrics);
+    setHidden(ui.searchButton, settings);
     setHidden(ui.settingsButton, settings);
     setHidden(ui.updateBanner, !state.updateReady);
 

@@ -126,7 +126,11 @@ async function sourceVersion() {
 
 async function main() {
   const version = await sourceVersion();
-  const define = { __BUILD_VERSION__: JSON.stringify(version) };
+  const define = {
+    __BUILD_VERSION__: JSON.stringify(version),
+    // Link-time switch: off by default, so esbuild drops the lyrics UI.
+    __LYRICS_ENABLED__: JSON.stringify(process.env.LYRICS_ENABLED === '1'),
+  };
 
   await rm(distDir, { recursive: true, force: true });
   await mkdir(path.join(distDir, 'assets'), { recursive: true });
