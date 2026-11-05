@@ -11,6 +11,19 @@ import {
 
 const root = document.getElementById('app');
 
+// First paint: show the brand and the loading line while createApp() hydrates
+// the store. mountUi() replaces this tree once the app is ready.
+root.replaceChildren(
+  el('div', { class: 'app' }, [
+    el('header', { class: 'top' }, [
+      el('div', { class: 'brand' }, [
+        el('h1', { text: 'LocalTune' }),
+        el('span', { class: 'status', id: 'status', text: t('common.loading') }),
+      ]),
+    ]),
+  ]),
+);
+
 function renderFatal(error) {
   const message = error instanceof Error ? error.message : String(error ?? t('common.unknownError'));
   root.replaceChildren(
