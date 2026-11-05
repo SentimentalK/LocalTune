@@ -538,15 +538,15 @@ export function createSettingsView(store, sw) {
     [
       el('div', { class: 'playback-line', 'data-testid': 'playback-line' }, [
         el('div', { class: 'inline-setting' }, [
-          el('span', { class: 'inline-label', text: t('settings.playback.sleep') }),
+          el('span', { class: 'inline-label', text: t('settings.playback.sleepShort') }),
           sleepSelect,
         ]),
         el('div', { class: 'inline-setting' }, [
-          el('span', { class: 'inline-label', text: t('settings.playback.leveling') }),
+          el('span', { class: 'inline-label', text: t('settings.playback.levelingShort') }),
           levelingButton,
         ]),
         el('div', { class: 'inline-setting' }, [
-          el('span', { class: 'inline-label', text: t('settings.playback.gapless') }),
+          el('span', { class: 'inline-label', text: t('settings.playback.gaplessShort') }),
           gaplessButton,
         ]),
       ]),

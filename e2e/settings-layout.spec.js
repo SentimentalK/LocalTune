@@ -55,18 +55,99 @@ test('settings cards fill the width and controls hug the trailing edge', async (
   await expect(leveling).toHaveAttribute('role', 'switch');
   await expect(gapless).toHaveAttribute('role', 'switch');
 
-  // The sleep select and both toggles share one line without overflowing.
-  const playback = await page.evaluate(() => {
-    const line = document.querySelector('[data-testid="playback-line"]');
-    const settings = [...line.querySelectorAll('.inline-setting')];
-    return {
-      tops: settings.map((node) => node.offsetTop),
-      overflow: line.scrollWidth - line.clientWidth,
-    };
-  });
-  expect(playback.tops.length).toBe(3);
-  expect(new Set(playback.tops).size).toBe(1);
-  expect(playback.overflow, 'playback line horizontal overflow').toBeLessThanOrEqual(0);
+  // The sleep select and both toggles share one readable line: no label may
+  // touch its control or the neighbour group, and the row must stay one line.
+  // English has the longest labels, so both locales are measured.
+  const measurePlayback = () =>
+    page.evaluate(() => {
+      const line = document.querySelector('[data-testid="playback-line"]');
+      const lineRect = line.getBoundingClientRect();
+      const groups = [...line.querySelectorAll('.inline-setting')].map((group) => {
+        const label = group.querySelector('.inline-label');
+        const control = group.querySelector('select, .toggle-switch');
+        const labelRect = label.getBoundingClientRect();
+        const controlRect = control.getBoundingClientRect();
+        const groupRect = group.getBoundingClientRect();
+        return {
+          label: [labelRect.left, labelRect.right],
+          control: [controlRect.left, controlRect.right],
+          group: [groupRect.left, groupRect.right],
+          vertical: [groupRect.top, groupRect.bottom],
+        };
+      });
+      return {
+        groupCount: groups.length,
+        lineWidth: line.clientWidth,
+        scrollWidth: line.scrollWidth,
+        line: [lineRect.top, lineRect.bottom],
+        lineHeight: lineRect.height,
+        tallestGroup: Math.max(...groups.map((item) => item.vertical[1] - item.vertical[0])),
+        groups,
+      };
+    });
+
+  for (const locale of ['zh-CN', 'en']) {
+    if (locale === 'en') {
+      await page.locator('[data-testid="language-en"]').click();
+      await expect(page.locator('[data-testid="playback-line"]')).toBeVisible();
+    }
+    for (const width of [360, 390]) {
+      await page.setViewportSize({ width, height: 780 });
+      await page.waitForTimeout(60);
+      const layout = await measurePlayback();
+
+      expect(layout.groupCount, `${locale} ${width}px playback groups`).toBe(3);
+      expect(
+        layout.scrollWidth,
+        `${locale} ${width}px playback horizontal overflow`,
+      ).toBeLessThanOrEqual(layout.lineWidth);
+      // A single row: the line is as tall as its tallest control, not two rows.
+      expect(layout.lineHeight, `${locale} ${width}px playback row height`).toBeLessThanOrEqual(
+        layout.tallestGroup + 2,
+      );
+
+      for (const [index, item] of layout.groups.entries()) {
+        expect(
+          item.label[1],
+          `${locale} ${width}px label ${index} overlaps its control`,
+        ).toBeLessThanOrEqual(item.control[0] + 0.5);
+        // A shrunken group must not let its label spill over the neighbour.
+        expect(
+          item.label[0],
+          `${locale} ${width}px label ${index} spills left of its group`,
+        ).toBeGreaterThanOrEqual(item.group[0] - 0.5);
+        expect(
+          item.label[1],
+          `${locale} ${width}px label ${index} spills right of its group`,
+        ).toBeLessThanOrEqual(item.group[1] + 0.5);
+        const previousItem = layout.groups[index - 1];
+        if (previousItem) {
+          expect(
+            previousItem.label[1],
+            `${locale} ${width}px label ${index - 1} overlaps label ${index}`,
+          ).toBeLessThanOrEqual(item.label[0] + 0.5);
+        }
+        expect(
+          item.vertical[0],
+          `${locale} ${width}px group ${index} starts above the row`,
+        ).toBeGreaterThanOrEqual(layout.line[0] - 1);
+        expect(
+          item.vertical[1],
+          `${locale} ${width}px group ${index} ends below the row`,
+        ).toBeLessThanOrEqual(layout.line[1] + 1);
+
+        const previous = layout.groups[index - 1];
+        if (previous) {
+          expect(
+            previous.group[1],
+            `${locale} ${width}px group ${index - 1} overlaps group ${index}`,
+          ).toBeLessThanOrEqual(item.group[0] + 0.5);
+        }
+      }
+    }
+  }
+
+  await page.setViewportSize({ width: 360, height: 780 });
 
   const storageOverflow = await page.evaluate(() => {
     const limit = document.querySelector('.storage-limit');

@@ -316,6 +316,9 @@ export default {
   'settings.playback.sleepRemaining': '剩餘 {time}',
   'settings.playback.sleepFading': '正在淡出…',
   'settings.playback.leveling': '音量均勻',
+  'settings.playback.sleepShort': '睡眠',
+  'settings.playback.levelingShort': '音量',
+  'settings.playback.gaplessShort': '無縫',
   'settings.playback.gapless': '無縫播放',
 
   'error.db.writeStats': '寫入播放統計失敗',

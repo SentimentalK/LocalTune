@@ -1889,34 +1889,33 @@ textarea.text-input {
 
 /* ---- playback settings ---- */
 
+/* One row on phones: the sleep group takes the slack, the two switches stay
+   fixed, and only the select shrinks — labels never do. */
 .playback-line {
-  display: flex;
-  align-items: stretch;
-  gap: 10px;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px;
   min-width: 0;
 }
 
 .inline-setting {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
-  flex: 0 0 auto;
-}
-
-.inline-setting:first-child {
-  flex: 1 1 auto;
 }
 
 .inline-label {
+  flex: 0 0 auto;
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
 }
 
 .sleep-select {
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: 56px;
   max-width: 116px;
   font-size: 12px;
   padding: 6px 8px;

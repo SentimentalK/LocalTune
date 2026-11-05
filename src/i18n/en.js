@@ -326,6 +326,9 @@ export default {
   'settings.playback.sleepRemaining': '{time} left',
   'settings.playback.sleepFading': 'Fading out…',
   'settings.playback.leveling': 'Volume levelling',
+  'settings.playback.sleepShort': 'Sleep',
+  'settings.playback.levelingShort': 'Volume',
+  'settings.playback.gaplessShort': 'Gapless',
   'settings.playback.gapless': 'Gapless playback',
 
   'error.db.writeStats': 'Writing play statistics failed',

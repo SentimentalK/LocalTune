@@ -332,6 +332,9 @@ export default {
   'settings.playback.sleepRemaining': '残り {time}',
   'settings.playback.sleepFading': 'フェードアウト中…',
   'settings.playback.leveling': '音量の均一化',
+  'settings.playback.sleepShort': 'スリープ',
+  'settings.playback.levelingShort': '音量',
+  'settings.playback.gaplessShort': '無間隔',
   'settings.playback.gapless': 'ギャップレス再生',
 
   'error.db.writeStats': '再生統計の書き込みに失敗しました',
