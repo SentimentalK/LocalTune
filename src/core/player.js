@@ -130,6 +130,22 @@ export class AudioPlayer extends EventTarget {
     this.#audio.pause();
   }
 
+  /** Stop playback and release the element's source so nothing keeps playing. */
+  unload() {
+    try {
+      this.#audio.pause();
+    } catch {
+      // The element may already be detached.
+    }
+    try {
+      this.#audio.removeAttribute('src');
+      this.#audio.load?.();
+    } catch {
+      // A missing `load` only skips the readyState reset.
+    }
+    this.#revoke();
+  }
+
   seek(seconds) {
     const value = Number(seconds);
     if (!Number.isFinite(value)) return;

@@ -538,40 +538,7 @@ export function createSettingsView(store, sw) {
   const indexRow = storageRow('storage-index', t('settings.storage.index'));
   const coverRow = storageRow('storage-cover', t('settings.storage.cover'));
   const audioRow = storageRow('storage-audio', t('settings.storage.audio'));
-  const importValue = el('b', {
-    text: `${formatBytes(0)} · ${t('settings.storage.importCount', { count: 0 })}`,
-  });
-  let clearingImport = false;
-  const clearImportButton = el('button', {
-    class: 'btn-pill ghost',
-    type: 'button',
-    'data-testid': 'storage-clear-import',
-    text: t('settings.storage.clearImport'),
-    onclick: async () => {
-      if (clearingImport) return;
-      if (!confirmed(t('settings.storage.clearImportConfirm'))) return;
-      clearingImport = true;
-      clearImportButton.disabled = true;
-      try {
-        await store.clearImported();
-        toast(t('settings.storage.importCleared'));
-        await refreshStorage();
-      } finally {
-        clearingImport = false;
-        clearImportButton.disabled = false;
-      }
-    },
-  });
-  const importRow = el('div', { class: 'storage-row', 'data-testid': 'storage-import' }, [
-    el('span', { text: t('settings.storage.imported') }),
-    importValue,
-    clearImportButton,
-  ]);
 
-  const pinnedLabel = el('span', { text: t('settings.storage.pinnedCount', { count: 0 }) });
-  const pinnedRow = el('div', { class: 'storage-row', 'data-testid': 'storage-pins' }, [
-    pinnedLabel,
-  ]);
   const usageLine = el('p', { class: 'storage-usage muted' });
   setHidden(usageLine, true);
 
@@ -594,11 +561,11 @@ export function createSettingsView(store, sw) {
     return { value, button };
   });
   const limitRow = el('div', { class: 'storage-limit' }, [
-    el('span', { text: t('settings.storage.limit') }),
+    el('span', { class: 'storage-limit-label', text: t('settings.storage.limit') }),
     el(
       'div',
       {
-        class: 'segmented',
+        class: 'segmented storage-limit-options',
         role: 'group',
         'aria-label': t('settings.storage.limit'),
         'data-testid': 'cache-limit',
@@ -607,20 +574,11 @@ export function createSettingsView(store, sw) {
     ),
   ]);
 
-  const clearCacheButton = el(
-    'button',
-    {
-      class: 'btn-pill ghost',
-      type: 'button',
-      'data-testid': 'clear-cache',
-    },
-    t('settings.storage.clearCache'),
-  );
-  const clearLibraryButton = el('button', {
+  const clearAllButton = el('button', {
     class: 'btn-pill ghost',
     type: 'button',
-    'data-testid': 'clear-library',
-    text: t('settings.storage.clearLibrary'),
+    'data-testid': 'clear-all',
+    text: t('settings.storage.clearAll'),
   });
 
   const storageCard = el(
@@ -628,15 +586,9 @@ export function createSettingsView(store, sw) {
     { class: 'card settings-card', 'data-testid': 'settings-section-storage' },
     [
       limitRow,
-      el('div', { class: 'storage-rows' }, [
-        indexRow.row,
-        coverRow.row,
-        audioRow.row,
-        importRow,
-        pinnedRow,
-      ]),
+      el('div', { class: 'storage-rows' }, [indexRow.row, coverRow.row, audioRow.row]),
       usageLine,
-      el('div', { class: 'settings-actions' }, [clearCacheButton, clearLibraryButton]),
+      el('div', { class: 'settings-actions' }, [clearAllButton]),
     ],
   );
 
@@ -918,8 +870,7 @@ export function createSettingsView(store, sw) {
   let lastEstimateAt = 0;
   let estimateTimer = null;
   let estimateToken = 0;
-  let clearingCache = false;
-  let clearingLibrary = false;
+  let clearingAll = false;
 
   async function refreshStorage() {
     lastEstimateAt = Date.now();
@@ -930,12 +881,6 @@ export function createSettingsView(store, sw) {
       setText(indexRow.value, formatBytes(estimate.indexBytes));
       setText(coverRow.value, formatBytes(estimate.coverBytes));
       setText(audioRow.value, formatBytes(estimate.audioBytes));
-      setText(
-        importValue,
-        `${formatBytes(estimate.importBytes)} · ${t('settings.storage.importCount', {
-          count: estimate.importCount,
-        })}`,
-      );
       const hasUsage = Number.isFinite(estimate.usage) && Number.isFinite(estimate.quota);
       setHidden(usageLine, !hasUsage);
       if (hasUsage) {
@@ -966,37 +911,20 @@ export function createSettingsView(store, sw) {
     void refreshStorage();
   }
 
-  clearCacheButton.addEventListener('click', async () => {
-    if (clearingCache) return;
-    if (!confirmed(t('settings.storage.clearConfirmCache'))) return;
-    clearingCache = true;
-    clearCacheButton.disabled = true;
+  clearAllButton.addEventListener('click', async () => {
+    if (clearingAll) return;
+    if (!confirmed(t('settings.storage.clearAllConfirm'))) return;
+    clearingAll = true;
+    clearAllButton.disabled = true;
     try {
-      const size = await store.clearAudioCache();
-      toast(t('settings.storage.cacheCleared', { size: formatBytes(size) }));
+      await store.clearAll();
+      toast(t('settings.storage.clearedAll'));
       await refreshStorage();
     } catch {
-      // Nothing was removed; leave the last figures in place.
+      // Leave the figures as they were; the store keeps whatever it deleted.
     } finally {
-      clearingCache = false;
-      clearCacheButton.disabled = false;
-    }
-  });
-
-  clearLibraryButton.addEventListener('click', async () => {
-    if (clearingLibrary) return;
-    if (!confirmed(t('settings.storage.clearConfirm'))) return;
-    clearingLibrary = true;
-    clearLibraryButton.disabled = true;
-    try {
-      await store.clearLibrary();
-      toast(t('settings.storage.libraryCleared'));
-      await refreshStorage();
-    } catch {
-      // The store keeps whatever it managed to delete.
-    } finally {
-      clearingLibrary = false;
-      clearLibraryButton.disabled = false;
+      clearingAll = false;
+      clearAllButton.disabled = false;
     }
   });
 
@@ -1153,11 +1081,6 @@ export function createSettingsView(store, sw) {
       button.setAttribute('aria-pressed', String(active));
       button.classList.toggle('is-active', active);
     }
-
-    setText(
-      pinnedLabel,
-      t('settings.storage.pinnedCount', { count: (state.pins ?? []).length }),
-    );
 
     setHidden(applyButton, !state.updateReady);
     setText(

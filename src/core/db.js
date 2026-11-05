@@ -11,7 +11,6 @@ export const DB_VERSION = 5;
 export const TRACKS_STORE = 'tracks';
 export const META_STORE = 'meta';
 export const CACHE_INDEX_STORE = 'cacheIndex';
-export const PINS_STORE = 'pins';
 export const PLAYLOG_STORE = 'playlog';
 export const OPFS_INDEX_STORE = 'opfsIndex';
 export const PLAYLISTS_STORE = 'playlists';
@@ -52,9 +51,6 @@ export function openDb() {
       }
       if (!db.objectStoreNames.contains(CACHE_INDEX_STORE)) {
         db.createObjectStore(CACHE_INDEX_STORE, { keyPath: 'key' });
-      }
-      if (!db.objectStoreNames.contains(PINS_STORE)) {
-        db.createObjectStore(PINS_STORE, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(PLAYLOG_STORE)) {
         db.createObjectStore(PLAYLOG_STORE, { keyPath: 'id', autoIncrement: true });
@@ -223,4 +219,10 @@ export function putStats(db, rows) {
     tx.onerror = () => reject(tx.error ?? new Error(t('error.db.writeStats')));
     tx.onabort = () => reject(tx.error ?? new Error(t('error.db.writeStats')));
   });
+}
+
+export function clearStats(db) {
+  const tx = db.transaction(STATS_STORE, 'readwrite');
+  tx.objectStore(STATS_STORE).clear();
+  return transactionDone(tx);
 }

@@ -41,10 +41,13 @@ test('settings view covers library, storage, language and about', async ({ page 
   await expect(aboutCard.locator('[data-testid="setting-youtube-key"]')).toHaveCount(0);
   await expect(aboutCard.locator('[data-testid="setting-proxy-url"]')).toHaveCount(0);
 
-  // No audio responses are cached in a fresh profile: the toast still reports 0 B.
+  // The storage card has a single clear action; a fresh profile clears to 0 B.
+  const cachedMusic = page.locator('[data-testid="storage-audio"] b');
+  await expect(cachedMusic).toHaveText('0 B');
   page.once('dialog', (dialog) => dialog.accept());
-  await page.locator('[data-testid="clear-cache"]').click();
-  await expect(page.locator('.toast')).toContainText('0 B');
+  await page.locator('[data-testid="clear-all"]').click();
+  await expect(page.locator('.toast')).toContainText('已清空');
+  await expect(cachedMusic).toHaveText('0 B');
 
   // Language switch rebuilds the shell without leaving the settings view.
   await page.locator('[data-testid="language-en"]').click();

@@ -1,11 +1,10 @@
 /**
- * IndexedDB adapters for the audio cache metadata. Both stores are created by
+ * IndexedDB adapter for the audio cache metadata. The store is created by
  * `db.js`; this module only wraps `db.transaction` so the cache logic can be
  * tested with plain objects.
  */
 
 export const CACHE_INDEX_STORE = 'cacheIndex';
-export const PINS_STORE = 'pins';
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -49,29 +48,6 @@ export function createCacheIndex(db) {
     async clear() {
       const tx = db.transaction(CACHE_INDEX_STORE, 'readwrite');
       tx.objectStore(CACHE_INDEX_STORE).clear();
-      await transactionDone(tx);
-    },
-  };
-}
-
-/** `{ id, source, path (or dir), ... }` pins keyed by `id`. */
-export function createPinStore(db) {
-  return {
-    async all() {
-      const tx = db.transaction(PINS_STORE, 'readonly');
-      const rows = await requestResult(tx.objectStore(PINS_STORE).getAll());
-      return Array.isArray(rows) ? rows : [];
-    },
-
-    async put(pin) {
-      const tx = db.transaction(PINS_STORE, 'readwrite');
-      tx.objectStore(PINS_STORE).put(pin);
-      await transactionDone(tx);
-    },
-
-    async delete(id) {
-      const tx = db.transaction(PINS_STORE, 'readwrite');
-      tx.objectStore(PINS_STORE).delete(id);
       await transactionDone(tx);
     },
   };

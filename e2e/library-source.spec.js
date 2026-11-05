@@ -324,7 +324,7 @@ test('removing a source drops its tracks and cached audio', async ({ page }) => 
   expect(cacheIndex).toHaveLength(0);
 });
 
-test('clearing the audio cache also clears the play log', async ({ page }) => {
+test('clearing everything also clears the play log', async ({ page }) => {
   test.setTimeout(120_000);
   await installGraphMock(page, { files: FILES });
 
@@ -343,9 +343,20 @@ test('clearing the audio cache also clears the play log', async ({ page }) => {
   await page.waitForTimeout(300);
 
   await page.locator('[data-testid="settings-open"]').click();
-  await expect(page.locator('[data-testid="clear-cache"]')).toBeVisible();
+  const clearAll = page.locator('[data-testid="clear-all"]');
+  await expect(clearAll).toBeVisible();
   page.once('dialog', (dialog) => dialog.accept());
-  await page.locator('[data-testid="clear-cache"]').click();
+  await clearAll.click();
 
-  await expect.poll(async () => (await readStore(page, 'playlog')).length).toBe(0);
+  await expect
+    .poll(async () => (await readStore(page, 'playlog')).length, { timeout: 15_000 })
+    .toBe(0);
+
+  // The source stays connected and keeps its three icon actions; only the
+  // tracks it produced are gone.
+  const cloudRow = page.locator('[data-testid="source-row-onedrive"]');
+  await expect(cloudRow.locator('button')).toHaveCount(3);
+  await expect(cloudRow).toContainText('0');
+  const tracks = await readStore(page, 'tracks');
+  expect(tracks.filter((track) => track.source === 'onedrive')).toHaveLength(0);
 });

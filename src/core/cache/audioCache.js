@@ -1,7 +1,7 @@
 /**
- * Audio cache: Cache Storage holds the blobs, IndexedDB holds the LRU index and
- * the offline pins. Pure logic with injectable doubles — no DOM access at
- * import time and no coupling to the store or the player.
+ * Audio cache: Cache Storage holds the blobs, IndexedDB holds the LRU index.
+ * Pure logic with injectable doubles — no DOM access at import time and no
+ * coupling to the store or the player.
  */
 
 export const AUDIO_CACHE_NAME = 'audio-v1';
@@ -31,19 +31,6 @@ export function cacheRequest(key) {
   return new Request(new URL(AUDIO_PATH + encodeURIComponent(key), base));
 }
 
-/** A pin covers one source's root (`dir === ''`), one path, or a directory. */
-export function isPinned(entry, pins) {
-  if (!entry) return false;
-  const path = String(entry.path ?? '');
-  for (const pin of pins ?? []) {
-    if (!pin || entry.source !== pin.source) continue;
-    const dir = String(pin.dir ?? '');
-    if (dir === '') return true;
-    if (path === dir || path.startsWith(`${dir}/`)) return true;
-  }
-  return false;
-}
-
 /** Sum of the finite `size` fields. */
 export function totalSize(entries) {
   let total = 0;
@@ -55,10 +42,9 @@ export function totalSize(entries) {
 
 /**
  * Keys to evict so the remaining total fits `limitBytes`. Oldest `lastAccess`
- * first (ties by key). Pinned entries are never selected; when everything is
- * pinned and over the limit the result is empty.
+ * first (ties by key).
  */
-export function selectEvictions(entries, limitBytes, pins = []) {
+export function selectEvictions(entries, limitBytes) {
   if (!(limitBytes > 0)) return [];
   const rows = Array.from(entries ?? []);
   const total = totalSize(rows);
@@ -77,7 +63,6 @@ export function selectEvictions(entries, limitBytes, pins = []) {
   let remaining = total;
   for (const entry of ordered) {
     if (remaining <= limitBytes) break;
-    if (isPinned(entry, pins)) continue;
     evicted.push(entry.key);
     if (Number.isFinite(entry.size)) remaining -= entry.size;
   }
@@ -99,13 +84,11 @@ export class AudioCache {
   constructor({
     caches = globalThis.caches,
     index,
-    pins,
     persist = () => globalThis.navigator?.storage?.persist?.(),
     now = () => Date.now(),
   } = {}) {
     this.caches = caches;
     this.index = index;
-    this.pins = pins;
     this.persist = persist;
     this.now = now;
     this._limit = DEFAULT_CACHE_LIMIT;
@@ -218,14 +201,7 @@ export class AudioCache {
       return [];
     }
 
-    let pins = [];
-    try {
-      pins = (await this.pins?.all()) ?? [];
-    } catch {
-      pins = [];
-    }
-
-    const keys = selectEvictions(rows, limitBytes, pins);
+    const keys = selectEvictions(rows, limitBytes);
     if (!keys.length) return [];
 
     let cache = null;

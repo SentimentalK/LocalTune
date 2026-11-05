@@ -244,55 +244,6 @@ function queueRow(track, index, { now, onActivate, onRemove }) {
   return row;
 }
 
-const PIN_PATH =
-  'M16 9V4h1V2H7v2h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z';
-
-// The shared icon set lives in `dom.js`; the pin glyph is drawn here so the
-// folder view owns the only icon it needs beyond the common set.
-function pinIcon() {
-  const svg = icon('pin');
-  const path = svg.querySelector('path');
-  if (path) path.setAttribute('d', PIN_PATH);
-  return svg;
-}
-
-/**
- * Pin control for one directory. The status text sits next to the button so the
- * row reports progress and the pinned state without a second render pass.
- */
-function pinRowParts({ pinned, pin = null, testId, onToggle }) {
-  const status = el('span', { class: 'row-pin-status' });
-  if (pin?.running) {
-    setText(
-      status,
-      t('settings.storage.pinning', { done: pin.done ?? 0, total: pin.total ?? 0 }),
-    );
-  } else if (pin?.error) {
-    setText(status, pin.error);
-  } else if (pinned) {
-    setText(status, t('settings.storage.pinned'));
-  } else {
-    setHidden(status, true);
-  }
-
-  const button = el(
-    'button',
-    {
-      class: pinned ? 'row-pin is-on' : 'row-pin',
-      type: 'button',
-      'data-testid': testId,
-      'aria-pressed': String(pinned),
-      'aria-label': pinned ? t('settings.storage.unpin') : t('settings.storage.pin'),
-      'title': pinned ? t('settings.storage.unpin') : t('settings.storage.pin'),
-      disabled: Boolean(pin?.running),
-      onclick: onToggle,
-    },
-    [pinIcon()],
-  );
-
-  return { status, button };
-}
-
 /**
  * Source root row: opens the first level of that source's folder tree. An
  * expired grant keeps the row (cached tracks are still playable) and adds the
@@ -617,7 +568,6 @@ export function mountUi(root, store, sw) {
     cover: undefined,
     permissions: null,
     installable: false,
-    pins: null,
     query: '',
     folderSource: null,
     folderDir: '',
@@ -636,7 +586,6 @@ export function mountUi(root, store, sw) {
     last.cover = undefined;
     last.permissions = null;
     last.installable = false;
-    last.pins = null;
     last.query = '';
     last.folderSource = null;
     last.folderDir = '';
@@ -1039,55 +988,6 @@ export function mountUi(root, store, sw) {
     return copy;
   }
 
-  /** Pin progress row state for one directory across every source it holds. */
-  function pinInfo(state, sources, dir) {
-    const pins = sources
-      .map((source) => (state.pins ?? []).find((pin) => pin.id === `${source}:${dir}`))
-      .filter(Boolean);
-    if (pins.some((pin) => pin.running)) {
-      return {
-        running: true,
-        done: pins.reduce((sum, item) => sum + (item.done ?? 0), 0),
-        total: pins.reduce((sum, item) => sum + (item.total ?? 0), 0),
-      };
-    }
-    return { error: pins.find((item) => item.error)?.error ?? null };
-  }
-
-  function pinToggle(list, dir) {
-    const sources = [...new Set(list.map((track) => track.source))];
-    const pinned =
-      sources.length > 0 && sources.every((source) => store.isPinned(source, dir));
-    return () => {
-      for (const source of sources) {
-        if (pinned) {
-          run(store.unpinFolder(`${source}:${dir}`));
-          continue;
-        }
-        run(
-          store.pinFolder({
-            source,
-            dir,
-            trackIds: list.filter((track) => track.source === source).map((track) => track.id),
-          }),
-        );
-      }
-    };
-  }
-
-  function pinFor(state, list, dir, testId) {
-    const sources = [...new Set(list.map((track) => track.source))];
-    const pinned =
-      sources.length > 0 && sources.every((source) => store.isPinned(source, dir));
-    const parts = pinRowParts({
-      pinned,
-      pin: pinInfo(state, sources, dir),
-      testId,
-      onToggle: pinToggle(list, dir),
-    });
-    return { pinned, parts };
-  }
-
   function folderHeader(state, kind, dir, all) {
     const up = el(
       'button',
@@ -1108,8 +1008,6 @@ export function mountUi(root, store, sw) {
       },
       [el('span', { class: 'back-arrow', 'aria-hidden': 'true', text: '←' })],
     );
-
-    const { parts } = pinFor(state, all, dir, `pin-${dir || 'root'}`);
 
     return el('div', { class: 'folder-head' }, [
       up,
@@ -1137,7 +1035,6 @@ export function mountUi(root, store, sw) {
             run(store.playQueue(shuffled, shuffled[0].id));
           },
         }),
-        parts.button,
       ]),
     ]);
   }
@@ -1189,8 +1086,6 @@ export function mountUi(root, store, sw) {
     const subs = subdirsOf(list, dir);
 
     const dirRows = subs.map((entry) => {
-      const subTracks = tracksUnder(list, entry.dir);
-      const { pinned, parts } = pinFor(state, subTracks, entry.dir, `pin-${entry.dir}`);
       const hit = el(
         'button',
         {
@@ -1210,7 +1105,7 @@ export function mountUi(root, store, sw) {
           ]),
         ],
       );
-      return el('li', { class: pinned ? 'row is-pinned' : 'row' }, [hit, parts.status, parts.button]);
+      return el('li', { class: 'row' }, [hit]);
     });
 
     const currentId = state.current.track?.id ?? null;
@@ -1269,7 +1164,6 @@ export function mountUi(root, store, sw) {
       permissions !== last.permissions ||
       installPromptSeen !== last.installable ||
       currentId !== last.currentId ||
-      state.pins !== last.pins ||
       searchQuery !== last.query ||
       searchResult !== last.searchResult ||
       folder.source !== last.folderSource ||
@@ -1285,7 +1179,6 @@ export function mountUi(root, store, sw) {
     last.permissions = permissions;
     last.installable = installPromptSeen;
     last.currentId = currentId;
-    last.pins = state.pins;
     last.query = searchQuery;
     last.searchResult = searchResult;
     last.folderSource = folder.source;

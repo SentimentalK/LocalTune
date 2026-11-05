@@ -51,7 +51,7 @@ async function expectPlaying(page) {
   await expect.poll(() => elapsed(page), { timeout: 10_000 }).not.toBe('0:00');
 }
 
-test('audio cache hits, offline replay, folder pins and clearing', async ({ page, context }) => {
+test('audio cache hits, offline replay and Clear all', async ({ page, context }) => {
   test.setTimeout(180_000);
 
   const mock = await installGraphMock(page, { files: FILES });
@@ -103,41 +103,30 @@ test('audio cache hits, offline replay, folder pins and clearing', async ({ page
   await expectPlaying(page);
   await context.setOffline(false);
 
-  // ---- 3. pin a subfolder for offline use -------------------------------
-  await page.locator('#tab-folders').click();
-  await expect(page.locator('[data-testid="track-row"] .row-hit').first()).toBeVisible();
-  const rootPin = page.locator('[data-testid="pin-root"]');
-  const jazzPin = page.locator('[data-testid="pin-Jazz"]');
-  await expect(jazzPin).toBeVisible();
-  await expect(jazzPin).toHaveAttribute('aria-pressed', 'false');
-  await expect(rootPin).toHaveAttribute('aria-pressed', 'false');
-
-  await jazzPin.click();
-  await expect(jazzPin).toHaveAttribute('aria-pressed', 'true');
-  await expect(jazzPin).toBeEnabled({ timeout: 20_000 });
-  const jazzRow = page.locator('.rows .row').filter({ has: jazzPin });
-  await expect(jazzRow).toContainText('已固定离线');
-  // Pinning a child directory must not report the parent/root row as pinned.
-  await expect(rootPin).toHaveAttribute('aria-pressed', 'false');
-  // Both tracks are already cached; the pin fetched from the cache, not the network.
-  expect(mock.wholeRequests).toHaveLength(2);
-
-  // ---- 4. clearing the cache also clears the pins -----------------------
+  // ---- 3. Clear all empties the cache and drops the derived rows --------
   await page.locator('[data-testid="settings-open"]').click();
   const cachedMusic = page.locator('[data-testid="storage-audio"] b');
-  const pinnedCount = page.locator('[data-testid="storage-pins"]');
   await expect(cachedMusic).not.toHaveText('0 B');
-  await expect(pinnedCount).toContainText('已固定 1 项');
-
   await expect(page.locator('[data-testid="cache-limit"]')).toBeVisible();
   await expect(page.locator('[data-testid="cache-limit-2"]')).toHaveAttribute(
     'aria-pressed',
     'true',
   );
 
-  page.once('dialog', (dialog) => dialog.accept());
-  await page.locator('[data-testid="clear-cache"]').click();
+  const clearAll = page.locator('[data-testid="clear-all"]');
+  await expect(clearAll).toBeVisible();
+  for (const gone of [
+    'storage-pins',
+    'storage-import',
+    'clear-cache',
+    'clear-library',
+    'clear-import',
+  ]) {
+    await expect(page.locator(`[data-testid="${gone}"]`)).toHaveCount(0);
+  }
 
-  await expect(cachedMusic).toHaveText('0 B', { timeout: 10_000 });
-  await expect(pinnedCount).toContainText('已固定 0 项');
+  page.once('dialog', (dialog) => dialog.accept());
+  await clearAll.click();
+
+  await expect(cachedMusic).toHaveText('0 B', { timeout: 15_000 });
 });

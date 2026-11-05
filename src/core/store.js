@@ -16,6 +16,7 @@ import {
   getAllStats,
   putStat,
   putStats,
+  clearStats,
   getMeta,
   setMeta,
   updateMeta,
@@ -29,7 +30,7 @@ import { OpfsSource } from './sources/opfs/source.js';
 import { defaultLocalMode } from './sources/opfs/mode.js';
 import { OneDriveSource } from './sources/onedrive/source.js';
 import { AudioCache, cacheKey } from './cache/audioCache.js';
-import { createCacheIndex, createPinStore } from './cache/index.js';
+import { createCacheIndex } from './cache/index.js';
 import { createPlaylistRepo } from './playlist/repo.js';
 import {
   normalizePlaylist,
@@ -165,7 +166,6 @@ export class Store extends EventTarget {
     this.opfs = new OpfsSource({ db });
     this.localMode = 'reference';
     this.local = this.reference;
-    this.pinStore = createPinStore(db);
     this.playlistRepo = createPlaylistRepo({
       all: () => getAllPlaylists(db),
       put: (playlist) => putPlaylist(db, playlist),
@@ -173,7 +173,6 @@ export class Store extends EventTarget {
     });
     this.cache = new AudioCache({
       index: createCacheIndex(db),
-      pins: this.pinStore,
     });
     this.onedrive = new OneDriveSource({
       meta: {
@@ -234,7 +233,6 @@ export class Store extends EventTarget {
         leveling: false,
         gapless: true,
       },
-      pins: [],
       updateReady: false,
       migration: { running: false, done: 0, total: 0, error: null },
     };
@@ -422,7 +420,6 @@ export class Store extends EventTarget {
       leveling: false,
       gapless: true,
     }));
-    const pins = await this.pinStore.all().catch(() => []);
     const storedStats = await getAllStats(this.db).catch(() => []);
 
     this._playCounter = createPlayCounter();
@@ -456,17 +453,6 @@ export class Store extends EventTarget {
     if (added.length) {
       void putStats(this.db, added.map((id) => ({ id, ...nextStats[id] }))).catch(() => {});
     }
-    this._state.pins = Array.from(pins ?? [])
-      .filter((pin) => pin && typeof pin.id === 'string')
-      .map((pin) => ({
-        id: pin.id,
-        source: pin.source,
-        dir: pin.dir ?? '',
-        running: false,
-        done: 0,
-        total: 0,
-        error: null,
-      }));
     this._state.sources = SOURCE_KINDS.map((kind) => ({
       ...emptyRow(kind, this.sources[kind]),
       trackCount: this._countTracks(kind),
@@ -1135,18 +1121,13 @@ export class Store extends EventTarget {
 
   /**
    * Disconnect one source and drop everything derived from it: its track
-   * index rows, its cached audio, its pins and its pending tag reads.
+   * index rows, its cached audio and its pending tag reads.
    */
   async removeSource(kind = 'local') {
     const adapter = this.sources[kind];
     if (!adapter) return;
-    const trackSource = adapter.trackSource ?? trackSourceOf(kind);
 
     await this._purgeSource(kind);
-
-    const pins = this._state.pins.filter((pin) => pin.source === trackSource);
-    this._state.pins = this._state.pins.filter((pin) => pin.source !== trackSource);
-    for (const pin of pins) await this.pinStore.delete(pin.id).catch(() => {});
 
     await adapter.forget().catch(() => {});
     this._refreshSource(kind, {
@@ -1189,28 +1170,30 @@ export class Store extends EventTarget {
     this._emit();
   }
 
-  /** Drop the imported OPFS folder and the tracks it produced. */
-  async clearImported() {
-    await this.opfs.clear();
-    const removedIds = this._state.tracks
-      .filter((track) => track.source === 'opfs')
-      .map((track) => track.id);
-    if (removedIds.length) await deleteTracksById(this.db, removedIds);
-    const removed = new Set(removedIds);
-    this._state.tracks = this._state.tracks.filter((track) => !removed.has(track.id));
-    this._reconcileQueue(removedIds);
-    this._refreshSource('local');
-    this._emit();
-  }
-
-  /** Delete every indexed track, stop playback and persist the empty state. */
-  async clearLibrary() {
-    const ids = this._state.tracks.map((track) => track.id);
-    await deleteTracksById(this.db, ids);
+  /**
+   * Clear every derived piece of library storage but keep the user's sources,
+   * settings and playlists. The next launch may sync again; this call does not.
+   */
+  async clearAll() {
     this.player?.pause();
+    this.player?.unload?.();
     this._loadedId = null;
+
+    const ids = this._state.tracks.map((track) => track.id);
+    if (ids.length) await deleteTracksById(this.db, ids);
+    await this.cache.clear().catch(() => 0);
+    await clearStats(this.db).catch(() => {});
+    await this.playlog.clear().catch(() => {});
+    const lastScan = (await getMeta(this.db, 'lastScanBySource').catch(() => null)) ?? {};
+    await setMeta(this.db, 'lastScanBySource', {
+      ...lastScan,
+      onedrive: { ...(lastScan.onedrive ?? {}), at: 0 },
+    }).catch(() => {});
+
     this._state.tracks = [];
     this._state.stats = {};
+    this._state.rematch = null;
+    this._state.migration = { running: false, done: 0, total: 0, error: null };
     this.queue = createQueue([]);
     this._reflectQueue();
     this._state.current = {
@@ -1223,6 +1206,7 @@ export class Store extends EventTarget {
     for (const kind of SOURCE_KINDS) this._refreshSource(kind);
     this._emit();
     this._savePlayback();
+    this._syncMediaSession?.(true);
   }
 
   /** Empty the play queue; the library and the playing file stay untouched. */
@@ -1248,7 +1232,6 @@ export class Store extends EventTarget {
   async storageEstimate() {
     const { indexBytes, coverBytes } = await estimateLibrary(this._state.tracks);
     const audioBytes = await this.cache.total().catch(() => 0);
-    const imported = await this.opfs.usage().catch(() => ({ bytes: 0, count: 0 }));
     let usage = null;
     let quota = null;
     try {
@@ -1265,91 +1248,7 @@ export class Store extends EventTarget {
       usage,
       quota,
       limitBytes: this.cache.limit,
-      pinnedCount: this._state.pins.length,
-      importBytes: imported.bytes,
-      importCount: imported.count,
     };
-  }
-
-  /** Drop cached audio responses, the pins that protected them, and the play log. */
-  async clearAudioCache() {
-    const released = await this.cache.clear();
-    const pins = this._state.pins;
-    this._state.pins = [];
-    for (const pin of pins) await this.pinStore.delete(pin.id).catch(() => {});
-    await this.playlog.clear().catch(() => {});
-    this._emit();
-    return released;
-  }
-
-  /** Whether a source's `dir` (or its whole root) is kept for offline use. */
-  isPinned(source, dir) {
-    return this._state.pins.some(
-      (pin) =>
-        pin.source === source &&
-        (pin.dir === '' || dir === pin.dir || dir.startsWith(`${pin.dir}/`)),
-    );
-  }
-
-  /**
-   * Keep one source's directory offline: record the pin, then fetch every
-   * track once so the cache holds it. Sequential on purpose — a folder pin
-   * must not flood the network or the settings view.
-   */
-  async pinFolder({ source, dir = '', trackIds = [] } = {}) {
-    const id = `${source}:${dir}`;
-    if (this._state.pins.some((pin) => pin.id === id)) return;
-
-    const ids = Array.from(trackIds ?? []);
-    const byId = new Map(this._state.tracks.map((track) => [track.id, track]));
-    try {
-      await this.pinStore.put({ id, source, dir, at: Date.now() });
-    } catch {
-      return;
-    }
-
-    this._state.pins = [
-      ...this._state.pins,
-      { id, source, dir, running: true, done: 0, total: ids.length, error: null },
-    ];
-    this._emit();
-
-    let failures = 0;
-    let done = 0;
-    for (const trackId of ids) {
-      const track = byId.get(trackId);
-      if (track) {
-        try {
-          await this._adapterForTrack(track).getFile(track.path);
-        } catch {
-          failures += 1;
-        }
-      } else {
-        failures += 1;
-      }
-      done += 1;
-      this._patchPin(id, { done });
-      this._emit();
-    }
-
-    this._patchPin(id, {
-      running: false,
-      error: ids.length > 0 && failures === ids.length ? t('settings.storage.pinFailed') : null,
-    });
-    this._emit();
-  }
-
-  /** Forget a pin. Cached blobs stay until the limit or a manual clear. */
-  async unpinFolder(id) {
-    await this.pinStore.delete(id).catch(() => {});
-    this._state.pins = this._state.pins.filter((pin) => pin.id !== id);
-    this._emit();
-  }
-
-  _patchPin(id, patch) {
-    this._state.pins = this._state.pins.map((pin) =>
-      pin.id === id ? { ...pin, ...patch } : pin,
-    );
   }
 
   /** Multi-line tag report for one track; errors are left for the dialog. */
