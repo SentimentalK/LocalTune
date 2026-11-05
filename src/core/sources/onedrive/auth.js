@@ -9,6 +9,9 @@ export const GRAPH_CLIENT_ID = '195e9ac7-6f9e-4a3c-bf09-42e0961c796a';
 export const GRAPH_AUTHORITY = 'https://login.microsoftonline.com/consumers/oauth2/v2.0';
 export const GRAPH_SCOPES = 'Files.Read offline_access openid';
 export const TOKEN_SKEW_MS = 60000;
+/** `meta` keys and lifetime of the stored PKCE handshake. */
+export const PKCE_KEY = 'onedrivePkce';
+export const PKCE_TTL_MS = 10 * 60 * 1000;
 
 const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 

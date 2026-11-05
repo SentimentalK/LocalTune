@@ -114,6 +114,9 @@ export default {
   'settings.onedrive.root': 'OneDrive',
   'settings.onedrive.connectedHint': 'Connected to OneDrive — choose your music folder',
   'settings.onedrive.authFailed': "OneDrive sign-in didn't finish. Please try again.",
+  'settings.onedrive.authFailedRedirect': 'OneDrive sign-in lost its state. Please try again.',
+  'settings.onedrive.authFailedToken': "OneDrive couldn't finish the sign-in exchange. Please try again.",
+  'settings.onedrive.authFailedPending': 'OneDrive sign-in is still finishing. Please retry in a moment.',
   'settings.background.title': 'Background playback',
   'settings.background.hint':
     'Install the app and exclude it from battery optimisation so the system keeps playing when the screen is off.',

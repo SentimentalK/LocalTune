@@ -115,6 +115,12 @@ export default {
     'OneDrive に接続しました。音楽フォルダーを選択してください',
   'settings.onedrive.authFailed':
     'OneDrive のサインインが完了しませんでした。もう一度お試しください。',
+  'settings.onedrive.authFailedRedirect':
+    'OneDrive のサインイン状態が失われました。もう一度お試しください。',
+  'settings.onedrive.authFailedToken':
+    'OneDrive のサインイン交換に失敗しました。もう一度お試しください。',
+  'settings.onedrive.authFailedPending':
+    'OneDrive のサインインを処理中です。しばらくしてから再試行してください。',
   'settings.background.title': 'バックグラウンド再生',
   'settings.background.hint':
     'アプリとしてインストールし、バッテリー最適化から除外すると、画面オフでも再生が途切れにくくなります。',
