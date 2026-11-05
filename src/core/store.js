@@ -84,7 +84,7 @@ const TRACK_SOURCE = { local: 'fsa', onedrive: 'onedrive' };
 const LOCAL_MODE_KEY = 'localMode';
 const ONEDRIVE_SYNC_INTERVAL = 60 * 60 * 1000;
 const ENRICH_FLUSH_EVERY = 10;
-const ENRICH_EMIT_EVERY = 5;
+const ENRICH_EMIT_EVERY = 1;
 
 function trackSourceOf(kind) {
   return TRACK_SOURCE[kind] ?? 'fsa';
@@ -983,6 +983,49 @@ export class Store extends EventTarget {
   }
 
   /**
+   * Write duration, cover and tags for one file that just landed in the cache.
+   * A blob from Cache Storage has no filename, so the path supplies the type.
+   */
+  async _applyFileMetadata(kind, entry, blob) {
+    const adapter = this.sources[kind];
+    const trackSource = adapter?.trackSource ?? trackSourceOf(kind);
+    const id = `${trackSource}:${entry.path}`;
+    const previous = this._state.tracks.find((track) => track.id === id);
+    if (previous?.duration > 0 && previous?.cover) return;
+    let meta = {};
+    try {
+      meta = await readMetadata(blob, entry.path);
+    } catch {
+      return;
+    }
+    const useful =
+      meta?.duration > 0 || meta?.cover || meta?.title || meta?.artist || meta?.album;
+    if (!useful) return;
+    const track = buildTrack(entry, meta, {
+      trackSource,
+      externalIds: entry.externalIds ?? previous?.externalIds ?? {},
+    });
+    if (!track.cover && previous?.cover) track.cover = previous.cover;
+    if (!(track.duration > 0) && previous?.duration > 0) track.duration = previous.duration;
+    if (!this._state.tracks.some((item) => item.id === id)) return;
+    this._state.tracks = sortTracks(
+      this._state.tracks.map((item) => (item.id === id ? track : item)),
+    );
+    if (this.queue?.tracks?.some((item) => item.id === id)) {
+      this.queue = {
+        ...this.queue,
+        tracks: this.queue.tracks.map((item) => (item.id === id ? track : item)),
+      };
+      this._reflectQueue();
+    }
+    try {
+      await putTracks(this.db, [track]);
+    } catch {
+      // The row is already on screen; the next sync writes it again.
+    }
+  }
+
+  /**
    * Pull every listed file into `AudioCache` so playback reads the cache.
    * Sequential on purpose: one failed track never stops the rest, and the
    * source itself stays healthy. A path counts as cached only when the Cache
@@ -1007,9 +1050,10 @@ export class Store extends EventTarget {
       } catch {
         present = false;
       }
+      let blob = null;
       if (!present) {
         try {
-          await adapter.getFile(entry.path, {
+          blob = await adapter.getFile(entry.path, {
             awaitCache: true,
             itemId: entry.externalIds?.onedrive ?? null,
           });
@@ -1023,8 +1067,21 @@ export class Store extends EventTarget {
           });
         }
       }
-      if (present) cached += 1;
-      else uncached.push(entry.path);
+      if (present) {
+        cached += 1;
+        if (!blob && this.cache?.read) {
+          try {
+            blob = await this.cache.read(key);
+          } catch {
+            blob = null;
+          }
+        }
+        // Duration and cover come from the file itself. Write them as soon
+        // as this one file is on device, before the rest of the library lands.
+        if (blob) await this._applyFileMetadata(kind, entry, blob);
+      } else {
+        uncached.push(entry.path);
+      }
       done += 1;
       this._patchSource(kind, { progress: { done, total, phase: 'cache' } });
       this._emit();

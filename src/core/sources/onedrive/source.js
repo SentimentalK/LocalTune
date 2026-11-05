@@ -286,7 +286,7 @@ export class OneDriveSource {
           mtime: Date.parse(item.lastModifiedDateTime) || 0,
           size: item.size ?? 0,
           externalIds: { onedrive: item.id },
-          readFile: () => self._remoteFile(item),
+          readFile: () => self._fileForTags(path, item),
         };
       }
     }
@@ -481,6 +481,18 @@ export class OneDriveSource {
     } catch {
       return attempt();
     }
+  }
+
+  /** Prefer the cached audio so tags are read from the bytes already on device. */
+  async _fileForTags(path, item) {
+    const key = cacheKey('onedrive', path);
+    try {
+      const cached = await this.cache?.read?.(key);
+      if (cached) return cached;
+    } catch {
+      // A cache miss falls through to a ranged read.
+    }
+    return this._remoteFile(item);
   }
 
   _remoteFile(item) {

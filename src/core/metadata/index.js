@@ -98,10 +98,10 @@ async function readMp4(file) {
  * @param {File|Blob & {name?:string}} file
  * @returns {Promise<{title?:string,artist?:string,album?:string,year?:number|null,trackNo?:number|null,duration?:number,cover?:Blob|null}>}
  */
-export async function readMetadata(file) {
+export async function readMetadata(file, name = file?.name ?? '') {
   try {
     if (!file || typeof file.slice !== 'function') return {};
-    const ext = extensionOf(file.name ?? '');
+    const ext = extensionOf(String(name ?? ''));
     if (ext === 'mp3') return await readId3(file);
     if (ext === 'm4a') return await readMp4(file);
     return {};

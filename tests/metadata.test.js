@@ -29,6 +29,16 @@ test('mp3: ID3v2.3 text frames, track number, cover and Xing duration', async ()
   assert.ok(meta.cover.size > 0);
 });
 
+test('mp3: a nameless blob still yields duration and cover when the path is passed', async () => {
+  const file = await fixtureFile('sample.mp3');
+  const blob = new Blob([await file.arrayBuffer()], { type: 'application/octet-stream' });
+  assert.equal(blob.name, undefined);
+  const meta = await readMetadata(blob, "90's/Aimer - StarRingChild.mp3");
+  assert.equal(meta.title, 'Night Drive');
+  assert.ok(meta.duration > 0);
+  assert.ok(meta.cover instanceof Blob);
+});
+
 test('m4a: mvhd duration and ilst tags, cover type 14', async () => {
   const meta = await readMetadata(await fixtureFile('sample.m4a'));
   assert.equal(meta.title, 'Fixture Song');
