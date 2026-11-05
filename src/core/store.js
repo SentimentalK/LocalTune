@@ -944,7 +944,13 @@ export class Store extends EventTarget {
       this._refreshSource(kind, {});
       this._emit();
       this._savePlayback();
-      if (!queue.pending.size) this._enrichQueues.delete(kind);
+      if (queue.pending.size) {
+        // A sync merged work while the final flush was in flight; the queue is
+        // still in the map, so restart the worker instead of orphaning it.
+        void this._drainEnrich(kind, queue);
+      } else {
+        this._enrichQueues.delete(kind);
+      }
     }
   }
 

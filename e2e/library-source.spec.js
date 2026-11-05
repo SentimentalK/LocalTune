@@ -253,7 +253,7 @@ test('a granted source with zero tracks still gets a row', async ({ page }) => {
   await expect(row.locator('b')).toHaveText('OneDrive');
 });
 
-test('removing a source drops its tracks, cached audio and pins', async ({ page }) => {
+test('removing a source drops its tracks and cached audio', async ({ page }) => {
   test.setTimeout(120_000);
   await installGraphMock(page, { files: FILES });
 
