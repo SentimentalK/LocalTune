@@ -8,11 +8,7 @@
 import { formatTime } from '../core/selectors.js';
 import { subdirsOf, tracksDirect, tracksUnder } from '../core/folders.js';
 import { runSearch } from '../core/search.js';
-import {
-  libraryVisible,
-  sourceNeedsReconnect,
-  visibleSources,
-} from '../core/library.js';
+import { libraryVisible, visibleSources } from '../core/library.js';
 import { el, icon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
 import { createSettingsView } from './settings.js';
 import { createPlaylistSettings } from './playlist-settings.js';
@@ -244,12 +240,8 @@ function queueRow(track, index, { now, onActivate, onRemove }) {
   return row;
 }
 
-/**
- * Source root row: opens the first level of that source's folder tree. An
- * expired grant keeps the row (cached tracks are still playable) and adds the
- * reconnect action outside the hit button, so it never navigates.
- */
-function sourceRow({ id, label, count, onOpen, needsReconnect = false, onReconnect = null }) {
+/** Source root row: opens the first level of that source's folder tree. */
+function sourceRow({ id, label, count, onOpen }) {
   const hit = el(
     'button',
     {
@@ -266,22 +258,7 @@ function sourceRow({ id, label, count, onOpen, needsReconnect = false, onReconne
       ]),
     ],
   );
-  if (!needsReconnect) return el('li', { class: 'row' }, [hit]);
-  const note = el('div', { class: 'row-note' }, [
-    el('span', {
-      class: 'muted',
-      'data-testid': `source-hint-${id}`,
-      text: t('library.expiredHint'),
-    }),
-    el('button', {
-      class: 'btn-pill ghost',
-      type: 'button',
-      'data-testid': `source-reconnect-${id}`,
-      text: t('library.reconnect'),
-      onclick: onReconnect,
-    }),
-  ]);
-  return el('li', { class: 'row has-note' }, [hit, note]);
+  return el('li', { class: 'row' }, [hit]);
 }
 
 function folderSection(headerLabel, countLabel, children) {
@@ -404,7 +381,7 @@ function createShell(store, sw) {
   setHidden(pauseIcon, true);
   const shuffleButton = el(
     'button',
-    { class: 'btn', type: 'button', 'aria-label': t('aria.shuffle'), 'aria-pressed': 'false', onclick: () => store.toggleShuffle() },
+    { class: 'btn', type: 'button', 'data-testid': 'control-shuffle', 'aria-label': t('aria.shuffle'), 'aria-pressed': 'false', onclick: () => store.toggleShuffle() },
     icon('shuffle'),
   );
   const prevButton = el(
@@ -425,7 +402,7 @@ function createShell(store, sw) {
   const repeatBadge = el('span', { class: 'badge', 'aria-hidden': 'true' });
   const repeatButton = el(
     'button',
-    { class: 'btn', type: 'button', 'aria-label': t('player.repeatOff'), onclick: () => store.cycleRepeat() },
+    { class: 'btn', type: 'button', 'data-testid': 'control-repeat', 'aria-label': t('player.repeatOff'), 'aria-pressed': 'false', onclick: () => store.cycleRepeat() },
     [icon('repeat'), repeatBadge],
   );
   const controls = el('div', { class: 'controls' }, [
@@ -713,7 +690,9 @@ export function mountUi(root, store, sw) {
       ui.scan.setAttribute('aria-valuenow', '0');
     }
 
-    const error = rows.find((row) => row.error)?.error ?? null;
+    // Sign-in failures (rows carrying an errorStage) stay in the settings
+    // source card; the home page must never surface OneDrive login state.
+    const error = rows.find((row) => row.error && !row.errorStage)?.error ?? null;
     setHidden(ui.errorBox, !error);
     if (error) setText(ui.errorBox, typeof error === 'string' ? error : error.message ?? String(error));
   }
@@ -771,6 +750,7 @@ export function mountUi(root, store, sw) {
     ui.shuffleButton.setAttribute('aria-pressed', String(queue.shuffle));
 
     ui.repeatButton.classList.toggle('is-on', queue.repeat !== 'off');
+    ui.repeatButton.setAttribute('aria-pressed', String(queue.repeat !== 'off'));
     ui.repeatButton.setAttribute(
       'aria-label',
       t(REPEAT_LABEL_KEY[queue.repeat] ?? REPEAT_LABEL_KEY.off),
@@ -1039,25 +1019,16 @@ export function mountUi(root, store, sw) {
     ]);
   }
 
-  /** Refresh the grant when only the token expired; sign in when signed out. */
-  function reconnectAction(row) {
-    return () =>
-      run(row?.permission === 'prompt' ? store.reauthenticateOneDrive() : store.connectOneDrive());
-  }
-
   function renderFolders(state) {
     if (folder.source === null) {
       const rows = [];
       for (const row of visibleSources(state.sources)) {
         const list = kindTracks(state, row.id);
-        const needsReconnect = sourceNeedsReconnect(row);
         rows.push(
           sourceRow({
             id: row.id,
             label: sourceDisplayName(state, row.id),
             count: list.length,
-            needsReconnect,
-            onReconnect: needsReconnect ? reconnectAction(row) : null,
             onOpen: () => {
               folder = { source: row.id, dir: '' };
               render(store.state);
@@ -1118,21 +1089,6 @@ export function mountUi(root, store, sw) {
     );
 
     const children = [folderHeader(state, kind, dir, all)];
-    const sourceState = (state.sources ?? []).find((row) => row.id === kind) ?? null;
-    if (sourceNeedsReconnect(sourceState)) {
-      children.push(
-        el('p', { class: 'alert', 'data-testid': `folder-reconnect-${kind}` }, [
-          el('span', { text: t('library.expiredHint') }),
-          el('button', {
-            class: 'btn-pill ghost',
-            type: 'button',
-            'data-testid': `folder-reconnect-button-${kind}`,
-            text: t('library.reconnect'),
-            onclick: reconnectAction(sourceState),
-          }),
-        ]),
-      );
-    }
     if (subs.length) {
       children.push(el('h3', { class: 'folder-subhead', text: t('folders.subfolders') }));
       children.push(el('ul', { class: 'rows' }, dirRows));

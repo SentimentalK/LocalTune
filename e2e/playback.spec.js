@@ -158,3 +158,78 @@ test('auto-advance plays three tracks gaplessly and logs the run', async ({ page
     after.filter((row) => row.type === 'trackchange' && row.detail?.source === 'auto').length,
   ).toBeGreaterThanOrEqual(2);
 });
+
+test('shuffle and repeat survive an immediate reload', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#app h1')).toBeVisible();
+
+  const shuffle = page.locator('[data-testid="control-shuffle"]');
+  const repeat = page.locator('[data-testid="control-repeat"]');
+
+  await shuffle.click();
+  await repeat.click();
+
+  const selected = async () => {
+    await expect(shuffle).toHaveClass(/is-on/);
+    await expect(shuffle).toHaveAttribute('aria-pressed', 'true');
+    await expect(repeat).toHaveClass(/is-on/);
+    await expect(repeat).toHaveAttribute('aria-pressed', 'true');
+    await expect(repeat).toContainText('∞');
+  };
+
+  // Reload before the 1s IndexedDB debounce can flush: prefs must be enough.
+  await page.reload();
+  await expect(page.locator('#app h1')).toBeVisible();
+  await selected();
+
+  await page.reload();
+  await expect(page.locator('#app h1')).toBeVisible();
+  await selected();
+
+  // Read the theme from the CSS variables instead of pinning a colour: a
+  // theme change must not turn this into a false failure.
+  const style = await page.evaluate(() => {
+    const button = document.querySelector('[data-testid="control-shuffle"]');
+    const computed = getComputedStyle(button);
+    const root = getComputedStyle(document.documentElement);
+    const rgb = (value) => {
+      const probe = document.createElement('span');
+      probe.style.color = value.trim();
+      document.body.append(probe);
+      const out = getComputedStyle(probe).color;
+      probe.remove();
+      return out;
+    };
+    return {
+      background: computed.backgroundColor,
+      color: computed.color,
+      accent: rgb(root.getPropertyValue('--accent')),
+      accentFg: rgb(root.getPropertyValue('--accent-fg')),
+      surface: rgb(root.getPropertyValue('--surface')),
+      badge: (() => {
+        const badge = document.querySelector('[data-testid="control-repeat"] .badge');
+        const badgeStyle = getComputedStyle(badge);
+        return { background: badgeStyle.backgroundColor, color: badgeStyle.color };
+      })(),
+    };
+  });
+  expect(style.background).toBe(style.accent);
+  expect(style.background).not.toBe(style.surface);
+  expect(style.color).toBe(style.accentFg);
+  expect(style.badge.background).toBe(style.accentFg);
+  expect(style.badge.color).toBe(style.accent);
+
+  const luminance = (rgbText) => {
+    const [r, g, b] = rgbText.match(/\d+/g).slice(0, 3).map((value) => {
+      const channel = Number(value) / 255;
+      return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (first, second) => {
+    const a = luminance(first);
+    const b = luminance(second);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  };
+  expect(ratio(style.background, style.color)).toBeGreaterThanOrEqual(4.5);
+});

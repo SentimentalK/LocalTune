@@ -75,6 +75,7 @@ import {
 } from './persist.js';
 import { installMediaSession, syncMediaSession } from './mediaSession.js';
 import { normalizeProxyUrl } from './playlist/sources/proxy.js';
+import { load as loadPrefs, save as savePrefs } from './playerPrefs.js';
 import { t } from '../i18n/index.js';
 
 const VIEWS = new Set(['folders', 'queue', 'search', 'settings', 'vip']);
@@ -413,6 +414,11 @@ export class Store extends EventTarget {
     const tracks = sortTracks(await getAllTracks(this.db).catch(() => []));
     const playlists = await this.playlistRepo.list().catch(() => []);
     const playback = await loadPlayback(this.db).catch(() => null);
+    // localStorage prefs are written synchronously on every toggle, so they win
+    // over a playback snapshot that may still be waiting on its debounce.
+    const prefs = loadPrefs();
+    const initialShuffle = prefs ? prefs.shuffle : Boolean(playback?.shuffle);
+    const initialRepeat = prefs ? prefs.repeat : (playback?.repeat ?? 'off');
     const settings = await loadSettings(this.db).catch(() => ({
       language: 'auto',
       cacheLimitBytes: DEFAULT_CACHE_LIMIT_BYTES,
@@ -482,7 +488,7 @@ export class Store extends EventTarget {
         if (found >= 0) startIndex = found;
       }
       this.queue = setQueue(
-        { ...createQueue([]), shuffle: Boolean(playback?.shuffle), repeat: playback?.repeat ?? 'off' },
+        { ...createQueue([]), shuffle: initialShuffle, repeat: initialRepeat },
         queueTracks,
         startIndex,
       );
@@ -500,12 +506,13 @@ export class Store extends EventTarget {
       this.player?.setVolume(volume);
       this._reflectQueue();
     } else {
+      this.queue = { ...this.queue, shuffle: initialShuffle, repeat: initialRepeat };
       this._state.current = { track: null, playing: false, position: 0, duration: 0, volume };
       this._state.queue = {
         tracks: [],
         index: -1,
-        shuffle: this.queue.shuffle,
-        repeat: this.queue.repeat,
+        shuffle: initialShuffle,
+        repeat: initialRepeat,
       };
     }
 
@@ -1402,6 +1409,7 @@ export class Store extends EventTarget {
     this.queue = toggleShuffleState(this.queue);
     this._reflectQueue();
     this._emit();
+    savePrefs({ shuffle: this.queue.shuffle, repeat: this.queue.repeat });
     this._savePlayback();
     this._syncMediaSession(true);
   }
@@ -1410,6 +1418,7 @@ export class Store extends EventTarget {
     this.queue = cycleRepeatState(this.queue);
     this._reflectQueue();
     this._emit();
+    savePrefs({ shuffle: this.queue.shuffle, repeat: this.queue.repeat });
     this._savePlayback();
     this._syncMediaSession(true);
   }
@@ -1914,11 +1923,6 @@ export class Store extends EventTarget {
       this.log('loadfail', {
         error: String(error?.cause?.message ?? error?.message ?? error),
       });
-      // A missing grant is also reported on the source row, so the reconnect
-      // action is reachable from the library without a silent dead end.
-      if (kindOfTrack(track) === 'onedrive' && this.onedrive.permission() !== 'granted') {
-        this._refreshSource('onedrive', { error: t('error.onedrive.authRequired') });
-      }
       this._emit();
       return false;
     } finally {

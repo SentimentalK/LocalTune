@@ -31,3 +31,4 @@ import './playlist-match.test.js';
 import './playlist-sources.test.js';
 import './playlist-model.test.js';
 import './playlist-repo.test.js';
+import './playerPrefs.test.js';

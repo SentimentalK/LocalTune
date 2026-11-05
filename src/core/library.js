@@ -5,7 +5,8 @@
  *
  * A source keeps its library row while it still owns indexed tracks: an
  * expired OneDrive grant loses permission but not the cached files, and those
- * tracks stay playable. Only a source with nothing indexed disappears.
+ * tracks stay playable. Only a source with nothing indexed disappears; the
+ * expiry itself is never surfaced as a prompt.
  */
 
 export function sourceVisible(row) {
@@ -16,10 +17,6 @@ export function sourceVisible(row) {
 
 export function visibleSources(sources) {
   return Array.from(sources ?? []).filter(sourceVisible);
-}
-
-export function sourceNeedsReconnect(row) {
-  return Boolean(row) && row.permission !== 'granted' && (row.trackCount ?? 0) > 0;
 }
 
 export function libraryVisible(state) {

@@ -46,13 +46,6 @@ export function createSettingsView(store, sw) {
     setHidden(rowError, true);
     // Distinct from `.settings-error`: existing specs target that class to
     // probe the sync failure, and a second match would break them.
-    const hint = el('p', {
-      class: 'settings-hint muted',
-      role: 'status',
-      'data-testid': `source-hint-${kind}`,
-      style: { margin: '0', padding: '0 16px 12px', fontSize: '12px' },
-    });
-    setHidden(hint, true);
     const progressLabel = el('span');
     const progressBar = el('i');
     const progress = el('div', { class: 'settings-progress', role: 'status' }, [
@@ -64,7 +57,6 @@ export function createSettingsView(store, sw) {
     const view = {
       name,
       count,
-      hint,
       error: rowError,
       progress,
       progressLabel,
@@ -165,7 +157,6 @@ export function createSettingsView(store, sw) {
         view.actions,
       ]),
       progress,
-      hint,
       rowError,
     ]);
 
@@ -755,26 +746,19 @@ export function createSettingsView(store, sw) {
       const scanning = Boolean(row.scanning);
       const trackCount = row.trackCount ?? 0;
       const connected = permission === 'granted' || trackCount > 0;
-      const needsReconnect = permission !== 'granted' && trackCount > 0;
       syncActions(view, connected);
-      setHidden(view.hint, !needsReconnect);
-      if (needsReconnect) setText(view.hint, t('library.expiredHint'));
 
       const connectLabel =
-        permission === 'prompt'
-          ? t('settings.source.reconnect')
-          : kind === 'onedrive'
-            ? t('settings.source.connectOneDrive')
-            : t('settings.source.connectLocal');
+        kind === 'onedrive'
+          ? t('settings.source.connectOneDrive')
+          : t('settings.source.connectLocal');
       setText(view.connectButton, connectLabel);
       view.connectButton.setAttribute('aria-label', connectLabel);
       view.connectButton.setAttribute('title', connectLabel);
 
       view.syncButton.disabled = view.syncing || scanning || permission === 'none';
       view.changeButton.disabled = scanning;
-      const changeLabel = needsReconnect
-        ? t('library.reconnect')
-        : t('settings.source.changeFolder');
+      const changeLabel = t('settings.source.changeFolder');
       view.changeButton.setAttribute('aria-label', changeLabel);
       view.changeButton.setAttribute('title', changeLabel);
       view.removeButton.disabled = scanning || (permission === 'none' && trackCount === 0);

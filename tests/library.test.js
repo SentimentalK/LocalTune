@@ -1,12 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  libraryVisible,
-  sourceNeedsReconnect,
-  sourceVisible,
-  visibleSources,
-} from '../src/core/library.js';
+import { libraryVisible, sourceVisible, visibleSources } from '../src/core/library.js';
 
 const row = (permission, trackCount) => ({ id: 'onedrive', permission, trackCount });
 
@@ -28,14 +23,6 @@ test('visibleSources filters in place and preserves the input order', () => {
   assert.deepEqual(visibleSources([cloud, local]), [cloud]);
   assert.deepEqual(visibleSources(undefined), []);
   assert.deepEqual(visibleSources([]), []);
-});
-
-test('sourceNeedsReconnect covers expired grants with cached tracks only', () => {
-  assert.equal(sourceNeedsReconnect(row('prompt', 3)), true);
-  assert.equal(sourceNeedsReconnect(row('none', 3)), true);
-  assert.equal(sourceNeedsReconnect(row('granted', 3)), false);
-  assert.equal(sourceNeedsReconnect(row('prompt', 0)), false);
-  assert.equal(sourceNeedsReconnect(null), false);
 });
 
 test('libraryVisible needs either tracks or a visible source', () => {
