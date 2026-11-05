@@ -6,7 +6,7 @@
  */
 
 const DEFAULT_ITEM_SELECT =
-  'id,name,size,file,folder,lastModifiedDateTime,parentReference,@microsoft.graph.downloadUrl';
+  'id,name,size,file,folder,lastModifiedDateTime,parentReference';
 
 export class GraphError extends Error {
   /**
@@ -85,16 +85,31 @@ export function createGraphClient({
   }
 
   function getItem(driveId, itemId) {
-    // `@` in the annotation is a reserved character. Left raw, some Graph
-    // front doors drop `@microsoft.graph.downloadUrl` from `$select`.
     const id = encodeURIComponent(itemId);
     const select = encodeURIComponent(DEFAULT_ITEM_SELECT);
     return getJson(`/drives/${driveId}/items/${id}?$select=${select}`);
   }
 
+  function downloadUrlOf(item) {
+    if (!item || typeof item !== 'object') return null;
+    return (
+      item['@microsoft.graph.downloadUrl'] ||
+      item['@content.downloadUrl'] ||
+      null
+    );
+  }
+
   async function getDownloadUrl(driveId, itemId) {
-    const item = await getItem(driveId, itemId);
-    const url = item?.['@microsoft.graph.downloadUrl'];
+    const id = encodeURIComponent(itemId);
+    const path = `/drives/${driveId}/items/${id}`;
+    // Naming the annotation inside `$select` makes Graph v1.0 omit it and
+    // return the item with no download URL. The default item payload
+    // includes it. The short `select` is only the documented fallback.
+    const bare = await getJson(path);
+    const direct = downloadUrlOf(bare);
+    if (direct) return direct;
+    const selected = await getJson(`${path}?select=id,%40microsoft.graph.downloadUrl`);
+    const url = downloadUrlOf(selected);
     if (!url) {
       throw new GraphError('item has no download url', { code: 'noDownloadUrl' });
     }

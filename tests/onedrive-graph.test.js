@@ -94,15 +94,28 @@ test('getJson joins paths onto baseUrl and passes absolute URLs through', async 
   assert.equal(calls[1][0], 'https://graph.microsoft.com/v1.0/other');
 });
 
-test('getDownloadUrl returns the annotation and rejects items without one', async () => {
+test('getDownloadUrl reads the default item payload and falls back to select', async () => {
   const download = 'https://download.example/file';
   const { client, calls } = graphClient(() =>
     jsonResponse(200, { id: 'i', '@microsoft.graph.downloadUrl': download }),
   );
 
   assert.equal(await client.getDownloadUrl('drive1', 'item1'), download);
-  assert.match(calls[0][0], /\$select=/);
-  assert.match(calls[0][0], /%40microsoft\.graph\.downloadUrl/);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'https://graph.microsoft.com/v1.0/drives/drive1/items/item1');
+
+  let reads = 0;
+  const { client: fallback, calls: fallbackCalls } = graphClient(() => {
+    reads += 1;
+    if (reads === 1) return jsonResponse(200, { id: 'i', name: 'a.mp3' });
+    return jsonResponse(200, { id: 'i', '@microsoft.graph.downloadUrl': download });
+  });
+  assert.equal(await fallback.getDownloadUrl('drive1', 'item1'), download);
+  assert.equal(fallbackCalls.length, 2);
+  assert.equal(
+    fallbackCalls[1][0],
+    'https://graph.microsoft.com/v1.0/drives/drive1/items/item1?select=id,%40microsoft.graph.downloadUrl',
+  );
 
   const { client: bare } = graphClient(() => jsonResponse(200, { id: 'i' }));
   await assert.rejects(bare.getDownloadUrl('drive1', 'item1'), (error) => {
