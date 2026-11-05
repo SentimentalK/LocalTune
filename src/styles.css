@@ -15,6 +15,8 @@
   --line: #e8e6e1;
   --accent: #1f5c45;
   --accent-fg: #ffffff;
+  --danger: #a3231b;
+  --warn: #8a5a00;
   --radius: 28px;
   --radius-sm: 16px;
   --shadow: 0 1px 2px rgba(20, 24, 28, 0.05), 0 10px 30px rgba(20, 24, 28, 0.08);
@@ -1328,6 +1330,63 @@ time {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.battery-guide-panel {
+  width: min(560px, 100%);
+  max-height: min(84vh, 720px);
+  overflow-y: auto;
+}
+
+.guide-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.guide-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.battery-guide-panel .muted {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.guide-section-title {
+  margin: 4px 0 6px;
+  font-size: 13px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.guide-list {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.guide-list li {
+  margin: 2px 0;
+}
+
+.guide-must {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.guide-should {
+  color: var(--warn);
+}
+
+.guide-note {
+  color: var(--muted);
 }
 
 .tag-report {

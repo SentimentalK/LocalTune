@@ -155,6 +155,25 @@ export default {
   'settings.background.ios1': 'Tap Share in Safari',
   'settings.background.ios2': 'Add to Home Screen',
   'settings.background.ios3': 'Open from Home Screen',
+  'battery.dialog.title': 'Background playback',
+  'battery.dialog.intro':
+    'Phones pause background pages to save power. These steps keep playback alive.',
+  'battery.dialog.close': 'Close',
+  'battery.android.must1': 'Install LocalTune to your home screen.',
+  'battery.android.must2':
+    'Chrome → App battery usage → Allow background usage → Unrestricted.',
+  'battery.android.should1': 'Turn off Battery Saver while listening.',
+  'battery.android.should2': 'Re-check after a system update; Android may reset it.',
+  'battery.android.note1': 'The browser cannot read this setting, so no green "OK" is shown.',
+  'battery.android.note2': 'Keep the media notification; swiping it away can end playback.',
+  'battery.ios.must1': 'Tap Share in Safari → Add to Home Screen.',
+  'battery.ios.must2': 'Open LocalTune from the home screen, not a Safari tab.',
+  'battery.ios.should1': 'Keep Low Power Mode off while listening.',
+  'battery.ios.should2': 'Use the lock-screen controls to change tracks.',
+  'battery.ios.note1':
+    'iOS may pause after a track ends in the background; this is a system limit.',
+  'battery.ios.note2':
+    'iOS 26: if audio is silent after reopening, close and reopen the app once.',
   'settings.storage.title': 'Storage',
   'settings.storage.index': 'Index',
   'settings.storage.cover': 'Covers',
