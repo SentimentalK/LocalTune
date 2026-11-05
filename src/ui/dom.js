@@ -13,6 +13,8 @@ const ICONS = {
   pause: 'M6 5h4v14H6zm8 0h4v14h-4z',
   next: 'M16 5h2v14h-2zM6 5l9 7-9 7z',
   repeat: 'M7 7h10V4l4 4-4 4V9H9v3H7zm10 10H7v3l-4-4 4-4v3h8v-3h2z',
+  'repeat-one':
+    'M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1v1h1.5v4H13z',
   gear: 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z',
   search:
     'M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z',
@@ -61,16 +63,22 @@ export function el(tag, props = {}, children = []) {
   return node;
 }
 
+/** Swap the glyph of an existing icon element without replacing the node. */
+export function setIcon(svg, name) {
+  const path = svg.querySelector('path');
+  const d = ICONS[name] ?? '';
+  if (path.getAttribute('d') !== d) path.setAttribute('d', d);
+  return svg;
+}
+
 /** Inline SVG icon; decorative, so hidden from assistive tech. */
 export function icon(name) {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
   svg.setAttribute('focusable', 'false');
-  const path = document.createElementNS(SVG_NS, 'path');
-  path.setAttribute('d', ICONS[name] ?? '');
-  svg.append(path);
-  return svg;
+  svg.append(document.createElementNS(SVG_NS, 'path'));
+  return setIcon(svg, name);
 }
 
 // One object URL per cover Blob for the life of the page; revoked only when a

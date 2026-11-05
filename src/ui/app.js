@@ -9,7 +9,7 @@ import { formatTime } from '../core/selectors.js';
 import { subdirsOf, tracksDirect, tracksUnder } from '../core/folders.js';
 import { runSearch } from '../core/search.js';
 import { libraryVisible, visibleSources } from '../core/library.js';
-import { el, icon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
+import { el, icon, setIcon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
 import { createSettingsView } from './settings.js';
 import { createPlaylistSettings } from './playlist-settings.js';
 import { createVipView } from './vip.js';
@@ -27,7 +27,6 @@ const REPEAT_LABEL_KEY = {
   all: 'player.repeatAll',
   one: 'player.repeatOne',
 };
-const REPEAT_BADGE = { off: '', all: '∞', one: '1' };
 const SEEK_STEP = 5;
 
 /** Search groups in priority order; ids double as `search.group*` keys. */
@@ -399,11 +398,11 @@ function createShell(store, sw) {
     { class: 'btn', type: 'button', 'aria-label': t('aria.next'), onclick: () => run(store.next()) },
     icon('next'),
   );
-  const repeatBadge = el('span', { class: 'badge', 'aria-hidden': 'true' });
+  const repeatIcon = icon('repeat');
   const repeatButton = el(
     'button',
     { class: 'btn', type: 'button', 'data-testid': 'control-repeat', 'aria-label': t('player.repeatOff'), 'aria-pressed': 'false', onclick: () => store.cycleRepeat() },
-    [icon('repeat'), repeatBadge],
+    repeatIcon,
   );
   const controls = el('div', { class: 'controls' }, [
     shuffleButton,
@@ -498,7 +497,7 @@ function createShell(store, sw) {
     playButton,
     shuffleButton,
     repeatButton,
-    repeatBadge,
+    repeatIcon,
     searchButton,
     vipButton,
     settingsButton,
@@ -755,7 +754,8 @@ export function mountUi(root, store, sw) {
       'aria-label',
       t(REPEAT_LABEL_KEY[queue.repeat] ?? REPEAT_LABEL_KEY.off),
     );
-    setText(ui.repeatBadge, REPEAT_BADGE[queue.repeat] ?? '');
+    const repeatIconName = queue.repeat === 'one' ? 'repeat-one' : 'repeat';
+    setIcon(ui.repeatIcon, repeatIconName);
   }
 
   function renderTabs(state) {
