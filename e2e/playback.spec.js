@@ -165,6 +165,7 @@ test('shuffle and repeat survive an immediate reload', async ({ page }) => {
 
   const shuffle = page.locator('[data-testid="control-shuffle"]');
   const repeat = page.locator('[data-testid="control-repeat"]');
+  const repeatD = await repeat.locator('path').getAttribute('d');
 
   await shuffle.click();
   await repeat.click();
@@ -174,7 +175,9 @@ test('shuffle and repeat survive an immediate reload', async ({ page }) => {
     await expect(shuffle).toHaveAttribute('aria-pressed', 'true');
     await expect(repeat).toHaveClass(/is-on/);
     await expect(repeat).toHaveAttribute('aria-pressed', 'true');
-    await expect(repeat).toContainText('∞');
+    // `all` keeps the plain repeat glyph; only `one` swaps in repeat-one.
+    expect(await repeat.locator('path').getAttribute('d')).toBe(repeatD);
+    await expect(page.locator('.controls .badge')).toHaveCount(0);
   };
 
   // Reload before the 1s IndexedDB debounce can flush: prefs must be enough.
@@ -206,18 +209,11 @@ test('shuffle and repeat survive an immediate reload', async ({ page }) => {
       accent: rgb(root.getPropertyValue('--accent')),
       accentFg: rgb(root.getPropertyValue('--accent-fg')),
       surface: rgb(root.getPropertyValue('--surface')),
-      badge: (() => {
-        const badge = document.querySelector('[data-testid="control-repeat"] .badge');
-        const badgeStyle = getComputedStyle(badge);
-        return { background: badgeStyle.backgroundColor, color: badgeStyle.color };
-      })(),
     };
   });
   expect(style.background).toBe(style.accent);
   expect(style.background).not.toBe(style.surface);
   expect(style.color).toBe(style.accentFg);
-  expect(style.badge.background).toBe(style.accentFg);
-  expect(style.badge.color).toBe(style.accent);
 
   const luminance = (rgbText) => {
     const [r, g, b] = rgbText.match(/\d+/g).slice(0, 3).map((value) => {
@@ -232,4 +228,49 @@ test('shuffle and repeat survive an immediate reload', async ({ page }) => {
     return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
   };
   expect(ratio(style.background, style.color)).toBeGreaterThanOrEqual(4.5);
+});
+
+test('repeat cycles off → all → one → off with the icon following the mode', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#app h1')).toBeVisible();
+
+  const repeat = page.locator('[data-testid="control-repeat"]');
+  const repeatD = await repeat.locator('path').getAttribute('d');
+
+  await expect(repeat).toHaveAttribute('aria-pressed', 'false');
+  await expect(repeat).not.toHaveClass(/is-on/);
+  await expect(repeat).toHaveAttribute('aria-label', '循环：关闭');
+  await expect(page.locator('.controls .badge')).toHaveCount(0);
+  await expect(page.locator('[data-testid="repeat-badge"]')).toHaveCount(0);
+
+  await repeat.click();
+  await expect(repeat).toHaveAttribute('aria-pressed', 'true');
+  await expect(repeat).toHaveClass(/is-on/);
+  await expect(repeat).toHaveAttribute('aria-label', '循环：列表');
+  expect(await repeat.locator('path').getAttribute('d')).toBe(repeatD);
+
+  await repeat.click();
+  await expect(repeat).toHaveAttribute('aria-pressed', 'true');
+  await expect(repeat).toHaveClass(/is-on/);
+  await expect(repeat).toHaveAttribute('aria-label', '循环：单曲');
+  const oneD = await repeat.locator('path').getAttribute('d');
+  expect(oneD).not.toBe(repeatD);
+
+  await repeat.click();
+  await expect(repeat).toHaveAttribute('aria-pressed', 'false');
+  await expect(repeat).not.toHaveClass(/is-on/);
+  await expect(repeat).toHaveAttribute('aria-label', '循环：关闭');
+  expect(await repeat.locator('path').getAttribute('d')).toBe(repeatD);
+  expect(oneD).not.toBe(repeatD);
+
+  await repeat.click();
+  await repeat.click();
+  await expect(repeat).toHaveAttribute('aria-label', '循环：单曲');
+
+  await page.reload();
+  await expect(page.locator('#app h1')).toBeVisible();
+  await expect(repeat).toHaveAttribute('aria-pressed', 'true');
+  await expect(repeat).toHaveClass(/is-on/);
+  await expect(repeat).toHaveAttribute('aria-label', '循环：单曲');
+  expect(await repeat.locator('path').getAttribute('d')).not.toBe(repeatD);
 });

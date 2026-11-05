@@ -755,4 +755,4 @@ AD
 
 - `src/core/playerPrefs.js`：shuffle / repeat 另存 localStorage（键 `localtune.playerPrefs`，值 `{shuffle, repeat}`，`repeat` 仅接受 `off|all|one`，其它值清洗成默认）。`load()` 无记录返回 `null`，坏 JSON / 非对象返回默认值，storage 抛错也返回默认值；`save()` 吞掉 quota/隐私模式异常，只保留内存状态。
 - 初始化时 localStorage 偏好优先：`init()` 先 `loadPrefs()`，有记录就用它，否则退回 `playback` 快照；无曲目分支也把 `shuffle`/`repeat` 写进 `this.queue` 与 `state.queue`。`toggleShuffle()` / `cycleRepeat()` 在 `_emit()` 之后同步 `savePrefs(...)`，因此 1 s 防抖的 IndexedDB 快照还没落盘就刷新也不会丢。
-- 播放条按钮：`data-testid="control-shuffle"` / `control-repeat`，两者都带 `aria-pressed`（repeat 随之在 `off` 时为 `false`）。选中时 `.btn.is-on` 用 `--accent` 实底 + `--accent-fg` 前景 + 3px `color-mix` 光环，其 `.badge` 反色（`--accent-fg` 底、`--accent` 字）；`.btn.main` 与 `.btn .badge` 的原有规则不变。
+- 播放条按钮：`data-testid="control-shuffle"` / `control-repeat`，两者都带 `aria-pressed`（repeat 随之在 `off` 时为 `false`）。选中时 `.btn.is-on` 与 `.btn.main` 同款语义：`--accent` 实底、`--accent-fg` 前景、同款 `--accent` 阴影，没有额外 ring；repeat 依 `off`/`all`/`one` 在 `repeat` / `repeat-one` 图标间切换，不再渲染 `.badge`。
