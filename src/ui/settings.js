@@ -80,13 +80,27 @@ export function createSettingsView(store, sw) {
   const sourceViews = new Map();
 
   function createSourceRow(kind) {
-    const name = el('b', { text: t('common.disconnected') });
+    const name = el('b', { text: t('settings.source.permissionNone') });
     const count = el('span', { text: t('settings.source.trackCount', { count: 0 }) });
-    const chip = el('span', { class: 'chip', text: t('settings.source.permissionNone') });
     const rowError = el('p', { class: 'settings-error muted', role: 'alert' });
     setHidden(rowError, true);
+    const progressLabel = el('span');
+    const progressBar = el('i');
+    const progress = el('div', { class: 'settings-progress', role: 'status' }, [
+      progressLabel,
+      el('div', { class: 'bar' }, progressBar),
+    ]);
+    setHidden(progress, true);
 
-    const view = { name, count, chip, error: rowError, syncing: false };
+    const view = {
+      name,
+      count,
+      error: rowError,
+      progress,
+      progressLabel,
+      progressBar,
+      syncing: false,
+    };
 
     view.syncButton = el('button', {
       class: 'btn-pill ghost',
@@ -119,9 +133,9 @@ export function createSettingsView(store, sw) {
     view.changeButton = el('button', {
       class: 'btn-pill ghost',
       type: 'button',
-      'data-testid': kind === 'local' ? 'settings-source-change' : 'settings-onedrive-change',
+      'data-testid': kind === 'local' ? 'settings-source-change' : 'settings-source-onedrive',
       text: t('settings.source.change'),
-      onclick: () => run(kind === 'local' ? store.connectSource() : store.browseOneDrive('')),
+      onclick: () => changeSource(kind),
     });
 
     view.removeButton = el('button', {
@@ -135,15 +149,17 @@ export function createSettingsView(store, sw) {
       },
     });
 
-    view.node = el('div', { class: 'source-row', 'data-testid': `source-row-${kind}` }, [
-      el('span', { class: 'source-icon', 'aria-hidden': 'true' }, [icon('folder')]),
-      el('span', { class: 'source-body' }, [name, count]),
-      chip,
+    view.node = el('div', { class: 'source-card-body', 'data-testid': `source-row-${kind}` }, [
+      el('div', { class: 'source-summary' }, [
+        el('span', { class: 'source-icon', 'aria-hidden': 'true' }, [icon('folder')]),
+        el('span', { class: 'source-body' }, [name, count]),
+      ]),
       el('div', { class: 'source-actions' }, [
         view.syncButton,
         view.changeButton,
         view.removeButton,
       ]),
+      progress,
       rowError,
     ]);
 
@@ -151,111 +167,21 @@ export function createSettingsView(store, sw) {
     return view.node;
   }
 
-  const progressBar = el('i');
-  const progressLabel = el('span');
-  const progress = el('div', { class: 'settings-progress', role: 'status' }, [
-    progressLabel,
-    el('div', { class: 'bar' }, progressBar),
-  ]);
-  setHidden(progress, true);
+  function changeSource(kind) {
+    const row = (store.state.sources ?? []).find((item) => item.id === kind) ?? {
+      permission: 'none',
+    };
+    if (kind === 'local') {
+      run(row.permission === 'prompt' ? store.requestSourcePermission() : store.connectSource());
+      return;
+    }
+    if (row.permission === 'prompt') run(store.reauthenticateOneDrive());
+    else if (row.permission === 'none') run(store.connectOneDrive());
+    else run(store.browseOneDrive(''));
+  }
 
   const migrationError = el('p', { class: 'settings-error muted', role: 'alert' });
   setHidden(migrationError, true);
-
-  const localButton = el('button', {
-    class: 'btn-pill ghost source-choice',
-    type: 'button',
-    'data-testid': 'settings-source-local',
-    text: t('settings.source.localFolder'),
-    onclick: () => run(store.connectSource()),
-  });
-
-  let oneDriveAction = () => run(store.connectOneDrive());
-  const oneDriveButton = el('button', {
-    class: 'btn-pill ghost source-choice',
-    type: 'button',
-    'data-testid': 'settings-source-onedrive',
-    text: t('settings.source.onedrive'),
-    onclick: () => oneDriveAction(),
-  });
-
-  const sourceChoices = el('div', { class: 'source-choices' }, [localButton]);
-  setHidden(sourceChoices, true);
-
-  // The cloud group keeps its own entry point, so it is never hidden behind
-  // the "Add source" toggle.
-  const hint = el('p', {
-    class: 'muted',
-    'data-testid': 'settings-onedrive-hint',
-    text: t('settings.onedrive.connectedHint'),
-  });
-  setHidden(hint, true);
-
-  // Mirrors the OneDrive row from the last render so the retry action can pick
-  // the same step the row's own button would.
-  let oneDriveRow = { permission: 'none', root: null, error: null };
-  const retryButton = el('button', {
-    class: 'btn-pill ghost',
-    type: 'button',
-    'data-testid': 'settings-onedrive-retry',
-    text: t('settings.source.retry'),
-    onclick: () => {
-      if (oneDriveRow.permission === 'granted') run(store.browseOneDrive(''));
-      else if (oneDriveRow.permission === 'prompt') run(store.reauthenticateOneDrive());
-      else run(store.connectOneDrive());
-    },
-  });
-  setHidden(retryButton, true);
-
-  const addSourceButton = el('button', {
-    class: 'btn-pill ghost',
-    type: 'button',
-    'data-testid': 'settings-source-add',
-    'aria-expanded': 'false',
-    text: t('settings.source.add'),
-    onclick: () => {
-      const next = sourceChoices.hidden;
-      setHidden(sourceChoices, !next);
-      addSourceButton.setAttribute('aria-expanded', String(next));
-    },
-  });
-  let modeBusy = false;
-  const localModeButtons = [
-    { value: 'reference', key: 'settings.library.modeReference' },
-    { value: 'import', key: 'settings.library.modeImport' },
-  ].map(({ value, key }) =>
-    el('button', {
-      type: 'button',
-      class: 'segment',
-      'data-testid': `local-mode-${value}`,
-      'aria-pressed': 'false',
-      text: t(key),
-      onclick: async () => {
-        if (modeBusy) return;
-        modeBusy = true;
-        try {
-          await store.setLocalMode(value);
-          if (value === 'import') void store.connectSource();
-        } finally {
-          modeBusy = false;
-        }
-      },
-    }),
-  );
-
-  const modeRow = el('div', { class: 'storage-limit' }, [
-    el('span', { text: t('settings.library.modeTitle') }),
-    el(
-      'div',
-      {
-        class: 'segmented',
-        role: 'group',
-        'aria-label': t('settings.library.modeTitle'),
-        'data-testid': 'local-mode',
-      },
-      localModeButtons,
-    ),
-  ]);
 
   const importProgress = el('p', {
     class: 'settings-progress muted',
@@ -264,26 +190,25 @@ export function createSettingsView(store, sw) {
   });
   setHidden(importProgress, true);
 
+  function sourceCard(kind, title) {
+    return el('div', { 'data-testid': `settings-library-${kind === 'local' ? 'local' : 'cloud'}` }, [
+      el('h4', { class: 'settings-card-title', text: title }),
+      el('section', { class: 'card settings-card source-card' }, [
+        createSourceRow(kind),
+        ...(kind === 'local' ? [importProgress] : []),
+      ]),
+    ]);
+  }
+
   const libraryCard = el(
-    'section',
-    { class: 'card settings-card', 'data-testid': 'settings-section-library' },
+    'div',
+    { class: 'settings-block', 'data-testid': 'settings-section-library' },
     [
-      el('h3', { text: t('settings.library.title') }),
-      el('div', { 'data-testid': 'settings-library-local' }, [
-        el('h4', { class: 'settings-group-title', text: t('settings.library.localGroup') }),
-        createSourceRow('local'),
-        modeRow,
-        el('div', { class: 'settings-actions' }, [addSourceButton, sourceChoices]),
+      el('h3', { class: 'settings-block-title', text: t('settings.library.title') }),
+      el('div', { class: 'settings-sources' }, [
+        sourceCard('local', t('settings.library.localGroup')),
+        sourceCard('onedrive', t('settings.library.cloudGroup')),
       ]),
-      el('div', { 'data-testid': 'settings-library-cloud' }, [
-        el('h4', { class: 'settings-group-title', text: t('settings.library.cloudGroup') }),
-        hint,
-        createSourceRow('onedrive'),
-        oneDriveButton,
-        retryButton,
-      ]),
-      importProgress,
-      progress,
       migrationError,
     ],
   );
@@ -452,7 +377,6 @@ export function createSettingsView(store, sw) {
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-background' },
     [
-      el('h3', { text: t('settings.background.title') }),
       installHint,
       installStatus,
       el('div', { class: 'settings-actions' }, [installButton]),
@@ -665,7 +589,6 @@ export function createSettingsView(store, sw) {
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-storage' },
     [
-      el('h3', { text: t('settings.storage.title') }),
       limitRow,
       el('div', { class: 'storage-rows' }, [
         indexRow.row,
@@ -728,7 +651,6 @@ export function createSettingsView(store, sw) {
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-playback' },
     [
-      el('h3', { text: t('settings.playback.title') }),
       el('p', { class: 'hint', text: t('settings.playback.hint') }),
       el('div', { class: 'setting-line' }, [
         el('span', { class: 'setting-label', text: t('settings.playback.sleep') }),
@@ -769,7 +691,6 @@ export function createSettingsView(store, sw) {
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-language' },
     [
-      el('h3', { text: t('settings.language.title') }),
       el(
         'div',
         {
@@ -959,7 +880,6 @@ export function createSettingsView(store, sw) {
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-about' },
     [
-      el('h3', { text: t('settings.about.title') }),
       aboutField(youtubeKeyInput, 'settings.about.youtubeKey', 'settings.about.youtubeKeyHint'),
       aboutField(proxyUrlInput, 'settings.about.proxyUrl', 'settings.about.proxyUrlHint'),
       el('div', { class: 'about-row' }, [
@@ -979,15 +899,22 @@ export function createSettingsView(store, sw) {
     ],
   );
 
+  function settingsBlock(title, card) {
+    return el('div', { class: 'settings-block' }, [
+      el('h3', { class: 'settings-block-title', text: title }),
+      card,
+    ]);
+  }
+
   node.append(
     head,
     libraryCard,
     pickerCard,
-    backgroundCard,
-    storageCard,
-    playbackCard,
-    languageCard,
-    aboutCard,
+    settingsBlock(t('settings.background.title'), backgroundCard),
+    settingsBlock(t('settings.storage.title'), storageCard),
+    settingsBlock(t('settings.playback.title'), playbackCard),
+    settingsBlock(t('settings.language.title'), languageCard),
+    settingsBlock(t('settings.about.title'), aboutCard),
   );
 
   // Storage figures are async and can be expensive on a large cache: throttle
@@ -1080,13 +1007,7 @@ export function createSettingsView(store, sw) {
   function render(state) {
     const { settings, migration } = state;
     const rows = state.sources ?? [];
-    const scanningRow = rows.find((row) => row.scanning) ?? null;
-    const anyScanning = Boolean(scanningRow);
     const localRow = rows.find((row) => row.id === 'local') ?? null;
-    // `emptyRow` does not carry the mode, so fall back to the store's value
-    // until a source refresh patches the row.
-    const localMode =
-      (localRow?.mode ?? store.localMode) === 'import' ? 'import' : 'reference';
 
     for (const [kind, view] of sourceViews) {
       const row = rows.find((item) => item.id === kind) ?? {
@@ -1101,25 +1022,24 @@ export function createSettingsView(store, sw) {
       setText(view.count, t('settings.source.trackCount', { count: row.trackCount ?? 0 }));
 
       const permission = row.permission;
-      const chipKey =
-        permission === 'granted'
-          ? 'settings.source.permissionGranted'
-          : permission === 'prompt' || permission === 'denied'
-            ? 'settings.source.permissionRequired'
-            : 'settings.source.permissionNone';
-      setText(view.chip, t(chipKey));
-      view.chip.className = `chip is-${permission}`;
-
       const scanning = Boolean(row.scanning);
       view.syncButton.disabled = view.syncing || scanning || permission === 'none';
       if (!view.syncing) setText(view.syncButton, t('settings.source.sync'));
       view.changeButton.disabled = scanning;
       view.removeButton.disabled = scanning || permission === 'none';
-      if (kind === 'local') {
+      setHidden(view.progress, !scanning);
+      if (scanning) {
+        const { done, total, phase } = row.progress ?? { done: 0, total: 0 };
         setText(
-          view.changeButton,
-          localMode === 'import' ? t('settings.library.import') : t('settings.source.change'),
+          view.progressLabel,
+          phase === 'cache'
+            ? t('settings.source.caching', { done, total })
+            : total > 0
+              ? t('common.scanProgress', { done, total })
+              : t('common.scanCount', { done }),
         );
+        const ratio = total > 0 ? Math.min(done / total, 1) : 0.12;
+        view.progressBar.style.width = `${Math.round(ratio * 100)}%`;
       }
 
       const failures = Array.isArray(row.cacheFailures) ? row.cacheFailures : [];
@@ -1134,17 +1054,6 @@ export function createSettingsView(store, sw) {
       setHidden(view.error, !message);
       if (message) setText(view.error, message);
     }
-
-    for (const button of localModeButtons) {
-      const value = button.getAttribute('data-testid').replace('local-mode-', '');
-      const active = value === localMode;
-      button.setAttribute('aria-pressed', String(active));
-      button.classList.toggle('is-active', active);
-    }
-    setText(
-      localButton,
-      localMode === 'import' ? t('settings.library.import') : t('settings.source.localFolder'),
-    );
 
     const importState = localRow?.kind === 'opfs' ? localRow.progress : null;
     const importing = importState?.phase === 'copy' || importState?.phase === 'remove';
@@ -1179,46 +1088,6 @@ export function createSettingsView(store, sw) {
     setHidden(installHint, install.status === 'installed');
     setHidden(installButton, install.status !== 'installable');
     setHidden(iosGuide, !isIos || install.status === 'installed');
-
-    const onedrive = rows.find((row) => row.id === 'onedrive') ?? {
-      permission: 'none',
-      connected: false,
-      root: null,
-    };
-    if (onedrive.permission === 'prompt') {
-      oneDriveAction = () => run(store.reauthenticateOneDrive());
-      setText(oneDriveButton, t('settings.source.onedriveReauth'));
-    } else if (onedrive.permission === 'granted' && onedrive.root) {
-      oneDriveAction = () => run(store.browseOneDrive(''));
-      setText(oneDriveButton, t('settings.source.onedriveChange'));
-    } else if (onedrive.connected || onedrive.permission === 'granted') {
-      oneDriveAction = () => run(store.browseOneDrive(''));
-      setText(oneDriveButton, t('settings.source.onedrivePick'));
-    } else {
-      oneDriveAction = () => run(store.connectOneDrive());
-      setText(oneDriveButton, t('settings.source.onedriveSignIn'));
-    }
-
-    oneDriveRow = onedrive;
-    setHidden(retryButton, !onedrive.error);
-    setHidden(hint, !(onedrive.permission === 'granted' && !onedrive.root));
-
-    localButton.disabled = anyScanning;
-
-    setHidden(progress, !anyScanning);
-    if (scanningRow) {
-      const { done, total, phase } = scanningRow.progress ?? { done: 0, total: 0 };
-      setText(
-        progressLabel,
-        phase === 'cache'
-          ? t('settings.source.caching', { done, total })
-          : total > 0
-            ? t('common.scanProgress', { done, total })
-            : t('common.scanCount', { done }),
-      );
-      const ratio = total > 0 ? Math.min(done / total, 1) : 0.12;
-      progressBar.style.width = `${Math.round(ratio * 100)}%`;
-    }
 
     const migrationMessage = migration?.error;
     setHidden(migrationError, !migrationMessage);

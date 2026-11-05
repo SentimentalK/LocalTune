@@ -11,7 +11,6 @@ async function signInAndPickMusic(page, { count = '2' } = {}) {
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
 
   await page.locator('[data-testid="settings-open"]').click();
-  await page.locator('[data-testid="settings-source-add"]').click();
   await page.locator('[data-testid="settings-source-onedrive"]').click();
 
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeVisible();
@@ -238,7 +237,6 @@ test('local and OneDrive rows show source names together', async ({ page }) => {
   await expect(page.locator('[data-testid="folder-source-local"] b')).toHaveText('本地');
 
   await page.locator('[data-testid="settings-open"]').click();
-  await page.locator('[data-testid="settings-source-add"]').click();
   await page.locator('[data-testid="settings-source-onedrive"]').click();
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeVisible();
   await page.locator('[data-testid="onedrive-folder"]').first().click();

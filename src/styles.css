@@ -523,7 +523,7 @@ time {
 .settings-view {
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: 28px;
 }
 
 .settings-head {
@@ -571,35 +571,59 @@ time {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
+  padding: 14px;
 }
 
-.settings-card h3 {
-  margin: 0;
+.settings-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-block-title {
+  margin: 0 2px;
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
 }
 
-.settings-group-title {
-  margin: 4px 0 2px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+.settings-card-title {
+  margin: 0 2px;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.settings-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.settings-view .card.settings-card.source-card {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.source-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px 14px;
 }
 
 .settings-view .muted {
   color: var(--muted);
 }
 
-.source-row {
+.source-row,
+.source-card-body {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .source-icon {
@@ -662,28 +686,37 @@ time {
 }
 
 .source-actions {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-left: auto;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
 }
 
 .source-actions .btn-pill {
-  padding: 6px 10px;
-  font-size: 12px;
+  border-radius: 0;
+  padding: 12px 8px;
+  font-size: 14px;
   font-weight: 600;
   box-shadow: none;
-  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  background: transparent;
   color: var(--fg);
+}
+
+.source-actions .btn-pill + .btn-pill {
+  box-shadow: inset 1px 0 0 var(--line);
+}
+
+.source-actions .btn-pill:last-child {
+  color: #7d2b26;
 }
 
 .source-actions .btn-pill:disabled {
   opacity: 0.4;
 }
 
-.source-row .settings-error {
-  flex-basis: 100%;
+.source-card-body > .settings-error,
+.source-card-body > .settings-progress {
   margin: 0;
+  padding: 0 16px 12px;
 }
 
 .onedrive-picker .picker-crumbs {
@@ -725,22 +758,6 @@ time {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-@media (max-width: 600px) {
-  .source-row {
-    display: grid;
-    grid-template-columns: 40px minmax(0, 1fr) auto;
-    align-items: center;
-  }
-
-  .source-actions {
-    grid-column: 1 / -1;
-    margin-left: 0;
-  }
-
-  .source-row .settings-error {
-    grid-column: 1 / -1;
-  }
-}
 
 .settings-progress {
   display: flex;

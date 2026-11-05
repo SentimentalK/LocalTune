@@ -57,10 +57,10 @@ export default {
   'empty.promptText': 'The previous grant only lasted this session.',
   'empty.promptNote':
     'Install the app and pick “Allow on every visit” in the permission prompt; no further clicks after that.',
-  'empty.chooseTitle': 'Choose your music folder first',
+  'empty.chooseTitle': 'The library is empty',
   'empty.chooseText':
-    'LocalTune only reads the folder you authorize on this device. Nothing is uploaded and it never goes online. Supports mp3, m4a, flac, ogg, wav, webm.',
-  'empty.chooseAction': 'Choose music folder',
+    'In Settings, pick a folder for this device or for OneDrive. Subfolders are included.',
+  'empty.chooseAction': 'Open settings',
   'empty.noTracksTitle': 'No music in this folder yet',
   'empty.noTracksText': 'Make sure the folder contains audio files, then rescan.',
   'empty.noTracksAction': 'Rescan',
@@ -83,7 +83,7 @@ export default {
   'settings.library.importProgress': 'Importing {copied} / {total} · {bytes}',
   'settings.library.importRemoving': 'Removing {removed} / {removedTotal}',
   'settings.library.localGroup': 'Local',
-  'settings.library.cloudGroup': 'Cloud · OneDrive',
+  'settings.library.cloudGroup': 'OneDrive',
   'settings.source.change': 'Change',
   'settings.source.remove': 'Remove',
   'settings.source.removeConfirm': 'Remove this source? Its track index and cache will be deleted.',

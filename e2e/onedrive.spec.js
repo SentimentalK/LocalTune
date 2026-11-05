@@ -13,7 +13,6 @@ test('OneDrive sync caches the files and playback downloads nothing', async ({ p
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
 
   await page.locator('[data-testid="settings-open"]').click();
-  await page.locator('[data-testid="settings-source-add"]').click();
   await page.locator('[data-testid="settings-source-onedrive"]').click();
 
   // The login navigation is mocked with a 302 back to the app; init reopens
@@ -58,7 +57,6 @@ test('the OneDrive button starts the Microsoft login when signed out', async ({ 
 
   await page.goto('/');
   await page.locator('[data-testid="settings-open"]').click();
-  await page.locator('[data-testid="settings-source-add"]').click();
 
   const login = page.waitForRequest((request) =>
     request.url().startsWith('https://login.microsoftonline.com/'),

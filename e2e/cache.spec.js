@@ -19,7 +19,6 @@ async function signInAndPickMusic(page) {
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
 
   await page.locator('[data-testid="settings-open"]').click();
-  await page.locator('[data-testid="settings-source-add"]').click();
   await page.locator('[data-testid="settings-source-onedrive"]').click();
 
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeVisible();

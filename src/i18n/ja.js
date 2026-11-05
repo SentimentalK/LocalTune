@@ -56,10 +56,10 @@ export default {
   'empty.promptText': '前回の許可はこのセッション限りでした。',
   'empty.promptNote':
     'アプリとしてインストールし、許可のダイアログで「アクセスのたびに許可」を選ぶと、以後クリックは不要です。',
-  'empty.chooseTitle': 'まず音楽フォルダーを選択してください',
+  'empty.chooseTitle': 'ライブラリは空です',
   'empty.chooseText':
-    'LocalTune はこの端末で許可されたフォルダーを読むだけで、アップロードも通信も行いません。mp3、m4a、flac、ogg、wav、webm に対応しています。',
-  'empty.chooseAction': '音楽フォルダーを選択',
+    '設定で、この端末か OneDrive のフォルダーを選びます。サブフォルダーも読み込みます。',
+  'empty.chooseAction': '設定を開く',
   'empty.noTracksTitle': 'このフォルダーにはまだ音楽がありません',
   'empty.noTracksText': 'フォルダーに音声ファイルがあることを確認して再スキャンしてください。',
   'empty.noTracksAction': '再スキャン',
@@ -82,7 +82,7 @@ export default {
   'settings.library.importProgress': '取り込み中 {copied} / {total} · {bytes}',
   'settings.library.importRemoving': '削除中 {removed} / {removedTotal}',
   'settings.library.localGroup': 'ローカル',
-  'settings.library.cloudGroup': 'クラウド · OneDrive',
+  'settings.library.cloudGroup': 'OneDrive',
   'settings.source.change': '変更',
   'settings.source.remove': '削除',
   'settings.source.removeConfirm': 'このソースを削除しますか？曲の索引とキャッシュも削除されます。',

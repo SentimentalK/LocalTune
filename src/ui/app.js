@@ -317,16 +317,6 @@ function createShell(store, sw) {
   const status = el('span', { class: 'status', id: 'status', text: t('common.ready') });
   const count = el('span', { class: 'count', text: t('common.trackCount', { count: 0 }) });
   const sourceName = el('span', { class: 'source-name', text: t('common.disconnected') });
-  const authButton = el('button', {
-    class: 'btn-pill ghost',
-    type: 'button',
-    text: t('common.chooseFolder'),
-    onclick: () => {
-      const local = store.state.sources.find((row) => row.id === 'local');
-      const permission = local?.permission ?? 'none';
-      run(permission === 'prompt' ? store.requestSourcePermission() : store.connectSource());
-    },
-  });
   const deniedHint = el('p', {
     class: 'alert',
     role: 'status',
@@ -364,7 +354,7 @@ function createShell(store, sw) {
 
   const header = el('header', { class: 'top' }, [
     el('div', { class: 'brand' }, [el('h1', { text: 'LocalTune' }), status]),
-    el('div', { class: 'top-right' }, [count, sourceName, authButton, searchButton, settingsButton]),
+    el('div', { class: 'top-right' }, [count, sourceName, searchButton, settingsButton]),
   ]);
 
   // ---- player card ----
@@ -518,7 +508,6 @@ function createShell(store, sw) {
     status,
     count,
     sourceName,
-    authButton,
     deniedHint,
     scan,
     scanLabel,
@@ -734,16 +723,6 @@ export function mountUi(root, store, sw) {
       nameText = t('common.awaitingPermission');
     } else nameText = t('common.disconnected');
     setText(ui.sourceName, nameText);
-
-    setHidden(ui.authButton, local.permission === 'granted');
-    setText(
-      ui.authButton,
-      local.permission === 'none'
-        ? t('common.chooseFolder')
-        : local.permission === 'prompt'
-          ? t('common.continueWith', { name: local.name || t('common.musicFolder') })
-          : t('common.reauthorize'),
-    );
     setHidden(ui.deniedHint, local.permission !== 'denied');
 
     setHidden(ui.scan, !scanningRow);
@@ -854,11 +833,8 @@ export function mountUi(root, store, sw) {
       return emptyState({
         title: t('empty.chooseTitle'),
         text: t('empty.chooseText'),
-        actionLabel: t('common.chooseFolder'),
-        onAction: () => run(store.connectSource()),
-        secondaryLabel: t('empty.onedriveAction'),
-        onSecondary: () => run(store.connectOneDrive()),
-        secondaryTestId: 'empty-onedrive',
+        actionLabel: t('empty.chooseAction'),
+        onAction: () => store.setView('settings'),
       });
     }
 

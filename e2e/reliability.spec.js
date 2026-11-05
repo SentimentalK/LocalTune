@@ -108,10 +108,29 @@ test('import mode copies files into OPFS and survives a reload', async ({ page }
   try {
     await page.goto('/');
     await expect(page.locator('#app h1')).toBeVisible();
+    await page.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const request = indexedDB.open('localtune');
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction('meta', 'readwrite');
+            tx.objectStore('meta').put({ key: 'localMode', value: 'import' });
+            tx.oncomplete = () => {
+              db.close();
+              resolve();
+            };
+            tx.onerror = () => reject(tx.error);
+          };
+        }),
+    );
+    await page.reload();
+    await expect(page.locator('#app h1')).toBeVisible();
     await page.locator('[data-testid="settings-open"]').click();
 
     const chooserPromise = page.waitForEvent('filechooser');
-    await page.locator('[data-testid="local-mode-import"]').click();
+    await page.locator('[data-testid="settings-source-change"]').click();
     const chooser = await chooserPromise;
     await chooser.setFiles(dir);
 

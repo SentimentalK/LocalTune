@@ -9,7 +9,7 @@ test('library shows a local group before the cloud group', async ({ page }) => {
   await expect(local).toBeVisible();
   await expect(cloud).toBeVisible();
   await expect(local.locator('h4')).toHaveText('本地');
-  await expect(cloud.locator('h4')).toHaveText('云端 · OneDrive');
+  await expect(cloud.locator('h4')).toHaveText('OneDrive');
   await expect(local.locator('[data-testid="source-row-local"]')).toBeVisible();
   await expect(cloud.locator('[data-testid="source-row-onedrive"]')).toBeVisible();
 
@@ -20,6 +20,6 @@ test('library shows a local group before the cloud group', async ({ page }) => {
   });
   expect(localFirst).toBe(true);
 
-  await expect(page.locator('[data-testid="settings-onedrive-hint"]')).toBeHidden();
-  await expect(page.locator('[data-testid="settings-onedrive-retry"]')).toBeHidden();
+  await expect(page.locator('[data-testid="settings-source-onedrive"]')).toHaveText('更换');
+  await expect(page.locator('[data-testid="settings-source-change"]')).toHaveText('更换');
 });
