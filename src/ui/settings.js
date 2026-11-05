@@ -29,6 +29,29 @@ function confirmed(message) {
   return typeof window === 'undefined' || window.confirm(message);
 }
 
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Fall through to the selection-based copy.
+  }
+  try {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.append(area);
+    area.select();
+    const copied = document.execCommand('copy');
+    area.remove();
+    return copied;
+  } catch {
+    return false;
+  }
+}
+
 export function createSettingsView(store, sw) {
   const node = el('section', { class: 'settings-view' });
 
@@ -629,6 +652,94 @@ export function createSettingsView(store, sw) {
     },
   });
 
+  function openPlayLog() {
+    const pre = el('pre', {
+      class: 'tag-report',
+      'data-testid': 'playlog-text',
+      text: t('common.loading'),
+    });
+
+    function close() {
+      document.removeEventListener('keydown', onKeydown);
+      overlay.remove();
+    }
+
+    function onKeydown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      }
+    }
+
+    const copyButton = el('button', {
+      class: 'btn-pill',
+      type: 'button',
+      'data-testid': 'playlog-copy',
+      text: t('diagnostics.copy'),
+      onclick: async () => {
+        await copyText(pre.textContent ?? '');
+        toast(t('settings.about.playLogCopied'));
+      },
+    });
+    const clearButton = el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': 'playlog-clear',
+      text: t('settings.about.playLogClear'),
+      onclick: async () => {
+        await store.clearPlayLog();
+        setText(pre, '');
+      },
+    });
+    const closeButton = el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': 'playlog-close',
+      text: t('settings.about.playLogClose'),
+      onclick: () => close(),
+    });
+
+    const panel = el('div', { class: 'modal-panel', role: 'document' }, [
+      el('header', { class: 'modal-head' }, [
+        el('h2', { text: t('settings.about.playLog') }),
+        closeButton,
+      ]),
+      pre,
+      el('div', { class: 'modal-actions' }, [copyButton, clearButton]),
+    ]);
+
+    const overlay = el(
+      'div',
+      {
+        class: 'modal',
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-label': t('settings.about.playLog'),
+        'data-testid': 'playlog-panel',
+      },
+      panel,
+    );
+
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) close();
+    });
+    document.addEventListener('keydown', onKeydown);
+    document.body.append(overlay);
+
+    Promise.resolve()
+      .then(() => store.playLogText())
+      .then((text) => setText(pre, String(text ?? '')))
+      .catch(() => setText(pre, ''));
+  }
+
+  const playLogButton = el('button', {
+    class: 'btn-pill ghost',
+    type: 'button',
+    'data-testid': 'playlog-open',
+    text: t('settings.about.playLog'),
+    onclick: () => openPlayLog(),
+  });
+
   const aboutCard = el(
     'section',
     { class: 'card settings-card', 'data-testid': 'settings-section-about' },
@@ -641,7 +752,7 @@ export function createSettingsView(store, sw) {
         el('span', { text: t('settings.about.updateState') }),
         updateState,
       ]),
-      el('div', { class: 'settings-actions' }, [checkButton, applyButton, reloadButton]),
+      el('div', { class: 'settings-actions' }, [checkButton, applyButton, reloadButton, playLogButton]),
     ],
   );
 

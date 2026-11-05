@@ -41,7 +41,8 @@ test('settings view covers library, storage, language and about', async ({ page 
   const aboutCard = page.locator('[data-testid="settings-section-about"]');
   await expect(aboutCard.locator('[data-testid="setting-youtube-key"]')).toHaveCount(0);
   await expect(aboutCard.locator('[data-testid="setting-proxy-url"]')).toHaveCount(0);
-  await expect(aboutCard.locator('.settings-actions > *')).toHaveCount(3);
+  await expect(aboutCard.locator('.settings-actions > *')).toHaveCount(4);
+  await expect(aboutCard.locator('[data-testid="playlog-open"]')).toBeVisible();
 
   // The storage card has a single clear action; a fresh profile clears to 0 B.
   const cachedMusic = page.locator('[data-testid="storage-audio"] b');

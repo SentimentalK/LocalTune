@@ -182,6 +182,10 @@ export default {
   'settings.about.updateReady': 'A new version is available',
   'settings.about.updateNow': 'Update now',
   'settings.about.reload': 'Reload',
+  'settings.about.playLog': 'Playback log',
+  'settings.about.playLogCopied': 'Playback log copied',
+  'settings.about.playLogClear': 'Clear',
+  'settings.about.playLogClose': 'Close',
 
   'aria.playTrack': 'Play {title}',
   'aria.playQueueItem': 'Play queue item {index}: {title}',

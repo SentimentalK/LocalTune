@@ -174,6 +174,10 @@ export default {
   'settings.about.updateReady': '有新版本可用',
   'settings.about.updateNow': '立即更新',
   'settings.about.reload': '重新加载',
+  'settings.about.playLog': '播放日志',
+  'settings.about.playLogCopied': '已复制播放日志',
+  'settings.about.playLogClear': '清除',
+  'settings.about.playLogClose': '关闭',
 
   'aria.playTrack': '播放 {title}',
   'aria.playQueueItem': '播放队列第 {index} 首 {title}',

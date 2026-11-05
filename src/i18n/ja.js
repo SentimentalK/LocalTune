@@ -188,6 +188,10 @@ export default {
   'settings.about.updateReady': '新しいバージョンがあります',
   'settings.about.updateNow': '今すぐ更新',
   'settings.about.reload': '再読み込み',
+  'settings.about.playLog': '再生ログ',
+  'settings.about.playLogCopied': '再生ログをコピーしました',
+  'settings.about.playLogClear': '消去',
+  'settings.about.playLogClose': '閉じる',
 
   'aria.playTrack': '{title} を再生',
   'aria.playQueueItem': 'キューの {index} 曲目 {title} を再生',
