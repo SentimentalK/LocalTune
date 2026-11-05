@@ -164,7 +164,8 @@ Android Chrome 无法跨启动保留 File System Access 授权，因此提供“
 - OPFS 目录固定为 `music/`；文件保持选择目录内的相对路径。`meta.opfsRootName` 记住所选根目录名用于显示。`meta.localMode` 持久化 `'import'|'reference'`，`defaultLocalMode()`：UA 含 `Android` → 导入；否则有 `showDirectoryPicker` → 引用，否则导入。
 - 非音频文件（`.lrc`、`.txt`、图片等）在选择与目录遍历时被忽略，不会导入；一次选择里没有任何音频时抛 `error.source.noAudio`。
 - `opfsIndex` 行结构：`{ path, size, mtime }`（keyPath `path`）。增量规则：`path` 相同且 `size` + `mtime` 都相同视为未变（`skipped`）；新路径或任一字段变化则重新复制；索引有而本次选择没有的路径删除 OPFS 文件与索引行。每个文件复制完成后立即写索引，中止/崩溃留下可续传的前缀。
-- 进度回调形状（`onProgress`，导入期间写入 `state.sources[local].progress`）：`{ phase: 'copy'|'remove'|'done', copied, total, removed, removedTotal, bytes, bytesTotal, skipped }`；`bytes` 为已复制字节。设置页只在 `copy`/`remove` 阶段显示进度行。
+- 进度回调形状（`onProgress`）：`{ phase: 'copy'|'remove'|'done', copied, total, removed, removedTotal, bytes, bytesTotal, skipped }`；`bytes` 为已复制字节。`store.connectSource()` 在导入模式下把它折算成 `state.sources[local] = { scanning: true, progress: { done, total, phase: 'import' } }`（`done/total` 取 `copied/total`，删除阶段取 `removed/removedTotal`，约 10 Hz 节流，结束前 flush 最后一帧）。进度**只**显示在顶部 `#status`（文案 `common.importProgress`）与 `.scan` 绿条；来源卡不再有第二套导入进度行。导入完成后的 rescan 沿用绿条当前百分比，不归零重涨。
+- 大幅文件（≥ 1 MiB）用 `file.stream()` 分块写入 OPFS，每 8 个文件让出一次主线程。
 
 iOS / 未来来源只需实现同一组方法（`connect/restore/permission/ensurePermission/scan/getFile`）；可选写能力为 `writeTextFile(path, text)`（FSA 与 OPFS 实现）。OneDrive **不写回**：`OneDriveSource` 没有 `writeTextFile`，歌单导出按钮在 OneDrive 或未授权的本地来源下为灰态（`store.writePlaylistM3u8()` 抛 `error.playlist.writeUnsupported`）。`state.sources[].kind` 为 `'fsa' | 'files' | 'opfs' | 'onedrive'`。
 
@@ -411,7 +412,7 @@ export async function loadSettings(db)   // {language, cacheLimitBytes, youtubeA
 export async function saveSettings(db, settings) // 写四个字段并返回同一形状；非法值落盘为默认
 ```
 
-`meta.settings.language` 缺省 `'auto'`：`'auto'` 表示跟随 `navigator.languages`，其余为显式语言。`youtubeApiKey` 为 trim 后 ≤ 200 字符的字符串，`playlistProxyUrl` 为 trim 后 ≤ 300 字符且以 `https://` 开头的字符串，两者不满足时读/写都落 `''`。旧库残留的 `vinylSpin` 字段读取时忽略，下次保存后消失。
+`meta.settings.language` 缺省 `'auto'`：`'auto'` 表示跟随浏览器 UI 语言（`navigator.language`，其后去重追加 `navigator.languages`），其余为显式语言。`youtubeApiKey` 为 trim 后 ≤ 200 字符的字符串，`playlistProxyUrl` 为 trim 后 ≤ 300 字符且以 `https://` 开头的字符串，两者不满足时读/写都落 `''`。旧库残留的 `vinylSpin` 字段读取时忽略，下次保存后消失。
 
 ### `src/core/mediaSession.js`
 
@@ -435,9 +436,12 @@ export function initInstall({ window = globalThis.window })
 ### `src/i18n/*` — 文案与语言
 
 ```js
-export const LOCALES = ['zh-CN', 'zh-TW', 'ja', 'en'];
+export const LOCALES = ['zh-CN', 'zh-TW', 'ja', 'en', 'ko', 'es', 'fr', 'de', 'pt-BR', 'ru'];
+export function browserLanguages()                 // [navigator.language, ...navigator.languages 去重]；
+                                                   // 无 navigator 时 []
 export function resolveLocale(languages = [])      // 依次看每一项：'zh-TW'|'zh-HK'|'zh-Hant*' → 'zh-TW'；
-                                                   // 'zh*' → 'zh-CN'；'ja*' → 'ja'；其余看下一项；都不匹配 → 'en'
+                                                   // 'zh*' → 'zh-CN'；'en*' → 'en'；'ja*'/'ko*'/'es*'/'fr*'/'de*'/'ru*' →
+                                                   // 对应表；'pt*' → 'pt-BR'；其余看下一项；都不匹配 → 'en'
 export function resolveLanguage(setting, languages) // setting ∈ LOCALES 时原样返回；
                                                     // 'auto' 或非法值按 resolveLocale(languages)
 export function getLocale(); export function setLocale(locale)  // 非法 locale 忽略
@@ -448,7 +452,7 @@ export function applyDocumentLang()                // 有 document 时写 docume
 
 四张表 `src/i18n/{en,zh-CN,zh-TW,ja}.js` 都是默认导出的扁平对象，key 为点分命名（`common.*`、`tabs.*`、`player.*`、`empty.*`、`settings.*`、`update.*`、`migration.*`、`diagnostics.*`、`aria.*`、`error.*`、`fatal.*`），四张表 key 集合必须完全一致（`tests/i18n.test.js` 断言），en 是唯一兜底表。
 
-- 模块加载时默认 locale = `resolveLocale(navigator.languages ?? [navigator.language])`（无 `navigator` 时 `'en'`）；导入不访问 DOM，Node 测试可直接 import。
+- 模块加载时默认 locale = `resolveLocale(browserLanguages())`（无 `navigator` 时 `'en'`）；导入不访问 DOM，Node 测试可直接 import。`browserLanguages()` 把 `navigator.language`（浏览器 UI 语言）放在第一位，再按顺序追加 `navigator.languages` 的内容偏好并去重：Chrome 界面英文但偏好列表含中文时必须解析成英文。
 - `src/main.js` 在 `createApp()` 之后、`mountUi()` 之前用 `store.state.settings.language` 调 `setLocale(resolveLanguage(...))` + `applyDocumentLang()`；fatal 页文案也走 `t('fatal.*')`。
 - `src/index.html` 的 `<html lang="zh-CN">` 只是无 JS 时的回退，运行时由 `applyDocumentLang()` 覆盖。
 - 语言只持久化在 `meta.settings.language`，不进 localStorage；同一 `meta.settings` 还存 `cacheLimitBytes`（允许值见 D2，缺失/非法回落 2 GiB）。
@@ -478,6 +482,7 @@ export class Store extends EventTarget {
   async _purgeSource(kind)         // purgeSourceRows：删该来源索引行 → cache.removeBySource(trackSource) → _reconcileQueue；随后取消挂起的补标签队列并清 picker 索引；不动已存 root
   async clearAll()                 // 清全部曲目行（封面随行删除）→ cache.clear() → 清 stats → playlog.clear() → meta.lastScanBySource.onedrive.at 归 0 → 复位队列/当前曲目/rematch/migration → 各来源 trackCount 归 0 → _savePlayback()；保留 meta 与 playlists，不自动 rescan
   // 后台补标签：每来源一条串行队列（_enrich/_drainEnrich）；重复同步合并进 pending；单曲失败只计数，不写 sources[kind].error
+  // 每替换一行只在原位置写回（_replaceTrack），不再逐曲 sortTracks；emit 约 10 Hz、每 25 行批量 putTracks（大目录不冻结）
   async storageEstimate()          // → {indexBytes, coverBytes, audioBytes, usage, quota, limitBytes}
                                    // audioBytes = cache.total()；limitBytes = cache.limit
   async describeTrackTags(trackId) // 按 track.source 选 adapter → describeTags → formatTagReport
@@ -665,7 +670,7 @@ VIP 视图（`state.view === 'vip'`，`store.js` 的 `VIEWS` 白名单包含它�
 
 VIP 底部歌单解析设置卡（`data-testid="vip-playlist-settings"`，标题 `vip.playlistSettings`）有两个输入（testid 不变）：`setting-youtube-key`（`vip.youtubeKey` / hint `vip.youtubeKeyHint`）与 `setting-proxy-url`（`vip.proxyUrl` / hint `vip.proxyUrlHint`，placeholder 为 `DEFAULT_PROXY_URL`）。`change` 时调 `store.setSetting('youtubeApiKey'|'playlistProxyUrl', value.trim().slice(0, 200|300))`，值落库后从卡片冒泡 `toast`（`vip.saved`，经 `vipView.node` 到 app 的 `showToast`）；无校验弹窗（store 清洗非法值）。`render(state)` 只在输入框未聚焦时回填，避免播放更新覆盖正在输入的文本；设置卡依赖 `state.settings`，因此 VIP 重绘 gating 也包含它。关于卡只有版本与更新，不再有输入。
 
-语言切换即时生效：`render(state)` 开头比较 `resolveLanguage(state.settings.language, navigator.languages)` 与 `getLocale()`，不同则 `setLocale()` + `applyDocumentLang()` + 用 `createShell` 重建整个壳（重新绑定进度条事件、`root.replaceChildren(ui.app)`、清空视图缓存后重渲染）。**不得用 `location.reload()` 切换语言**；`store` 的 `change` 监听只绑一次。
+语言切换即时生效：`render(state)` 开头比较 `resolveLanguage(state.settings.language, browserLanguages())` 与 `getLocale()`，不同则 `setLocale()` + `applyDocumentLang()` + 用 `createShell` 重建整个壳（重新绑定进度条事件、`root.replaceChildren(ui.app)`、清空视图缓存后重渲染）。**不得用 `location.reload()` 切换语言**；`store` 的 `change` 监听只绑一次。
 
 UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.mediaSession`；全部经 Store。
 
@@ -756,11 +761,13 @@ AD
 - `src/core/playerPrefs.js`：shuffle / repeat 另存 localStorage（键 `localtune.playerPrefs`，值 `{shuffle, repeat}`，`repeat` 仅接受 `off|all|one`，其它值清洗成默认）。`load()` 无记录返回 `null`，坏 JSON / 非对象返回默认值，storage 抛错也返回默认值；`save()` 吞掉 quota/隐私模式异常，只保留内存状态。
 - 初始化时 localStorage 偏好优先：`init()` 先 `loadPrefs()`，有记录就用它，否则退回 `playback` 快照；无曲目分支也把 `shuffle`/`repeat` 写进 `this.queue` 与 `state.queue`。`toggleShuffle()` / `cycleRepeat()` 在 `_emit()` 之后同步 `savePrefs(...)`，因此 1 s 防抖的 IndexedDB 快照还没落盘就刷新也不会丢。
 - 播放条按钮：`data-testid="control-shuffle"` / `control-repeat`，两者都带 `aria-pressed`（repeat 随之在 `off` 时为 `false`）。选中时 `.btn.is-on` 与 `.btn.main` 同款语义：`--accent` 实底、`--accent-fg` 前景、同款 `--accent` 阴影，没有额外 ring；repeat 依 `off`/`all`/`one` 在 `repeat` / `repeat-one` 图标间切换，不再渲染 `.badge`。
+- 五个传输键（shuffle/prev/play/next/repeat）始终是正圆：`.btn { flex: 0 0 auto; aspect-ratio: 1; box-sizing: border-box; }`，宽度 46/64（主键）。`max-width:359px` 降到 40/54、`gap: 8px`（4×40+54+4×8=246 ≤ 320px 视口下 252px 卡内容）；`min-width:400px` 用 52/72、`gap: 10px`（4×52+72+4×10=320 ≤ 324px）。任何宽度都不横向溢出，宽度=高度（`e2e/controls-circle.spec.js` 在 320/360/390/430 断言 boundingBox 差 ≤1px）。
 
 ### 多语言（APP-001-X）
 
 - `src/i18n/index.js` 按需加载：`en` 静态导入作首屏 fallback，其余 9 个表是 `LOADERS` 里的 `import()` chunk，`TABLES` 只存已加载表；同一 locale 并发共用一个 `loading` Promise。
-- 启动（`src/main.js`）在 `createApp()` 后 `await ensureLocale(resolveLanguage(setting, navigator.languages))` 再挂载；显式切换同样先 `await ensureLocale` 再写 setting，chunk 失败回退 `en` 且不改 setting，首屏 loading 文案始终是英文。
-- `resolveLocale` 按语言列表顺序逐项匹配：`zh-hant*`/`zh-tw`/`zh-hk`→`zh-TW`，其余 `zh*`→`zh-CN`，`ja`/`ko`/`es`/`fr`/`de`/`ru` 前缀直取，任意 `pt*`→`pt-BR`，全不中→`en`；`systemLocale()` 返回 `{ locale, label }`。
+- `browserLanguages()` 决定“跟随系统”的来源：`navigator.language`（UI 语言）第一优先，`navigator.languages` 去重追加。Chrome 界面英文、内容偏好含中文时解析为 `en`。
+- 启动（`src/main.js`）在 `createApp()` 后 `await ensureLocale(resolveLanguage(setting, browserLanguages()))` 再挂载；显式切换同样先 `await ensureLocale` 再写 setting，chunk 失败回退 `en` 且不改 setting，首屏 loading 文案始终是英文。
+- `resolveLocale` 按语言列表顺序逐项匹配：`zh-hant*`/`zh-tw`/`zh-hk`→`zh-TW`，其余 `zh*`→`zh-CN`，`en*`→`en`，`ja`/`ko`/`es`/`fr`/`de`/`ru` 前缀直取，任意 `pt*`→`pt-BR`，全不中→`en`；`en` 显式命中，避免 `['en-US','zh-CN']` 落到中文。`systemLocale()` 返回 `{ locale, label }`，默认读 `browserLanguages()`。
 - `render` 只在目标表已加载（`hasLocale`）时切换并 `remount`；`languagechange` 仅在 setting 为 `auto` 时跟随浏览器，`mountUi` 里注册一次、`languageChangeBusy` 防重入。
-- 设置页语言卡是单列 `role="radiogroup"` 的 `.language-row` 按钮（`data-testid="language-<value>"`，`value` 为 `auto` 或 `LOCALES` 值），`aria-checked` 表示选中，roving tabindex + 方向键/Home/End 移动并即时选中。
+- 设置页语言卡是单列 `role="radiogroup"` 的 `.language-row` 按钮（`data-testid="language-<value>"`，`value` 为 `auto` 或 `LOCALES` 值），`aria-checked` 表示选中，roving tabindex + 方向键/Home/End 移动并即时选中。`auto` 行下方有一行 `data-testid="browser-language-hint"` 的 11px muted 文本（`settings.language.browser`，`{list}` = `browserLanguages().join(' · ')`），说明解析来源。

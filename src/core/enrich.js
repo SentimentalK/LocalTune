@@ -4,6 +4,12 @@
  * or surface as a source-level error, so every item is isolated.
  */
 
+import { yieldToMain } from './timing.js';
+
+/** Rows per event-loop yield. Metadata reads often resolve from cache, and a
+ * pure microtask chain of 1000 of them starves paint and input. */
+const YIELD_EVERY = 20;
+
 export async function enrichTracks({
   items = [],
   readMetadata,
@@ -38,6 +44,7 @@ export async function enrichTracks({
     }
     done += 1;
     if (typeof onProgress === 'function') onProgress({ done, total, updated, failed });
+    if (done % YIELD_EVERY === 0) await yieldToMain();
   }
 
   return { updated, failed };

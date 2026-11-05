@@ -76,6 +76,31 @@ export function planImport(existingRows, entries) {
   return { copies, removals, skipped };
 }
 
+/** Files at least this large stream in chunks instead of one whole-blob write. */
+const STREAM_COPY_BYTES = 1 << 20;
+/** Copies per main-thread yield; keeps a big import from monopolising a frame. */
+const YIELD_EVERY = 8;
+
+/**
+ * Write one file into an open file handle. Big files stream so a 100 MB track
+ * never lands as one giant allocation; small ones are a single write.
+ */
+async function copyInto(entry, fileHandle) {
+  const file = await entry.getFile();
+  const writable = await fileHandle.createWritable();
+  try {
+    if (Number(file?.size) >= STREAM_COPY_BYTES && typeof file?.stream === 'function') {
+      for await (const chunk of file.stream()) await writable.write(chunk);
+    } else {
+      await writable.write(file);
+    }
+  } catch (error) {
+    await writable.abort?.();
+    throw error;
+  }
+  await writable.close();
+}
+
 function progressOf(phase, state) {
   return {
     phase,
@@ -126,13 +151,16 @@ export async function runImport({ root, index, entries, onProgress, signal, pers
     const { dirs, name } = splitPath(entry.path);
     const dir = await directoryFor(root, dirs);
     const fileHandle = await dir.getFileHandle(name, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(await entry.getFile());
-    await writable.close();
+    await copyInto(entry, fileHandle);
     await index.put({ path: entry.path, size: entry.size, mtime: entry.mtime });
     state.copied += 1;
     state.bytes += Number(entry.size) || 0;
     report('copy');
+    // Let paint and input run between small files: no single task owns the
+    // whole copy loop.
+    if (state.copied % YIELD_EVERY === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
   }
 
   for (const path of removals) {

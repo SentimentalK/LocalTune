@@ -4,6 +4,7 @@ import { el } from './ui/dom.js';
 import { registerServiceWorker } from './pwa.js';
 import {
   applyDocumentLang,
+  browserLanguages,
   ensureLocale,
   resolveLanguage,
   resolveLocale,
@@ -49,11 +50,11 @@ try {
   // restores state, before the saved setting is known. Load the browser
   // table first so those boot strings follow the browser (the pre-lazy-load
   // behaviour); the saved setting's own chunk loads right after.
-  await ensureLocale(resolveLocale(navigator.languages));
+  await ensureLocale(resolveLocale(browserLanguages()));
   store = await createApp();
   // Load the resolved locale chunk before the first real render; a failed
   // chunk falls back to English without touching the stored setting.
-  const target = resolveLanguage(store.state.settings.language, navigator.languages);
+  const target = resolveLanguage(store.state.settings.language, browserLanguages());
   const loaded = await ensureLocale(target);
   setLocale(loaded);
   applyDocumentLang();

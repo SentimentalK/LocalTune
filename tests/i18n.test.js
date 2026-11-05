@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   LOCALES,
   LOCALE_LABELS,
+  browserLanguages,
   ensureLocale,
   getLocale,
   hasLocale,
@@ -66,6 +67,40 @@ test('resolveLanguage prefers an explicit supported setting', () => {
   assert.equal(resolveLanguage('pt-BR', ['en-US']), 'pt-BR');
   assert.equal(resolveLanguage('klingon', ['ja-JP']), 'ja');
   assert.equal(resolveLanguage(null, ['zh-TW']), 'zh-TW');
+});
+
+test('the browser UI language wins over the content preference list', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const setNavigator = (language, languages) => {
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: { language, languages },
+    });
+  };
+  try {
+    // Chrome UI in English, content preferences listing Chinese first.
+    setNavigator('en-US', ['zh-CN', 'en-US', 'fr-FR']);
+    assert.deepEqual(browserLanguages(), ['en-US', 'zh-CN', 'fr-FR']);
+    assert.equal(resolveLanguage('auto', browserLanguages()), 'en');
+
+    setNavigator('fr-FR', ['fr-FR']);
+    assert.equal(resolveLanguage('auto', browserLanguages()), 'fr');
+
+    // An explicit pick still beats the browser.
+    setNavigator('en-US', ['zh-CN']);
+    assert.equal(resolveLanguage('zh-CN', browserLanguages()), 'zh-CN');
+
+    // No `language` (older browsers): fall back to the preference order.
+    setNavigator(undefined, ['ja-JP', 'en-US']);
+    assert.deepEqual(browserLanguages(), ['ja-JP', 'en-US']);
+    assert.equal(resolveLanguage('auto', browserLanguages()), 'ja');
+
+    setNavigator('de-DE', undefined);
+    assert.deepEqual(browserLanguages(), ['de-DE']);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'navigator', original);
+    else delete globalThis.navigator;
+  }
 });
 
 test('every locale defines exactly the same keys and non-empty strings', () => {

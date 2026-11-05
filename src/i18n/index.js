@@ -6,8 +6,9 @@
  * other locale is a lazy `import()` chunk loaded on boot, on an explicit pick,
  * or by `languagechange` while the setting is `auto`.
  *
- * Resolution: explicit setting → navigator languages → 'en'. A missing key in
- * the active table falls back to English, then to the key itself (warned once).
+ * Resolution: explicit setting → browser UI language → browser content
+ * languages → 'en'. A missing key in the active table falls back to English,
+ * then to the key itself (warned once).
  */
 
 import en from './en.js';
@@ -56,10 +57,22 @@ const loading = new Map();
 
 const warned = new Set();
 
-function navigatorLanguages() {
+/**
+ * The browser's language list for resolution: `navigator.language` is the UI
+ * language and wins; the content preferences in `navigator.languages` follow,
+ * deduplicated. A browser set to English with Chinese content preferences must
+ * resolve to English, which reading `navigator.languages` alone would not do.
+ */
+export function browserLanguages() {
   if (typeof navigator === 'undefined') return [];
-  const languages = navigator.languages ?? [navigator.language];
-  return Array.isArray(languages) ? languages : [languages];
+  const list = [];
+  const add = (raw) => {
+    if (typeof raw !== 'string' || !raw) return;
+    if (!list.includes(raw)) list.push(raw);
+  };
+  add(navigator.language);
+  if (Array.isArray(navigator.languages)) for (const value of navigator.languages) add(value);
+  return list;
 }
 
 /** First entry of a BCP 47 language list that maps to a supported locale. */
@@ -70,6 +83,9 @@ export function resolveLocale(languages = []) {
     const value = raw.toLowerCase();
     if (value.startsWith('zh-hant') || value === 'zh-tw' || value === 'zh-hk') return 'zh-TW';
     if (value.startsWith('zh')) return 'zh-CN';
+    // English must terminate the search instead of falling through to a later
+    // preference: `['en-US', 'zh-CN']` means the app is English.
+    if (value.startsWith('en')) return 'en';
     if (value.startsWith('ja')) return 'ja';
     if (value.startsWith('ko')) return 'ko';
     if (value.startsWith('es')) return 'es';
@@ -92,7 +108,7 @@ export function localeLabel(next) {
 }
 
 /** The language the browser asks for, with its display label. */
-export function systemLocale(languages = navigatorLanguages()) {
+export function systemLocale(languages = browserLanguages()) {
   const locale = resolveLocale(languages);
   return { locale, label: localeLabel(locale) };
 }
@@ -129,7 +145,7 @@ export async function ensureLocale(next) {
   }
 }
 
-let locale = resolveLocale(navigatorLanguages());
+let locale = resolveLocale(browserLanguages());
 
 export function getLocale() {
   return locale;

@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
 import de from '../src/i18n/de.js';
+import en from '../src/i18n/en.js';
 import fr from '../src/i18n/fr.js';
 import ko from '../src/i18n/ko.js';
+import zhCN from '../src/i18n/zh-CN.js';
 
 // Every test starts from the browser locale, so the stored setting is `auto`.
 test.use({ locale: 'fr-FR' });
@@ -127,4 +129,54 @@ test('an explicit pick ignores later languagechange', async ({ page }) => {
 
   await page.locator('[data-testid="settings-close"]').click();
   await expect(page.locator('#tab-folders')).toHaveText(ko['tabs.folders']);
+});
+
+/**
+ * Chrome's UI language and its content preferences are separate: this stubs
+ * `navigator.language` (UI) and `navigator.languages` (preferences) with
+ * different values, which a real browser only does for some users.
+ */
+function installBrowserLanguage(page, { language, languages }) {
+  return page.addInitScript((input) => {
+    Object.defineProperty(navigator, 'language', {
+      configurable: true,
+      get: () => input.language,
+    });
+    Object.defineProperty(navigator, 'languages', {
+      configurable: true,
+      get: () => input.languages,
+    });
+  }, { language, languages });
+}
+
+test('the English UI language beats Chinese content preferences', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+  await installBrowserLanguage(page, {
+    language: 'en-US',
+    languages: ['zh-CN', 'en-US', 'fr-FR'],
+  });
+  await page.goto('/');
+
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.lang))
+    .toBe('en');
+  await expect(page.locator('#tab-folders')).toHaveText(en['tabs.folders']);
+
+  await openSettings(page);
+  await expect(page.locator('[data-testid="language-auto"]')).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await expect(page.locator('[data-testid="browser-language-hint"]')).toHaveText(
+    'Browser: en-US · zh-CN · fr-FR',
+  );
+  expect(await hasNoHorizontalOverflow(page)).toBe(true);
+
+  // An explicit pick still wins over the browser.
+  await page.locator('[data-testid="language-zh-CN"]').click();
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.lang))
+    .toBe('zh-CN');
+  await page.locator('[data-testid="settings-close"]').click();
+  await expect(page.locator('#tab-folders')).toHaveText(zhCN['tabs.folders']);
 });

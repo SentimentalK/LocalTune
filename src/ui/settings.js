@@ -13,6 +13,7 @@ import { createBatteryGuide } from './batteryGuide.js';
 import {
   LOCALES,
   LOCALE_LABELS,
+  browserLanguages,
   ensureLocale,
   resolveLocale,
   systemLocale,
@@ -211,20 +212,10 @@ export function createSettingsView(store, sw) {
   const migrationError = el('p', { class: 'settings-error muted', role: 'alert' });
   setHidden(migrationError, true);
 
-  const importProgress = el('p', {
-    class: 'settings-progress muted',
-    role: 'status',
-    'data-testid': 'import-progress',
-  });
-  setHidden(importProgress, true);
-
   function sourceCard(kind, title) {
     return el('div', { 'data-testid': `settings-library-${kind === 'local' ? 'local' : 'cloud'}` }, [
       el('h4', { class: 'settings-card-title', text: title }),
-      el('section', { class: 'card settings-card source-card' }, [
-        createSourceRow(kind),
-        ...(kind === 'local' ? [importProgress] : []),
-      ]),
+      el('section', { class: 'card settings-card source-card' }, [createSourceRow(kind)]),
     ]);
   }
 
@@ -592,12 +583,20 @@ export function createSettingsView(store, sw) {
   });
 
   async function selectLanguage(value) {
-    const target = value === 'auto' ? resolveLocale(navigator.languages) : value;
+    const target = value === 'auto' ? resolveLocale(browserLanguages()) : value;
     // Load first: a failed chunk leaves the setting untouched (the UI keeps
     // showing English) instead of storing an unusable locale.
     await ensureLocale(target);
     store.setSetting('language', value);
   }
+
+  // Which browser languages the resolver reads, in order. Tiny and muted: it
+  // explains why "Follow system" landed on the language it did.
+  const browserHint = el('p', {
+    class: 'language-browser',
+    'data-testid': 'browser-language-hint',
+    text: t('settings.language.browser', { list: browserLanguages().join(' · ') || '—' }),
+  });
 
   const languageList = el(
     'div',
@@ -606,7 +605,9 @@ export function createSettingsView(store, sw) {
       role: 'radiogroup',
       'aria-label': t('settings.language.title'),
     },
-    languageRows.map(({ button }) => button),
+    languageRows.flatMap(({ button }, index) =>
+      index === 0 ? [button, browserHint] : [button],
+    ),
   );
 
   // Roving tabindex: one tab stop, arrows move focus and select in one step.
@@ -871,7 +872,6 @@ export function createSettingsView(store, sw) {
   function render(state) {
     const { settings, migration } = state;
     const rows = state.sources ?? [];
-    const localRow = rows.find((row) => row.id === 'local') ?? null;
 
     for (const [kind, view] of sourceViews) {
       const row = rows.find((item) => item.id === kind) ?? {
@@ -905,8 +905,11 @@ export function createSettingsView(store, sw) {
       view.changeButton.setAttribute('aria-label', changeLabel);
       view.changeButton.setAttribute('title', changeLabel);
       view.removeButton.disabled = scanning || (permission === 'none' && trackCount === 0);
-      setHidden(view.progress, !scanning);
-      if (scanning) {
+      // Import progress is owned by the header; the card must not show a
+      // second percentage for the same copy pass.
+      const showProgress = scanning && row.progress?.phase !== 'import';
+      setHidden(view.progress, !showProgress);
+      if (showProgress) {
         const { done, total, phase } = row.progress ?? { done: 0, total: 0 };
         setText(
           view.progressLabel,
@@ -931,28 +934,6 @@ export function createSettingsView(store, sw) {
       const message = row.error || warning;
       setHidden(view.error, !message);
       if (message) setText(view.error, message);
-    }
-
-    const importState = localRow?.kind === 'opfs' ? localRow.progress : null;
-    const importing = importState?.phase === 'copy' || importState?.phase === 'remove';
-    setHidden(importProgress, !importing);
-    if (importState?.phase === 'copy') {
-      setText(
-        importProgress,
-        t('settings.library.importProgress', {
-          copied: Number(importState.copied) || 0,
-          total: Number(importState.total) || 0,
-          bytes: formatBytes(Number(importState.bytes) || 0),
-        }),
-      );
-    } else if (importState?.phase === 'remove') {
-      setText(
-        importProgress,
-        t('settings.library.importRemoving', {
-          removed: Number(importState.removed) || 0,
-          removedTotal: Number(importState.removedTotal) || 0,
-        }),
-      );
     }
 
     if (!desktopOnly) {
@@ -996,6 +977,11 @@ export function createSettingsView(store, sw) {
       button.classList.toggle('is-active', active);
       button.tabIndex = active ? 0 : -1;
     }
+
+    const browserHintText = t('settings.language.browser', {
+      list: browserLanguages().join(' · ') || '—',
+    });
+    if (browserHint.textContent !== browserHintText) browserHint.textContent = browserHintText;
 
     const sleep = state.sleep ?? { mode: 'off', remaining: null, fading: false };
     if (sleepSelect.value !== sleep.mode) sleepSelect.value = sleep.mode;

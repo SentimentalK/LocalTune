@@ -74,7 +74,7 @@ test('import mode copies files into OPFS and survives a reload', async ({ page }
     const chooser = await chooserPromise;
     await chooser.setFiles(dir);
 
-    await expect(page.locator('[data-testid="import-progress"]')).toBeHidden({
+    await expect(page.locator('[data-testid="scan-progress"]')).toBeHidden({
       timeout: 20_000,
     });
     await page.locator('[data-testid="settings-close"]').click();

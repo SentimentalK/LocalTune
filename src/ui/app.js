@@ -17,6 +17,7 @@ import { createImportDialog, createPlaylistView } from './playlist.js';
 import { openTagInfo } from './diagnostics.js';
 import {
   applyDocumentLang,
+  browserLanguages,
   ensureLocale,
   getLocale,
   hasLocale,
@@ -542,6 +543,9 @@ export function mountUi(root, store, sw) {
   let folder = { source: null, dir: '' };
   let vipRendered = false;
   let vipInputs = { playlists: null, tracks: null, stats: null, settings: null };
+  // Green bar position for the running scan. Progress never rewinds inside one
+  // scan: an import's percentage flows into the listing that follows it.
+  let scanPercent = 0;
 
   const last = {
     view: null,
@@ -675,11 +679,13 @@ export function mountUi(root, store, sw) {
       const caching = phase === 'cache' && total > 0;
       setText(
         ui.status,
-        caching
-          ? t('settings.source.caching', { done, total })
-          : total > 0
-            ? t('common.scanProgress', { done, total })
-            : t('common.scanCount', { done }),
+        phase === 'import'
+          ? t('common.importProgress', { done, total })
+          : caching
+            ? t('settings.source.caching', { done, total })
+            : total > 0
+              ? t('common.scanProgress', { done, total })
+              : t('common.scanCount', { done }),
       );
     } else {
       setText(ui.status, state.ready ? '' : t('common.loading'));
@@ -690,11 +696,18 @@ export function mountUi(root, store, sw) {
     setHidden(ui.scan, !scanningRow);
     if (scanningRow) {
       const { done, total } = scanningRow.progress ?? { done: 0, total: 0 };
-      const ratio = total > 0 ? Math.min(done / total, 1) : 0.12;
-      const percent = Math.round(ratio * 100);
-      ui.scanBar.style.width = `${percent}%`;
-      ui.scan.setAttribute('aria-valuenow', String(percent));
+      // A known total moves the bar forward and keeps the highest value; an
+      // unknown total (listing, or the gap after an import) keeps the bar
+      // where it is, with the old 12% floor for a scan that never reported one.
+      if (total > 0) {
+        scanPercent = Math.max(scanPercent, Math.round(Math.min(done / total, 1) * 100));
+      } else if (scanPercent === 0) {
+        scanPercent = 12;
+      }
+      ui.scanBar.style.width = `${scanPercent}%`;
+      ui.scan.setAttribute('aria-valuenow', String(scanPercent));
     } else {
+      scanPercent = 0;
       ui.scan.setAttribute('aria-valuenow', '0');
     }
 
@@ -1215,7 +1228,7 @@ export function mountUi(root, store, sw) {
   }
 
   function render(state) {
-    const next = resolveLanguage(state.settings.language, navigator.languages);
+    const next = resolveLanguage(state.settings.language, browserLanguages());
     if (next !== getLocale() && hasLocale(next)) {
       setLocale(next);
       applyDocumentLang();
@@ -1336,7 +1349,7 @@ export function mountUi(root, store, sw) {
     if (store.state.settings.language !== 'auto' || languageChangeBusy) return;
     languageChangeBusy = true;
     try {
-      const next = resolveLocale(navigator.languages);
+      const next = resolveLocale(browserLanguages());
       const loaded = await ensureLocale(next);
       if (loaded !== next || getLocale() === next) return;
       setLocale(next);

@@ -5,6 +5,10 @@
  */
 
 import { isGarbledTrack } from './metadata/garbled.js';
+import { yieldToMain } from './timing.js';
+
+/** Rows per event-loop yield: see enrichTracks. */
+const YIELD_EVERY = 20;
 
 /**
  * Bump when tag parsing output changes; drives the full local re-read.
@@ -104,6 +108,7 @@ export async function migrateGarbledTracks({
     }
     done += 1;
     onProgress({ done, total, changed: changed.length, failed });
+    if (done % YIELD_EVERY === 0) await yieldToMain();
   }
 
   return { changed, checked: suspects.length, failed };

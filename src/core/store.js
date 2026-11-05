@@ -77,6 +77,7 @@ import { installMediaSession, syncMediaSession } from './mediaSession.js';
 import { normalizeProxyUrl } from './playlist/sources/proxy.js';
 import { load as loadPrefs, save as savePrefs } from './playerPrefs.js';
 import { t } from '../i18n/index.js';
+import { yieldToMain } from './timing.js';
 
 const VIEWS = new Set(['folders', 'queue', 'search', 'settings', 'vip']);
 const MEDIA_SYNC_INTERVAL = 1000;
@@ -85,8 +86,46 @@ const SOURCE_KINDS = ['local', 'onedrive'];
 const TRACK_SOURCE = { local: 'fsa', onedrive: 'onedrive' };
 const LOCAL_MODE_KEY = 'localMode';
 const ONEDRIVE_SYNC_INTERVAL = 60 * 60 * 1000;
-const ENRICH_FLUSH_EVERY = 10;
-const ENRICH_EMIT_EVERY = 1;
+const ENRICH_FLUSH_EVERY = 25;
+const ENRICH_EMIT_INTERVAL = 1000;
+const PROGRESS_INTERVAL = 100;
+/** Rows per IndexedDB write while indexing a fresh scan. */
+const TRACK_WRITE_BATCH = 250;
+
+/**
+ * Collapse a progress stream to ~10 Hz. The first value goes out at once, the
+ * latest value trails at most one interval later, and `flush` delivers the
+ * pending value now (used when the stream ends so no stale frame survives).
+ */
+function progressThrottle(deliver, interval = PROGRESS_INTERVAL) {
+  let last = 0;
+  let timer = null;
+  let pending = null;
+  const send = (value) => {
+    last = Date.now();
+    deliver(value);
+  };
+  return (value, { flush = false } = {}) => {
+    const now = Date.now();
+    if (flush || now - last >= interval) {
+      clearTimeout(timer);
+      timer = null;
+      pending = null;
+      send(value);
+      return;
+    }
+    pending = value;
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      if (!pending) return;
+      const next = pending;
+      pending = null;
+      send(next);
+    }, interval);
+    timer?.unref?.();
+  };
+}
 
 function trackSourceOf(kind) {
   return TRACK_SOURCE[kind] ?? 'fsa';
@@ -606,6 +645,7 @@ export class Store extends EventTarget {
       try {
         const changed = [];
         let base = 0;
+        let lastEmit = 0;
         for (const { kind, selected } of groups) {
           const { changed: groupChanged } = await migrateGarbledTracks({
             tracks: selected,
@@ -614,7 +654,14 @@ export class Store extends EventTarget {
             shouldRead: () => true,
             onProgress: ({ done }) => {
               this._state.migration = { ...this._state.migration, done: base + done, total };
-              if (done % 5 === 0 || done === selected.length) this._emit();
+              // Same rule as the tag drain: a 1000-row list costs ~150 ms to
+              // rebuild, so a per-5-files emit freezes the page for the whole
+              // migration. One frame per second plus the last one is enough.
+              const now = Date.now();
+              if (now - lastEmit >= ENRICH_EMIT_INTERVAL || done === selected.length) {
+                lastEmit = now;
+                this._emit();
+              }
             },
           });
           base += selected.length;
@@ -645,20 +692,46 @@ export class Store extends EventTarget {
     this._emit();
     try {
       if (this.localMode === 'import') {
-        this.local.onProgress = (progress) => {
-          this._patchSource('local', { progress });
+        // Import progress belongs to the header, next to scan and cache
+        // progress: the row stays `scanning` from the first copied file until
+        // the rescan finishes, so the green bar never blinks out mid-import.
+        const report = progressThrottle((progress) => {
+          this._patchSource('local', { scanning: true, progress });
           this._emit();
+        });
+        let latest = { done: 0, total: 0, phase: 'import' };
+        this.local.onProgress = (progress) => {
+          const phase = progress?.phase;
+          if (phase === 'copy') {
+            latest = {
+              done: Number(progress.copied) || 0,
+              total: Number(progress.total) || 0,
+              phase: 'import',
+            };
+          } else if (phase === 'remove') {
+            latest = {
+              done: Number(progress.removed) || 0,
+              total: Number(progress.removedTotal) || 0,
+              phase: 'import',
+            };
+          }
+          report(latest, { flush: phase === 'done' });
         };
       }
       const result = await this.local.connect();
+      this.local.onProgress = null;
       if (result?.changed) await this._purgeSource('local');
       this._refreshSource('local');
       this._emit();
       await this.rescan('local');
       void this._maybeMigrateTags();
     } catch (error) {
-      if (error?.name === 'AbortError') return;
-      this._refreshSource('local', { error: errorMessage(error) });
+      this.local.onProgress = null;
+      this._patchSource('local', {
+        scanning: false,
+        progress: { done: 0, total: 0 },
+        ...(error?.name === 'AbortError' ? {} : { error: errorMessage(error) }),
+      });
       this._emit();
     }
   }
@@ -804,7 +877,12 @@ export class Store extends EventTarget {
         byId.set(track.id, track);
         return track;
       });
-      if (fresh.length) await putTracks(this.db, fresh);
+      // A 1000-row transaction is a ~200 ms main-thread task on its own; four
+      // batches with a frame between them keep input and paint alive.
+      for (let index = 0; index < fresh.length; index += TRACK_WRITE_BATCH) {
+        await putTracks(this.db, fresh.slice(index, index + TRACK_WRITE_BATCH));
+        if (index + TRACK_WRITE_BATCH < fresh.length) await yieldToMain();
+      }
       if (diff.removedIds.length) await deleteTracksById(this.db, diff.removedIds);
       for (const id of diff.removedIds) byId.delete(id);
 
@@ -916,6 +994,20 @@ export class Store extends EventTarget {
   }
 
   /**
+   * Replace one row without re-sorting: the sort key (`path`) never changes
+   * here, and sorting 1000 rows once per enriched file is the freeze a large
+   * import used to hit.
+   */
+  _replaceTrack(track) {
+    const index = this._state.tracks.findIndex((item) => item.id === track.id);
+    if (index < 0) return false;
+    const next = this._state.tracks.slice();
+    next[index] = track;
+    this._state.tracks = next;
+    return true;
+  }
+
+  /**
    * Background tag drain. Failures are counted per file inside enrichTracks;
    * this loop never touches `sources[kind].error`.
    */
@@ -924,6 +1016,7 @@ export class Store extends EventTarget {
     const adapter = this.sources[kind];
     const trackSource = adapter?.trackSource ?? trackSourceOf(kind);
     const accepted = [];
+    let lastEmit = 0;
     try {
       while (!queue.cancelled && queue.pending.size) {
         const batch = Array.from(queue.pending.values());
@@ -934,10 +1027,7 @@ export class Store extends EventTarget {
           makeTrack: (entry, meta) =>
             buildTrack(entry, meta, { trackSource, externalIds: entry.externalIds ?? {} }),
           onTrack: async (track) => {
-            if (!this._state.tracks.some((item) => item.id === track.id)) return;
-            this._state.tracks = sortTracks(
-              this._state.tracks.map((item) => (item.id === track.id ? track : item)),
-            );
+            if (!this._replaceTrack(track)) return;
             if (this.queue.tracks.some((item) => item.id === track.id)) {
               this.queue = {
                 ...this.queue,
@@ -948,7 +1038,15 @@ export class Store extends EventTarget {
             accepted.push(track);
             queue.seen += 1;
             if (queue.seen % ENRICH_FLUSH_EVERY === 0) await this._flushEnriched(accepted);
-            if (queue.seen % ENRICH_EMIT_EVERY === 0) this._emit();
+            // A tag pass over a big folder must not rebuild the list per
+            // file: a 1000-row render is ~150 ms, and the rows are already
+            // playable placeholders. One refresh per second, plus the final
+            // one below, keeps the UI live without stealing the first frame.
+            const now = Date.now();
+            if (now - lastEmit >= ENRICH_EMIT_INTERVAL) {
+              lastEmit = now;
+              this._emit();
+            }
           },
         });
         await this._flushEnriched(accepted);
@@ -996,10 +1094,7 @@ export class Store extends EventTarget {
     });
     if (!track.cover && previous?.cover) track.cover = previous.cover;
     if (!(track.duration > 0) && previous?.duration > 0) track.duration = previous.duration;
-    if (!this._state.tracks.some((item) => item.id === id)) return;
-    this._state.tracks = sortTracks(
-      this._state.tracks.map((item) => (item.id === id ? track : item)),
-    );
+    if (!this._replaceTrack(track)) return;
     if (this.queue?.tracks?.some((item) => item.id === id)) {
       this.queue = {
         ...this.queue,
@@ -1027,10 +1122,11 @@ export class Store extends EventTarget {
     const uncached = [];
     let cached = 0;
     let done = 0;
-    if (total > 0) {
-      this._patchSource(kind, { progress: { done: 0, total, phase: 'cache' } });
+    const report = progressThrottle((progress) => {
+      this._patchSource(kind, { progress });
       this._emit();
-    }
+    });
+    if (total > 0) report({ done: 0, total, phase: 'cache' });
     for (const entry of entries) {
       const key = cacheKey(trackSource, entry.path);
       let present = false;
@@ -1072,14 +1168,14 @@ export class Store extends EventTarget {
         uncached.push(entry.path);
       }
       done += 1;
-      this._patchSource(kind, { progress: { done, total, phase: 'cache' } });
-      this._emit();
+      report({ done, total, phase: 'cache' });
       if (adapter.permission() !== 'granted') {
         // Auth died mid-pass; retrying the rest would only storm the network.
         for (const rest of entries.slice(done)) uncached.push(rest.path);
         break;
       }
     }
+    if (total > 0) report({ done, total, phase: 'cache' }, { flush: true });
     return { cached, uncached };
   }
 
