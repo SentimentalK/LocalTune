@@ -449,12 +449,21 @@ export function createSettingsView(store, sw) {
     'settings.storage.limitUnlimited',
   ];
   const cacheLimitButtons = CACHE_LIMIT_VALUES.map((value, index) => {
+    // The last option is an infinity glyph so the five segments fit a 360px
+    // phone; its full name stays on the accessible label and the tooltip.
+    const label = t(CACHE_LIMIT_LABELS[index] ?? 'settings.storage.limit');
+    const shortLabel =
+      index === CACHE_LIMIT_LABELS.length - 1
+        ? t('settings.storage.limitUnlimitedShort')
+        : label;
     const button = el('button', {
       type: 'button',
-      class: 'segment',
+      class: index === CACHE_LIMIT_LABELS.length - 1 ? 'segment segment-glyph' : 'segment',
       'data-testid': `cache-limit-${index}`,
       'aria-pressed': 'false',
-      text: t(CACHE_LIMIT_LABELS[index] ?? 'settings.storage.limit'),
+      'aria-label': label,
+      title: label,
+      text: shortLabel,
       onclick: () => run(store.setSetting('cacheLimitBytes', value)),
     });
     return { value, button };

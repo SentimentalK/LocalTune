@@ -90,7 +90,7 @@ async function seedPlaylistAndSettings(page) {
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
 }
 
-test('the cache limit chooser stays on one row at 360px', async ({ page }) => {
+test('the cache limit chooser stays on one row at 360px in every locale', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 780 });
   await page.goto('/');
   await page.locator('[data-testid="settings-open"]').click();
@@ -99,14 +99,46 @@ test('the cache limit chooser stays on one row at 360px', async ({ page }) => {
   const limits = page.locator('[data-testid^="cache-limit-"]');
   await expect(limits).toHaveCount(5);
 
-  const tops = await limits.evaluateAll((nodes) => nodes.map((node) => node.offsetTop));
-  expect(new Set(tops).size).toBe(1);
+  // Every language shortest label must fit: no clipped cell, no ellipsis.
+  for (const locale of ['zh-CN', 'en', 'zh-TW', 'ja']) {
+    if (locale !== 'zh-CN') {
+      await page.locator(`[data-testid="language-${locale}"]`).click();
+      await expect(page.locator('[data-testid="settings-section-storage"]')).toBeVisible();
+    }
 
-  const overflow = await page.locator('.storage-limit').evaluate((node) => ({
-    scrollWidth: node.scrollWidth,
-    clientWidth: node.clientWidth,
-  }));
-  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+    const segments = await limits.evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const style = getComputedStyle(node);
+        return {
+          id: node.dataset.testid,
+          top: node.offsetTop,
+          scrollWidth: node.scrollWidth,
+          clientWidth: node.clientWidth,
+          textOverflow: style.textOverflow,
+          text: node.textContent ?? '',
+        };
+      }),
+    );
+
+    expect(segments.length, `${locale} limit segments`).toBe(5);
+    expect(new Set(segments.map((segment) => segment.top)).size, `${locale} one row`).toBe(1);
+    for (const segment of segments) {
+      expect(
+        segment.scrollWidth,
+        `${locale} ${segment.id} text clipped`,
+      ).toBeLessThanOrEqual(segment.clientWidth);
+      expect(segment.textOverflow, `${locale} ${segment.id} ellipsis`).not.toBe('ellipsis');
+      expect(segment.text, `${locale} ${segment.id} placeholder ellipsis`).not.toContain('…');
+    }
+
+    const overflow = await page.locator('.storage-limit').evaluate((node) => ({
+      scrollWidth: node.scrollWidth,
+      clientWidth: node.clientWidth,
+    }));
+    expect(overflow.scrollWidth, `${locale} limit row overflow`).toBeLessThanOrEqual(
+      overflow.clientWidth,
+    );
+  }
 
   await expect(page.locator('[data-testid="clear-all"]')).toHaveCount(1);
   for (const id of ['clear-cache', 'clear-library', 'storage-import', 'storage-pins']) {

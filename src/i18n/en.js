@@ -168,6 +168,7 @@ export default {
   'settings.storage.limit1': '1 GB',
   'settings.storage.limit2': '2 GB',
   'settings.storage.limit5': '5 GB',
+  'settings.storage.limitUnlimitedShort': '∞',
   'settings.storage.limitUnlimited': 'No limit',
   'settings.storage.clearAll': 'Clear all',
   'settings.storage.clearAllConfirm':

@@ -1439,12 +1439,17 @@ time {
 .storage-limit-options .segment {
   flex: 1 1 0;
   min-width: 0;
-  padding: 6px 4px;
+  padding: 6px 3px;
   font-size: 11px;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   border-radius: 8px;
+}
+
+/* The unlimited option is an infinity glyph: give it display size so it does
+   not read as a speck next to the "5 GB" cell. */
+.storage-limit-options .segment-glyph {
+  font-size: 16px;
+  line-height: 1;
 }
 
 /* ---- folders ---- */
