@@ -718,14 +718,19 @@ export function createSettingsView(store, sw) {
   });
 
   function toggleButton(key, testid) {
-    return el('button', {
-      class: 'btn-pill ghost toggle',
-      type: 'button',
-      'data-testid': testid,
-      'aria-pressed': 'false',
-      text: t(`settings.playback.${key}`),
-      onclick: () => store.setSetting(key, !store.state.settings[key]),
-    });
+    return el(
+      'button',
+      {
+        class: 'toggle-switch',
+        type: 'button',
+        role: 'switch',
+        'data-testid': testid,
+        'aria-checked': 'false',
+        'aria-label': t(`settings.playback.${key}`),
+        onclick: () => store.setSetting(key, !store.state.settings[key]),
+      },
+      [el('span', { class: 'toggle-knob', 'aria-hidden': 'true' })],
+    );
   }
 
   const levelingButton = toggleButton('leveling', 'setting-leveling');
@@ -747,10 +752,12 @@ export function createSettingsView(store, sw) {
         sleepRemaining,
       ]),
       el('div', { class: 'setting-line' }, [
+        el('span', { class: 'setting-label', text: t('settings.playback.leveling') }),
         levelingButton,
         el('p', { class: 'hint', text: t('settings.playback.levelingHint') }),
       ]),
       el('div', { class: 'setting-line' }, [
+        el('span', { class: 'setting-label', text: t('settings.playback.gapless') }),
         gaplessButton,
         el('p', { class: 'hint', text: t('settings.playback.gaplessHint') }),
       ]),
@@ -1254,7 +1261,7 @@ export function createSettingsView(store, sw) {
       ['gapless', gaplessButton],
     ]) {
       const on = Boolean(settings[key]);
-      button.setAttribute('aria-pressed', String(on));
+      button.setAttribute('aria-checked', String(on));
       button.classList.toggle('is-on', on);
     }
 
