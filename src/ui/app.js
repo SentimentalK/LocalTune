@@ -8,15 +8,14 @@
 import { formatTime } from '../core/selectors.js';
 import { subdirsOf, tracksDirect, tracksUnder } from '../core/folders.js';
 import { runSearch } from '../core/search.js';
-import { activeLineIndex } from '../core/lyrics/lrc.js';
 import {
   libraryVisible,
   sourceNeedsReconnect,
   visibleSources,
 } from '../core/library.js';
-import { LYRICS_ENABLED } from '../core/flags.js';
 import { el, icon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
 import { createSettingsView } from './settings.js';
+import { createPlaylistSettings } from './playlist-settings.js';
 import { createVipView } from './vip.js';
 import { createImportDialog, createPlaylistView } from './playlist.js';
 import { openTagInfo } from './diagnostics.js';
@@ -478,28 +477,12 @@ function createShell(store, sw) {
     { class: 'btn', type: 'button', 'aria-label': t('player.repeatOff'), onclick: () => store.cycleRepeat() },
     [icon('repeat'), repeatBadge],
   );
-  // Lyrics are a build-time opt-in; with the flag off (the default) this whole
-  // node is folded away by esbuild and the controls keep five buttons.
-  const lyricsButton = LYRICS_ENABLED
-    ? el('button', {
-        class: 'btn-pill ghost lyrics-btn',
-        type: 'button',
-        'data-testid': 'lyrics-open',
-        text: t('lyrics.open'),
-        onclick: () => {
-          const trackId = store.state.current.track?.id ?? null;
-          store.setView('lyrics');
-          if (trackId) void store.loadLyrics(trackId);
-        },
-      })
-    : null;
   const controls = el('div', { class: 'controls' }, [
     shuffleButton,
     prevButton,
     playButton,
     nextButton,
     repeatButton,
-    lyricsButton,
   ]);
 
   const player = el('section', { class: 'card player', 'aria-label': t('aria.nowPlaying') }, [
@@ -532,13 +515,13 @@ function createShell(store, sw) {
   // dialog lazily, so creating the dialog right after this is safe.
   const playlistView = createPlaylistView(store, { onImport: () => importDialog.open() });
   const importDialog = createImportDialog(store);
-  const vipView = createVipView(playlistView);
+  const playlistSettings = createPlaylistSettings(store);
+  const vipView = createVipView(playlistView, playlistSettings);
 
   // ---- settings view ----
   const settingsView = createSettingsView(store, sw);
   const settingsHost = el('div', { class: 'settings-host' }, settingsView.node);
   const vipHost = el('div', { class: 'vip-host', hidden: true }, vipView.node);
-  const lyricsHost = LYRICS_ENABLED ? el('div', { class: 'lyrics-host', hidden: true }) : null;
   const defaultView = el('div', { class: 'default-view' }, [
     el('div', { class: 'player-col' }, [player]),
     library,
@@ -588,7 +571,6 @@ function createShell(store, sw) {
     shuffleButton,
     repeatButton,
     repeatBadge,
-    lyricsButton,
     searchButton,
     vipButton,
     settingsButton,
@@ -597,7 +579,6 @@ function createShell(store, sw) {
     settingsHost,
     vipView,
     vipHost,
-    lyricsHost,
     playlistView,
     importDialog,
     defaultView,
@@ -623,9 +604,8 @@ export function mountUi(root, store, sw) {
   let searchToken = 0;
   let searchView = null;
   let folder = { source: null, dir: '' };
-  let lyricsView = null;
   let vipRendered = false;
-  let vipInputs = { playlists: null, tracks: null, stats: null };
+  let vipInputs = { playlists: null, tracks: null, stats: null, settings: null };
 
   const last = {
     view: null,
@@ -668,7 +648,6 @@ export function mountUi(root, store, sw) {
     searchResult = null;
     searchView = null;
     folder = { source: null, dir: '' };
-    lyricsView = null;
   }
 
   function showToast(text) {
@@ -739,6 +718,9 @@ export function mountUi(root, store, sw) {
       showToast(event.detail?.text ?? '');
     });
     ui.playlistView.node.addEventListener('toast', (event) => {
+      showToast(event.detail?.text ?? '');
+    });
+    ui.vipView.node.addEventListener('toast', (event) => {
       showToast(event.detail?.text ?? '');
     });
     ui.importDialog.node.addEventListener('toast', (event) => {
@@ -838,7 +820,6 @@ export function mountUi(root, store, sw) {
     setHidden(ui.playIcon, playing);
     setHidden(ui.pauseIcon, !playing);
     ui.playButton.disabled = !track;
-    if (LYRICS_ENABLED) ui.lyricsButton.disabled = !track;
 
     ui.shuffleButton.classList.toggle('is-on', queue.shuffle);
     ui.shuffleButton.setAttribute('aria-pressed', String(queue.shuffle));
@@ -1277,115 +1258,8 @@ export function mountUi(root, store, sw) {
     );
   }
 
-  // ---- lyrics view (build-time opt-in; the default build drops this block) ----
-  let buildLyricsView = null;
-  let ensureLyricsView = null;
-  let renderLyrics = null;
-
-  if (LYRICS_ENABLED) {
-    buildLyricsView = () => {
-      const backButton = el(
-        'button',
-        {
-          class: 'icon-btn',
-          type: 'button',
-          'data-testid': 'lyrics-back',
-          'aria-label': t('lyrics.back'),
-          onclick: () => store.setView('folders'),
-        },
-        [el('span', { class: 'back-arrow', 'aria-hidden': 'true', text: '←' })],
-      );
-      const headText = el('div', { class: 'lyrics-head-text' }, [
-        el('h2', { text: t('lyrics.title') }),
-        el('p', { class: 'lyrics-track' }),
-      ]);
-      const linesBox = el('div', { class: 'lyrics', 'data-testid': 'lyrics-lines' });
-      const root = el(
-        'section',
-        { class: 'settings-view lyrics-view', 'data-testid': 'lyrics-view' },
-        [el('div', { class: 'settings-head lyrics-head' }, [backButton, headText]), linesBox],
-      );
-      return {
-        root,
-        trackLine: headText.lastElementChild,
-        linesBox,
-        rows: [],
-        active: -1,
-        key: null,
-        linesRef: null,
-        plain: null,
-      };
-    };
-
-    ensureLyricsView = () => {
-      if (!lyricsView) lyricsView = buildLyricsView();
-      if (ui.lyricsHost.firstElementChild !== lyricsView.root) {
-        ui.lyricsHost.replaceChildren(lyricsView.root);
-      }
-      return lyricsView;
-    };
-
-    renderLyrics = (state) => {
-      if (state.view !== 'lyrics') return;
-      const view = ensureLyricsView();
-      const track = state.current.track;
-      setText(view.trackLine, track ? `${track.title} · ${subtitleOf(track)}` : t('player.noTrack'));
-
-      const lyrics = state.lyrics ?? {};
-      const lines = Array.isArray(lyrics.lines) ? lyrics.lines : [];
-      const key = `${lyrics.trackId ?? ''}|${lyrics.source ?? 'none'}|${lyrics.loading ? 1 : 0}`;
-      if (view.key !== key || view.linesRef !== lines || view.plain !== lyrics.plain) {
-        view.key = key;
-        view.linesRef = lines;
-        view.plain = lyrics.plain;
-        view.active = -1;
-        view.rows = [];
-        view.linesBox.replaceChildren();
-        if (lyrics.loading) {
-          view.linesBox.append(el('p', { class: 'muted', text: t('lyrics.loading') }));
-        } else if (lines.length) {
-          for (const line of lines) {
-            const node = el('p', {
-              class: 'lyric-line',
-              'data-testid': 'lyric-line',
-              'data-time': String(line.time),
-              text: line.text,
-            });
-            view.rows.push(node);
-            view.linesBox.append(node);
-          }
-        } else if (lyrics.plain) {
-          view.linesBox.append(el('pre', { 'data-testid': 'lyrics-plain', text: lyrics.plain }));
-        } else {
-          view.linesBox.append(
-            el('p', { class: 'muted', 'data-testid': 'lyrics-empty', text: t('lyrics.empty') }),
-          );
-        }
-      }
-
-      const index = lines.length ? activeLineIndex(lines, state.current.position) : -1;
-      if (index === view.active) return;
-      const previous = view.rows[view.active];
-      if (previous) {
-        previous.classList.remove('is-active');
-        previous.removeAttribute('aria-current');
-      }
-      const next = view.rows[index];
-      if (next) {
-        next.classList.add('is-active');
-        next.setAttribute('aria-current', 'true');
-        if (next.isConnected) next.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      }
-      view.active = index;
-    };
-  }
-
   function renderView(state) {
     if (state.view === 'settings' || state.view === 'vip') return;
-    if (LYRICS_ENABLED && state.view === 'lyrics') {
-      ensureLyricsView();
-      return;
-    }
     const currentId = state.current.track?.id ?? null;
     const queueView = state.view === 'queue';
     const permissions = (state.sources ?? [])
@@ -1517,18 +1391,9 @@ export function mountUi(root, store, sw) {
       }
       store.clearPendingView();
     }
-    if (LYRICS_ENABLED && state.view === 'lyrics') {
-      // A track change inside the lyrics view resolves once; the store sets
-      // `lyrics.trackId` synchronously, so the 4 Hz position updates do not
-      // issue another request.
-      const trackId = state.current.track?.id ?? null;
-      if (trackId && state.lyrics?.trackId !== trackId) void store.loadLyrics(trackId);
-      renderLyrics(state);
-    }
     const settings = state.view === 'settings';
     const vip = state.view === 'vip';
-    const lyrics = state.view === 'lyrics';
-    setHidden(ui.defaultView, settings || vip || lyrics);
+    setHidden(ui.defaultView, settings || vip);
     setHidden(ui.settingsHost, !settings);
     setHidden(ui.vipHost, !vip);
     if (vip) {
@@ -1536,16 +1401,21 @@ export function mountUi(root, store, sw) {
         !vipRendered ||
         state.playlists !== vipInputs.playlists ||
         state.tracks !== vipInputs.tracks ||
-        state.stats !== vipInputs.stats
+        state.stats !== vipInputs.stats ||
+        state.settings !== vipInputs.settings
       ) {
         ui.vipView.render(state);
         vipRendered = true;
-        vipInputs = { playlists: state.playlists, tracks: state.tracks, stats: state.stats };
+        vipInputs = {
+          playlists: state.playlists,
+          tracks: state.tracks,
+          stats: state.stats,
+          settings: state.settings,
+        };
       }
     } else {
       vipRendered = false;
     }
-    if (LYRICS_ENABLED) setHidden(ui.lyricsHost, !lyrics);
     setHidden(ui.updateBanner, !state.updateReady);
 
     // rescan() re-matched missing playlist rows: announce the count once and

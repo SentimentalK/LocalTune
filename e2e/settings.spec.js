@@ -29,11 +29,10 @@ test('settings view covers library, storage, language and about', async ({ page 
   // Build version is the 10-char source hash injected by the build.
   await expect(page.locator('[data-testid="about-version"]')).toHaveText(/^[0-9a-f]{10}$/);
 
-  // The empty proxy field advertises the same-origin default.
-  await expect(page.locator('[data-testid="setting-proxy-url"]')).toHaveAttribute(
-    'placeholder',
-    '/api/resolve',
-  );
+  // Playlist resolving inputs moved out of the about card into VIP.
+  const aboutCard = page.locator('[data-testid="settings-section-about"]');
+  await expect(aboutCard.locator('[data-testid="setting-youtube-key"]')).toHaveCount(0);
+  await expect(aboutCard.locator('[data-testid="setting-proxy-url"]')).toHaveCount(0);
 
   // No audio responses are cached in a fresh profile: the toast still reports 0 B.
   page.once('dialog', (dialog) => dialog.accept());
@@ -58,4 +57,17 @@ test('settings view covers library, storage, language and about', async ({ page 
   await expect(page.locator('#tab-folders')).toBeVisible();
   await expect(page.locator('#tab-folders')).toHaveText('文件夹');
   expect(await page.evaluate(() => document.documentElement.lang)).toBe('zh-CN');
+
+  // Playlist resolving settings sit at the bottom of the VIP view.
+  await page.locator('[data-testid="vip-open"]').click();
+  await expect(page.locator('[data-testid="vip-playlist-settings"]')).toBeVisible();
+  await expect(page.locator('[data-testid="setting-proxy-url"]')).toHaveAttribute(
+    'placeholder',
+    '/api/resolve',
+  );
+  await expect(page.locator('[data-testid="setting-youtube-key"]')).toBeVisible();
+  await page.locator('[data-testid="settings-close"]').click();
+
+  await expect(page.locator('#tab-folders')).toBeVisible();
+  await expect(page.locator('[data-testid="vip-playlist-settings"]')).toBeHidden();
 });

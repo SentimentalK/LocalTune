@@ -62,7 +62,6 @@ import { createPlayCounter, applyPlay, ensureAdded } from './stats.js';
 import { createSleepTimer } from './sleepTimer.js';
 import { decideGain } from './gain.js';
 import { parseReplayGain } from './metadata/id3.js';
-import { resolveLyrics } from './lyrics/index.js';
 import {
   loadPlayback,
   savePlayback,
@@ -77,7 +76,6 @@ import { t } from '../i18n/index.js';
 
 const VIEWS = new Set(['folders', 'queue', 'search', 'settings', 'vip']);
 const MEDIA_SYNC_INTERVAL = 1000;
-const LYRICS_CACHE_LIMIT = 20;
 const REPLAYGAIN_HEAD_BYTES = 1 << 19;
 const SOURCE_KINDS = ['local', 'onedrive'];
 const TRACK_SOURCE = { local: 'fsa', onedrive: 'onedrive' };
@@ -211,7 +209,6 @@ export class Store extends EventTarget {
     this._lastSyncAt = 0;
     this._pickerIndex = new Map();
     this._playCounter = createPlayCounter();
-    this._lyricsCache = new Map();
     this._sleep = null;
     this._fadeFactor = 1;
 
@@ -228,7 +225,6 @@ export class Store extends EventTarget {
       rematch: null,
       stats: {},
       sleep: { mode: 'off', endsAt: null, remaining: null, fading: false },
-      lyrics: { trackId: null, loading: false, lines: [], plain: '', source: 'none', error: null },
       settings: {
         language: 'auto',
         cacheLimitBytes: DEFAULT_CACHE_LIMIT_BYTES,
@@ -429,7 +425,6 @@ export class Store extends EventTarget {
     const storedStats = await getAllStats(this.db).catch(() => []);
 
     this._playCounter = createPlayCounter();
-    this._lyricsCache = new Map();
     this._sleep = createSleepTimer({
       now: Date.now,
       onTick: (sleep) => {
@@ -1369,7 +1364,6 @@ export class Store extends EventTarget {
     this._emit();
     if (this._state.settings.leveling) this._promoteLeveling();
     await this._loadTrack(currentTrack(this.queue), { play: true, source });
-    this._resetLyrics();
     this._savePlayback();
     this._syncMediaSession(true);
   }
@@ -1552,70 +1546,6 @@ export class Store extends EventTarget {
     this._state.settings = { ...this._state.settings, [key]: value };
     void saveSettings(this.db, this._state.settings).catch(() => {});
     this._emit();
-  }
-
-  /**
-   * Resolve lyrics for one track, sidecar `.lrc` first, then embedded tags.
-   * Remote or unreadable files end at `source: 'none'`; playback never waits.
-   */
-  async loadLyrics(trackId) {
-    const track = this._state.tracks.find((item) => item.id === trackId) ?? null;
-    if (!track) {
-      this._state.lyrics = {
-        trackId,
-        loading: false,
-        lines: [],
-        plain: '',
-        source: 'none',
-        error: t('error.store.trackMissing'),
-      };
-      this._emit();
-      return;
-    }
-
-    const cached = this._lyricsCache?.get(trackId);
-    if (cached) {
-      this._lyricsCache.delete(trackId);
-      this._lyricsCache.set(trackId, cached);
-      this._state.lyrics = { ...cached, trackId, loading: false, error: null };
-      this._emit();
-      return;
-    }
-
-    this._state.lyrics = {
-      trackId,
-      loading: true,
-      lines: [],
-      plain: '',
-      source: 'none',
-      error: null,
-    };
-    this._emit();
-
-    let resolved = { source: 'none', lines: [], plain: '' };
-    try {
-      const getFile = (path) => this._adapterForTrack(track).getFile(path);
-      resolved = await resolveLyrics({ track, getFile });
-    } catch (error) {
-      // A missing OneDrive copy or an unreadable file is not an error the UI
-      // shows: the track keeps playing without lyrics.
-      this.log('lyrics', { error: String(error) });
-      resolved = { source: 'none', lines: [], plain: '' };
-    }
-
-    const entry = {
-      trackId,
-      loading: false,
-      lines: Array.isArray(resolved?.lines) ? resolved.lines : [],
-      plain: typeof resolved?.plain === 'string' ? resolved.plain : '',
-      source: resolved?.source ?? 'none',
-      error: null,
-    };
-    this._rememberLyrics(trackId, entry);
-    if (this._state.lyrics.trackId === trackId) {
-      this._state.lyrics = entry;
-      this._emit();
-    }
   }
 
   setSleepMode(mode) {
@@ -1853,28 +1783,6 @@ export class Store extends EventTarget {
     }
   }
 
-  _resetLyrics() {
-    this._state.lyrics = {
-      trackId: null,
-      loading: false,
-      lines: [],
-      plain: '',
-      source: 'none',
-      error: null,
-    };
-  }
-
-  _rememberLyrics(trackId, entry) {
-    const cache = this._lyricsCache;
-    if (!cache) return;
-    cache.delete(trackId);
-    cache.set(trackId, entry);
-    while (cache.size > LYRICS_CACHE_LIMIT) {
-      const oldest = cache.keys().next().value;
-      cache.delete(oldest);
-    }
-  }
-
   _promoteLeveling() {
     try {
       void this.player?.enableLeveling()?.catch(() => {});
@@ -2092,7 +2000,6 @@ export class Store extends EventTarget {
       }
       this.log('trackchange', { source });
       this._startPlaySession(track, this._state.current.position);
-      this._resetLyrics();
       void this._applyGainForTrack(track);
       void this._primeNext();
       return true;
@@ -2181,7 +2088,6 @@ export class Store extends EventTarget {
 
     if (hit) {
       this._startPlaySession(next, 0);
-      this._resetLyrics();
       void this._applyGainForTrack(next);
       // No await before loadUrl/playNow: the user gesture's activation is still live.
       const blocked = (error) => {

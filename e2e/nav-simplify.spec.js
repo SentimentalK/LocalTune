@@ -19,6 +19,8 @@ test('the shell has two tabs, one progress bar and three header actions', async 
   await expect(tabs).toHaveCount(2);
   await expect(tabs).toHaveText(['文件夹', '队列']);
   await expect(page.locator('[data-testid="lyrics-open"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="lyrics-view"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="lyrics-host"]')).toHaveCount(0);
 });
 
 test('the header close button leaves settings', async ({ page }) => {
