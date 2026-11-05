@@ -624,6 +624,8 @@ export function mountUi(root, store, sw) {
   let searchView = null;
   let folder = { source: null, dir: '' };
   let lyricsView = null;
+  let vipRendered = false;
+  let vipInputs = { playlists: null, tracks: null, stats: null };
 
   const last = {
     view: null,
@@ -767,7 +769,7 @@ export function mountUi(root, store, sw) {
             : t('common.scanCount', { done }),
       );
     } else {
-      setText(ui.status, '');
+      setText(ui.status, state.ready ? '' : t('common.loading'));
     }
 
     setHidden(ui.deniedHint, local.permission !== 'denied');
@@ -1529,7 +1531,20 @@ export function mountUi(root, store, sw) {
     setHidden(ui.defaultView, settings || vip || lyrics);
     setHidden(ui.settingsHost, !settings);
     setHidden(ui.vipHost, !vip);
-    if (vip) ui.vipView.render(state);
+    if (vip) {
+      if (
+        !vipRendered ||
+        state.playlists !== vipInputs.playlists ||
+        state.tracks !== vipInputs.tracks ||
+        state.stats !== vipInputs.stats
+      ) {
+        ui.vipView.render(state);
+        vipRendered = true;
+        vipInputs = { playlists: state.playlists, tracks: state.tracks, stats: state.stats };
+      }
+    } else {
+      vipRendered = false;
+    }
     if (LYRICS_ENABLED) setHidden(ui.lyricsHost, !lyrics);
     setHidden(ui.updateBanner, !state.updateReady);
 

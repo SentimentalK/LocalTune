@@ -115,7 +115,7 @@ test('search filters the library and auto lists sort by stats', async ({ page })
   await expect(searchRows(page)).toHaveCount(0);
   await expect(input).toHaveValue('');
 
-  // Auto lists live under Playlists and open as a detail panel.
+  // Auto lists live under VIP and open as a detail panel.
   await page.locator('[data-testid="vip-open"]').click();
   await page.locator('[data-testid="auto-list-open-most"]').click();
   const detailRows = page.locator('[data-testid="auto-list-detail"] [data-testid="track-row"]');
