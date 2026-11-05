@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const PORT = Number(process.env.PW_PORT ?? 4173);
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -7,13 +9,13 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: `http://127.0.0.1:${PORT}`,
     locale: 'zh-CN',
     trace: 'on-first-retry',
   },
   webServer: {
-    command: 'node scripts/serve.mjs',
-    port: 4173,
+    command: `PORT=${PORT} node scripts/serve.mjs`,
+    port: PORT,
     reuseExistingServer: true,
   },
   projects: [
