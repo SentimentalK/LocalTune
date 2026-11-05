@@ -74,7 +74,8 @@ export function createGraphClient({
     } = {},
   ) {
     const query = `?$top=${top}&$select=${encodeURIComponent(select)}`;
-    let page = await getJson(`/drives/${driveId}/items/${itemId}/children${query}`);
+    const id = encodeURIComponent(itemId);
+    let page = await getJson(`/drives/${driveId}/items/${id}/children${query}`);
     for (;;) {
       for (const item of page.value ?? []) yield item;
       const nextLink = page['@odata.nextLink'];
@@ -84,7 +85,11 @@ export function createGraphClient({
   }
 
   function getItem(driveId, itemId) {
-    return getJson(`/drives/${driveId}/items/${itemId}?$select=${DEFAULT_ITEM_SELECT}`);
+    // `@` in the annotation is a reserved character. Left raw, some Graph
+    // front doors drop `@microsoft.graph.downloadUrl` from `$select`.
+    const id = encodeURIComponent(itemId);
+    const select = encodeURIComponent(DEFAULT_ITEM_SELECT);
+    return getJson(`/drives/${driveId}/items/${id}?$select=${select}`);
   }
 
   async function getDownloadUrl(driveId, itemId) {

@@ -96,11 +96,13 @@ test('getJson joins paths onto baseUrl and passes absolute URLs through', async 
 
 test('getDownloadUrl returns the annotation and rejects items without one', async () => {
   const download = 'https://download.example/file';
-  const { client } = graphClient(() =>
+  const { client, calls } = graphClient(() =>
     jsonResponse(200, { id: 'i', '@microsoft.graph.downloadUrl': download }),
   );
 
   assert.equal(await client.getDownloadUrl('drive1', 'item1'), download);
+  assert.match(calls[0][0], /\$select=/);
+  assert.match(calls[0][0], /%40microsoft\.graph\.downloadUrl/);
 
   const { client: bare } = graphClient(() => jsonResponse(200, { id: 'i' }));
   await assert.rejects(bare.getDownloadUrl('drive1', 'item1'), (error) => {

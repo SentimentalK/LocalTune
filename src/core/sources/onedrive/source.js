@@ -45,7 +45,7 @@ function encodePath(path) {
   return path
     .split('/')
     .filter(Boolean)
-    .map((segment) => encodeURIComponent(segment))
+    .map((segment) => encodeURIComponent(segment).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`))
     .join('/');
 }
 
@@ -301,45 +301,67 @@ export class OneDriveSource {
 
   /**
    * Whole-file read. The cache is consulted before authorization, so a cached
-   * track still plays after the token expired. Failures refetch the item once
-   * (a fresh `@microsoft.graph.downloadUrl`) before giving up. Playback lets
-   * the cache write run in the background; sync passes `awaitCache` so the
-   * file is really in Cache Storage when the pass moves on.
+   * track still plays after the token expired. A miss downloads the body.
+   * Sync passes `awaitCache` so the file is really in Cache Storage when the
+   * pass moves on. Playback should call `open` instead: that returns the
+   * download URL before the body arrives.
    */
-  async getFile(path, { awaitCache = false } = {}) {
-    const key = cacheKey('onedrive', path);
-    let cached = null;
-    if (this.cache?.read) {
-      try {
-        cached = await this.cache.read(key);
-      } catch {
-        cached = null;
-      }
-    }
-    if (cached) return cached;
+  async getFile(path, options = {}) {
+    const opened = await this.open(path, options);
+    if (opened.file) return opened.file;
+    return opened.cache;
+  }
+
+  /**
+   * A cached blob, or a short-lived download URL plus a cache fill.
+   * The URL is returned as soon as Graph answers, so playback can start
+   * while the body is still copying into Cache Storage. `itemId` skips a
+   * path lookup (paths such as `90's/...` are easy to miss after a reload).
+   */
+  async open(path, { awaitCache = false, itemId = null } = {}) {
+    const clean = cleanPath(path);
+    const key = cacheKey('onedrive', clean);
+    const cached = await this._readCached(key);
+    if (cached) return { file: cached };
 
     if (!(await this.ensurePermission())) {
       throw new Error(t('error.onedrive.authRequired'));
     }
     const driveId = await this._driveIdOrFetch();
-    const itemId = await this._resolveItemId(driveId, cleanPath(path), { folder: false });
+    const resolved = await this._resolveItemId(driveId, clean, { folder: false, itemId });
+    const url = await this._downloadUrl(driveId, resolved);
+    const cache = this._downloadToCache(key, clean, driveId, resolved, url, { awaitCache });
+    return { url, cache };
+  }
 
-    let blob = null;
+  async _readCached(key) {
+    if (!this.cache?.read) return null;
     try {
-      blob = await this._download(driveId, itemId);
+      return await this.cache.read(key);
     } catch {
+      return null;
+    }
+  }
+
+  async _downloadUrl(driveId, itemId) {
+    try {
+      return await this.client.getDownloadUrl(driveId, itemId);
+    } catch (error) {
       try {
-        blob = await this._download(driveId, itemId);
-      } catch {
-        throw new Error(t('error.onedrive.fetchFailed'));
+        return await this.client.getDownloadUrl(driveId, itemId);
+      } catch (retry) {
+        throw new Error(t('error.onedrive.fetchFailed'), { cause: retry ?? error });
       }
     }
+  }
 
+  async _downloadToCache(key, path, driveId, itemId, url, { awaitCache }) {
+    const blob = await this._downloadBlob(url, driveId, itemId);
     if (this.cache?.write) {
       const pending = this.cache.write({ key, source: 'onedrive', path, blob });
       if (pending && typeof pending.then === 'function') {
-        pending.catch(() => {});
         if (awaitCache) await pending;
+        else pending.catch(() => {});
       }
     }
     return blob;
@@ -402,8 +424,12 @@ export class OneDriveSource {
     return this._driveId;
   }
 
-  async _resolveItemId(driveId, path, { folder = false } = {}) {
+  async _resolveItemId(driveId, path, { folder = false, itemId = null } = {}) {
     if (!path) return 'root';
+    if (itemId) {
+      this._items[path] = itemId;
+      return itemId;
+    }
     const known = this._items[path];
     if (known) return known;
 
@@ -415,13 +441,29 @@ export class OneDriveSource {
     return item.id;
   }
 
-  async _download(driveId, itemId) {
-    const url = await this.client.getDownloadUrl(driveId, itemId);
-    const response = await this.fetchImpl(url);
-    if (!response || response.status < 200 || response.status >= 300) {
-      throw new Error(`HTTP ${response?.status ?? 0}`);
+  async _downloadBlob(url, driveId, itemId) {
+    const attempt = async (downloadUrl) => {
+      const response = await this.fetchImpl(downloadUrl);
+      if (!response || response.status < 200 || response.status >= 300) {
+        throw new Error(`HTTP ${response?.status ?? 0}`);
+      }
+      return response.blob();
+    };
+    try {
+      return await attempt(url);
+    } catch (error) {
+      let fresh = url;
+      try {
+        fresh = await this.client.getDownloadUrl(driveId, itemId);
+      } catch {
+        // Keep the URL we already have; the second body read is the retry.
+      }
+      try {
+        return await attempt(fresh);
+      } catch (retry) {
+        throw new Error(t('error.onedrive.fetchFailed'), { cause: retry ?? error });
+      }
     }
-    return response.blob();
   }
 
   /**

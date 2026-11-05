@@ -696,6 +696,110 @@ test('getFile downloads a whole file on a cache miss and writes the cache', asyn
   assert.equal(writes[0].blob, blob);
 });
 
+test('open returns the download URL before the body arrives', async () => {
+  const meta = memoryMeta({
+    onedriveToken: validToken(),
+    onedriveRoot: { driveId: 'drive-1', itemId: 'root', path: '', name: 'OneDrive' },
+    onedriveItems: { 'a.mp3': 'item-1' },
+  });
+  const blob = new Blob(['audio']);
+  let release = () => {};
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const writes = [];
+  const source = makeSource({
+    meta,
+    cache: {
+      read: async () => null,
+      write: async (row) => {
+        writes.push(row);
+      },
+    },
+    fetchImpl: async (url) => {
+      if (url.startsWith('https://download.test/')) {
+        await gate;
+        return { status: 200, ok: true, async blob() { return blob; } };
+      }
+      return jsonResponse(200, {
+        id: 'item-1',
+        '@microsoft.graph.downloadUrl': 'https://download.test/file',
+      });
+    },
+  });
+  await source.restore();
+
+  const opened = await source.open('a.mp3');
+  assert.equal(opened.url, 'https://download.test/file');
+  assert.equal(opened.file, undefined);
+  assert.equal(writes.length, 0);
+
+  release();
+  assert.equal(await opened.cache, blob);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].blob, blob);
+});
+
+test('open uses the stored item id and does not look the path up', async () => {
+  const meta = memoryMeta({
+    onedriveToken: validToken(),
+    onedriveRoot: { driveId: 'drive-1', itemId: 'root', path: 'Music', name: 'Music' },
+    onedriveItems: {},
+  });
+  const urls = [];
+  const source = makeSource({
+    meta,
+    fetchImpl: async (url) => {
+      urls.push(url);
+      if (url.startsWith('https://download.test/')) {
+        return { status: 200, ok: true, async blob() { return new Blob(['audio']); } };
+      }
+      return jsonResponse(200, {
+        id: 'item-9',
+        '@microsoft.graph.downloadUrl': 'https://download.test/file',
+      });
+    },
+  });
+  await source.restore();
+
+  const opened = await source.open("90's/Aimer - StarRingChild.mp3", { itemId: 'item-9' });
+  assert.equal(opened.url, 'https://download.test/file');
+  assert.ok(urls.some((url) => url.includes('/items/item-9')));
+  assert.ok(urls.every((url) => !url.includes('/root:')));
+});
+
+test('getFile encodes an apostrophe when the item id is not known', async () => {
+  const meta = memoryMeta({
+    onedriveToken: validToken(),
+    onedriveRoot: { driveId: 'drive-1', itemId: 'root', path: '', name: 'OneDrive' },
+    onedriveItems: {},
+  });
+  const urls = [];
+  const source = makeSource({
+    meta,
+    fetchImpl: async (url) => {
+      urls.push(url);
+      if (url.includes('/root:')) {
+        return jsonResponse(200, { id: 'item-9' });
+      }
+      if (url.startsWith('https://download.test/')) {
+        return { status: 200, ok: true, async blob() { return new Blob(['audio']); } };
+      }
+      return jsonResponse(200, {
+        id: 'item-9',
+        '@microsoft.graph.downloadUrl': 'https://download.test/file',
+      });
+    },
+  });
+  await source.restore();
+
+  await source.getFile("90's/Aimer - StarRingChild.mp3");
+  assert.ok(
+    urls.some((url) => url.includes('/root:/90%27s/Aimer%20-%20StarRingChild.mp3:')),
+    urls.join('\n'),
+  );
+});
+
 test('getFile with awaitCache waits for the cache write', async () => {
   const meta = memoryMeta({
     onedriveToken: validToken(),

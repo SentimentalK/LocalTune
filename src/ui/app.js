@@ -333,8 +333,9 @@ function createShell(store, sw) {
     text: t('common.deniedHint'),
   });
   const scanBar = el('i');
+  const scanLabel = el('span', { class: 'scan-label', text: t('common.scanning') });
   const scan = el('div', { class: 'scan', role: 'status' }, [
-    el('span', { class: 'scan-label', text: t('common.scanning') }),
+    scanLabel,
     el('div', { class: 'bar' }, scanBar),
   ]);
   const errorBox = el('p', { class: 'alert', role: 'alert' });
@@ -520,6 +521,7 @@ function createShell(store, sw) {
     authButton,
     deniedHint,
     scan,
+    scanLabel,
     scanBar,
     errorBox,
     player,
@@ -708,12 +710,15 @@ export function mountUi(root, store, sw) {
         t('migration.progress', { done: migration.done ?? 0, total: migration.total ?? 0 }),
       );
     } else if (scanningRow) {
-      const { done, total } = scanningRow.progress ?? { done: 0, total: 0 };
+      const { done, total, phase } = scanningRow.progress ?? { done: 0, total: 0 };
+      const caching = phase === 'cache' && total > 0;
       setText(
         ui.status,
-        total > 0
-          ? t('common.scanProgress', { done, total })
-          : t('common.scanCount', { done }),
+        caching
+          ? t('settings.source.caching', { done, total })
+          : total > 0
+            ? t('common.scanProgress', { done, total })
+            : t('common.scanCount', { done }),
       );
     } else {
       setText(ui.status, state.ready ? t('common.ready') : t('common.loading'));
@@ -743,9 +748,13 @@ export function mountUi(root, store, sw) {
 
     setHidden(ui.scan, !scanningRow);
     if (scanningRow) {
-      const { done, total } = scanningRow.progress ?? { done: 0, total: 0 };
+      const { done, total, phase } = scanningRow.progress ?? { done: 0, total: 0 };
       const ratio = total > 0 ? Math.min(done / total, 1) : 0.12;
       ui.scanBar.style.width = `${Math.round(ratio * 100)}%`;
+      setText(
+        ui.scanLabel,
+        phase === 'cache' ? t('settings.source.caching', { done, total }) : t('common.scanning'),
+      );
     }
 
     const error = rows.find((row) => row.error)?.error ?? null;

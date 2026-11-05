@@ -1009,19 +1009,25 @@ export class Store extends EventTarget {
       }
       if (!present) {
         try {
-          await adapter.getFile(entry.path, { awaitCache: true });
+          await adapter.getFile(entry.path, {
+            awaitCache: true,
+            itemId: entry.externalIds?.onedrive ?? null,
+          });
           present = await this.cache.has(key);
-        } catch {
+        } catch (error) {
           present = false;
+          this.log('cache', {
+            id: `${trackSource}:${entry.path}`,
+            ok: false,
+            error: String(error?.cause?.message ?? error?.message ?? error),
+          });
         }
       }
       if (present) cached += 1;
       else uncached.push(entry.path);
       done += 1;
-      if (done % 5 === 0 || done === total) {
-        this._patchSource(kind, { progress: { done, total, phase: 'cache' } });
-        this._emit();
-      }
+      this._patchSource(kind, { progress: { done, total, phase: 'cache' } });
+      this._emit();
       if (adapter.permission() !== 'granted') {
         // Auth died mid-pass; retrying the rest would only storm the network.
         for (const rest of entries.slice(done)) uncached.push(rest.path);
@@ -1974,6 +1980,13 @@ export class Store extends EventTarget {
     this.log('prefetch', { id: next.id, ok: Boolean(result) });
   }
 
+  _applyPendingSeek() {
+    if (this._pendingSeek == null) return;
+    this.player.seek(this._pendingSeek);
+    this._state.current.position = this._pendingSeek;
+    this._pendingSeek = null;
+  }
+
   async _loadTrack(track, { play = true, position = 0, source = 'user' } = {}) {
     if (!track || !this.player) return false;
     this._loading = true;
@@ -1983,16 +1996,43 @@ export class Store extends EventTarget {
     this._pendingSeek = position > 0 ? position : null;
     this._emit();
     try {
-      const file = await this._adapterForTrack(track).getFile(track.path);
+      const adapter = this._adapterForTrack(track);
+      const opened =
+        typeof adapter.open === 'function'
+          ? await adapter.open(track.path, { itemId: track.externalIds?.onedrive ?? null })
+          : { file: await adapter.getFile(track.path) };
       if (currentTrack(this.queue)?.id !== track.id) return false;
-      await this.player.load(file);
-      this._loadedId = track.id;
-      if (this._pendingSeek != null) {
-        this.player.seek(this._pendingSeek);
-        this._state.current.position = this._pendingSeek;
-        this._pendingSeek = null;
+      if (opened.file) {
+        await this.player.load(opened.file);
+        this._loadedId = track.id;
+        this._applyPendingSeek();
+        if (play) await this.player.play();
+      } else if (opened.url) {
+        // The download URL plays immediately. The body keeps copying into
+        // the cache; a cache failure must not cancel the song already playing.
+        this.player.loadUrl(opened.url);
+        this._loadedId = track.id;
+        this._applyPendingSeek();
+        if (play) {
+          const pending = this.player.playNow();
+          pending.catch((error) => {
+            this._state.current.playing = false;
+            this.log('playblocked', { error: String(error?.name ?? error) });
+            this._emit();
+          });
+        }
+        if (opened.cache && typeof opened.cache.then === 'function') {
+          void opened.cache.catch((error) => {
+            this.log('cache', {
+              id: track.id,
+              ok: false,
+              error: String(error?.cause?.message ?? error?.message ?? error),
+            });
+          });
+        }
+      } else {
+        throw new Error(t('error.player.missingFile'));
       }
-      if (play) await this.player.play();
       this.log('trackchange', { source });
       this._startPlaySession(track, this._state.current.position);
       this._resetLyrics();
@@ -2001,7 +2041,11 @@ export class Store extends EventTarget {
       return true;
     } catch (error) {
       // One unplayable file is not a source failure; the row stays clean.
+      // The play log still records why, so a silent toggle is visible.
       this._state.current.playing = false;
+      this.log('loadfail', {
+        error: String(error?.cause?.message ?? error?.message ?? error),
+      });
       this._emit();
       return false;
     } finally {
