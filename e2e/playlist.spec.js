@@ -145,8 +145,11 @@ test('imports a text playlist, persists it and writes a m3u8', async ({ page }) 
   await seedLibrary(page);
   await page.reload();
 
-  await expect(page.locator('li.row .row-hit')).toHaveCount(7);
+  await page.locator('[data-testid="folder-source-local"]').click();
+  await page.locator('[data-testid="folder-dir-Music"]').click();
+  await expect(page.locator('[data-testid="track-row"]')).toHaveCount(7);
 
+  await page.locator('#tab-playlists').click();
   await page.locator('[data-testid="import-open"]').click();
   await expect(page.locator('[data-testid="import-dialog"]')).toBeVisible();
   await page.locator('[data-testid="import-name"]').fill('E2E 歌单');
@@ -251,8 +254,11 @@ test.describe('same-origin proxy', () => {
 
     await seedLibrary(page);
     await page.reload();
-    await expect(page.locator('li.row .row-hit')).toHaveCount(7);
+    await page.locator('[data-testid="folder-source-local"]').click();
+    await page.locator('[data-testid="folder-dir-Music"]').click();
+    await expect(page.locator('[data-testid="track-row"]')).toHaveCount(7);
 
+    await page.locator('#tab-playlists').click();
     await page.locator('[data-testid="import-open"]').click();
     await expect(page.locator('[data-testid="import-dialog"]')).toBeVisible();
     await page.locator('[data-testid="import-name"]').fill('E2E 代理歌单');

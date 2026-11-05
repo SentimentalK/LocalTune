@@ -7,6 +7,8 @@
 
 import { t } from '../i18n/index.js';
 import { el, setHidden, setText } from './dom.js';
+import { formatTime } from '../core/selectors.js';
+import { mostPlayed, neverPlayed, recentlyAdded } from '../core/stats.js';
 import { matchPlaylist } from '../core/playlist/match.js';
 import { missingText, m3u8Text, playlistCounts, sanitizeFileName } from '../core/playlist/model.js';
 import { parsePlaylistText } from '../core/playlist/parse-text.js';
@@ -16,8 +18,21 @@ import { resolveYouTubePlaylist } from '../core/playlist/sources/youtube.js';
 const PROXY_SOURCES = new Set(['spotify', 'netease', 'qq']);
 const YOUTUBE_HOST = /(^|\.)youtube\.com$|^youtu\.be$/i;
 
+/** Auto lists in display order; ids double as `autoList.<id>` keys. */
+const AUTO_LISTS = ['recent', 'most', 'never'];
+
 function run(result) {
   if (result && typeof result.catch === 'function') result.catch(() => {});
+}
+
+/** Copy then Fisher-Yates, so the caller's list stays in its display order. */
+function shuffled(list) {
+  const copy = list.slice();
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
 }
 
 function isYouTubeUrl(url) {
@@ -185,14 +200,167 @@ function canWrite(state) {
   return local?.permission === 'granted';
 }
 
-export function createPlaylistView(store) {
+export function createPlaylistView(store, { onImport } = {}) {
   const node = el('section', { class: 'playlist-view', 'data-testid': 'playlist-view' });
   let selectedId = null;
+  let selectedList = null;
   let lastState = store.state;
 
   function select(id) {
     selectedId = selectedId === id ? null : id;
     paint(lastState);
+  }
+
+  function selectList(id) {
+    selectedList = selectedList === id ? null : id;
+    paint(lastState);
+  }
+
+  function autoListTracks(state, id) {
+    const tracks = Array.isArray(state.tracks) ? state.tracks : [];
+    if (id === 'recent') return recentlyAdded(tracks, state.stats, 50);
+    if (id === 'most') return mostPlayed(tracks, state.stats, 50);
+    return neverPlayed(tracks, state.stats);
+  }
+
+  function playList(list) {
+    if (!list.length) {
+      toastFrom(node, t('autoList.empty'));
+      return;
+    }
+    run(store.playQueue(list, list[0].id));
+  }
+
+  function playShuffled(list) {
+    if (!list.length) {
+      toastFrom(node, t('autoList.empty'));
+      return;
+    }
+    const order = shuffled(list);
+    run(store.playQueue(order, order[0].id));
+  }
+
+  function playlistSection(state, playlists) {
+    const importButton = el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': 'import-open',
+      text: t('playlists.import'),
+      onclick: () => onImport?.(),
+    });
+    const head = el('header', { class: 'playlist-section-head' }, [
+      el('span', { text: t('playlists.title') }),
+      el('div', { class: 'playlist-section-actions' }, [
+        el('span', { text: String(playlists.length) }),
+        importButton,
+      ]),
+    ]);
+    const body = playlists.length
+      ? el('ul', { class: 'rows' }, playlists.map((playlist) => rowNode(state, playlist)))
+      : el('p', { class: 'muted', 'data-testid': 'playlists-empty', text: t('playlists.empty') });
+    return el('section', { class: 'list playlist-list' }, [head, body]);
+  }
+
+  function autoSection(state) {
+    const rows = AUTO_LISTS.map((id) => {
+      const list = autoListTracks(state, id);
+      return el('li', { class: 'auto-list-row', 'data-testid': `auto-list-row-${id}` }, [
+        el('span', { class: 'auto-list-info' }, [
+          el('b', { text: t(`autoList.${id}`) }),
+          el('span', { class: 'muted', text: t('common.trackCount', { count: list.length }) }),
+        ]),
+        el('div', { class: 'auto-list-actions' }, [
+          el('button', {
+            class: 'btn-pill ghost',
+            type: 'button',
+            'data-testid': `auto-list-play-${id}`,
+            text: t('common.playAll'),
+            onclick: () => playList(list),
+          }),
+          el('button', {
+            class: 'btn-pill ghost',
+            type: 'button',
+            'data-testid': `auto-list-shuffle-${id}`,
+            text: t('common.shufflePlay'),
+            onclick: () => playShuffled(list),
+          }),
+          el('button', {
+            class: 'btn-pill ghost',
+            type: 'button',
+            'data-testid': `auto-list-open-${id}`,
+            text: t('playlists.open'),
+            onclick: () => selectList(id),
+          }),
+        ]),
+      ]);
+    });
+
+    return el('section', { class: 'list auto-list-section' }, [
+      el('header', {}, [
+        el('span', { text: t('autoList.title') }),
+        el('span', { text: String(AUTO_LISTS.length) }),
+      ]),
+      el('ul', { class: 'rows' }, rows),
+    ]);
+  }
+
+  function autoDetailNode(state) {
+    const list = autoListTracks(state, selectedList);
+    const rows = list.map((track) =>
+      el('li', { class: 'row', 'data-testid': 'track-row' }, [
+        el(
+          'button',
+          {
+            class: 'row-hit',
+            type: 'button',
+            onclick: () => run(store.playQueue(list, track.id)),
+          },
+          [
+            el('span', { class: 'art', 'aria-hidden': 'true' }),
+            el('span', { class: 't' }, [
+              el('b', { text: track.title }),
+              el('span', { text: typeof track.artist === 'string' ? track.artist : '' }),
+            ]),
+            el('time', { text: formatTime(track.duration) }),
+          ],
+        ),
+      ]),
+    );
+
+    const children = [
+      el('header', {}, [
+        el('span', { text: t(`autoList.${selectedList}`) }),
+        el('span', { text: t('common.trackCount', { count: list.length }) }),
+      ]),
+      el('div', { class: 'playlist-actions' }, [
+        el('button', {
+          class: 'btn-pill',
+          type: 'button',
+          'data-testid': 'auto-list-detail-play',
+          text: t('common.playAll'),
+          onclick: () => playList(list),
+        }),
+        el('button', {
+          class: 'btn-pill ghost',
+          type: 'button',
+          'data-testid': 'auto-list-detail-shuffle',
+          text: t('common.shufflePlay'),
+          onclick: () => playShuffled(list),
+        }),
+      ]),
+    ];
+    if (rows.length) children.push(el('ul', { class: 'rows' }, rows));
+    else {
+      children.push(
+        el('p', { class: 'muted', 'data-testid': 'auto-list-empty', text: t('autoList.empty') }),
+      );
+    }
+
+    return el(
+      'section',
+      { class: 'list auto-list-detail', 'data-testid': 'auto-list-detail' },
+      children,
+    );
   }
 
   function detailNode(state, playlist) {
@@ -258,7 +426,50 @@ export function createPlaylistView(store) {
       },
     });
 
+    const trackOf = async () => {
+      const tracks = await store.playlistTracks(playlist.id);
+      if (!tracks.length) {
+        toastFrom(node, t('playlists.emptyTracks'));
+        return [];
+      }
+      return tracks;
+    };
+    const detailPlay = el('button', {
+      class: 'btn-pill',
+      type: 'button',
+      'data-testid': 'playlist-detail-play',
+      text: t('common.playAll'),
+      onclick: async () => {
+        try {
+          const tracks = await trackOf();
+          if (tracks.length) await store.playQueue(tracks, tracks[0].id);
+        } catch (error) {
+          reportError(node, error);
+        }
+      },
+    });
+    const detailShuffle = el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': 'playlist-detail-shuffle',
+      text: t('common.shufflePlay'),
+      onclick: async () => {
+        try {
+          const tracks = await trackOf();
+          if (!tracks.length) return;
+          const order = shuffled(tracks);
+          await store.playQueue(order, order[0].id);
+        } catch (error) {
+          reportError(node, error);
+        }
+      },
+    });
+
     return el('section', { class: 'playlist-detail', 'data-testid': 'playlist-detail' }, [
+      el('div', { class: 'playlist-actions', 'data-testid': 'playlist-detail-actions' }, [
+        detailPlay,
+        detailShuffle,
+      ]),
       header,
       columns,
       el('div', { class: 'playlist-actions' }, [copyButton, downloadButton, m3u8Button]),
@@ -275,19 +486,39 @@ export function createPlaylistView(store) {
       el('time', { text: new Date(playlist.createdAt).toLocaleString() }),
     ]);
 
+    const trackOf = async () => {
+      const tracks = await store.playlistTracks(playlist.id);
+      if (!tracks.length) {
+        toastFrom(node, t('playlists.emptyTracks'));
+        return [];
+      }
+      return tracks;
+    };
     const play = el('button', {
       class: 'btn-pill ghost',
       type: 'button',
       'data-testid': 'playlist-play',
-      text: t('playlists.play'),
+      text: t('common.playAll'),
       onclick: async () => {
         try {
-          const tracks = await store.playlistTracks(playlist.id);
-          if (!tracks.length) {
-            toastFrom(node, t('playlists.emptyTracks'));
-            return;
-          }
-          await store.playQueue(tracks, tracks[0].id);
+          const tracks = await trackOf();
+          if (tracks.length) await store.playQueue(tracks, tracks[0].id);
+        } catch (error) {
+          reportError(node, error);
+        }
+      },
+    });
+    const shuffle = el('button', {
+      class: 'btn-pill ghost',
+      type: 'button',
+      'data-testid': 'playlist-shuffle',
+      text: t('common.shufflePlay'),
+      onclick: async () => {
+        try {
+          const tracks = await trackOf();
+          if (!tracks.length) return;
+          const order = shuffled(tracks);
+          await store.playQueue(order, order[0].id);
         } catch (error) {
           reportError(node, error);
         }
@@ -319,7 +550,7 @@ export function createPlaylistView(store) {
     return el(
       'li',
       { class: 'playlist-row', 'data-testid': 'playlist-row' },
-      [info, el('div', { class: 'playlist-row-actions' }, [play, open, remove])],
+      [info, el('div', { class: 'playlist-row-actions' }, [play, shuffle, open, remove])],
     );
   }
 
@@ -329,29 +560,13 @@ export function createPlaylistView(store) {
     if (selectedId && !playlists.some((playlist) => playlist.id === selectedId)) {
       selectedId = null;
     }
+    if (selectedList && !AUTO_LISTS.includes(selectedList)) selectedList = null;
 
-    if (!playlists.length) {
-      node.replaceChildren(
-        el('section', { class: 'card empty' }, [
-          el('h2', { text: t('playlists.title') }),
-          el('p', { text: t('playlists.empty') }),
-        ]),
-      );
-      return;
-    }
-
-    const children = [
-      el('section', { class: 'list playlist-list' }, [
-        el('header', {}, [
-          el('span', { text: t('playlists.title') }),
-          el('span', { text: String(playlists.length) }),
-        ]),
-        el('ul', { class: 'rows' }, playlists.map((playlist) => rowNode(state, playlist))),
-      ]),
-    ];
-
+    const children = [playlistSection(state, playlists)];
     const selected = playlists.find((playlist) => playlist.id === selectedId);
     if (selected) children.push(detailNode(state, selected));
+    children.push(autoSection(state));
+    if (selectedList) children.push(autoDetailNode(state));
     node.replaceChildren(...children);
   }
 

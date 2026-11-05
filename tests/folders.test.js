@@ -1,39 +1,91 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { groupByFolder } from '../src/core/folders.js';
+import { subdirsOf, tracksDirect, tracksUnder } from '../src/core/folders.js';
 
 function track(id, path, trackNo = null) {
   return { id, path, trackNo };
 }
 
-function ids(entry) {
-  return entry.trackIds;
-}
+const NESTED = [
+  track('root', '0.mp3'),
+  track('a1', 'A/1.mp3'),
+  track('b2', 'A/B/2.mp3'),
+  track('b3', 'A/B/3.mp3'),
+  track('c1', 'A/B/C/1.mp3'),
+];
 
-test('groupByFolder counts nested tracks in every ancestor directory', () => {
-  const tracks = [
-    track('root', '0.mp3'),
-    track('a1', 'A/1.mp3'),
-    track('b2', 'A/B/2.mp3'),
-    track('b3', 'A/B/3.mp3'),
-  ];
+const ids = (tracks) => tracks.map((item) => item.id);
 
-  const groups = groupByFolder(tracks);
+test('subdirsOf counts nested tracks in every direct child', () => {
+  const subs = subdirsOf(NESTED);
 
   assert.deepEqual(
-    groups.map((group) => [group.dir, group.count]),
-    [
-      ['', 1],
-      ['A', 3],
-      ['A/B', 2],
-    ],
+    subs.map((entry) => [entry.dir, entry.name, entry.count]),
+    [['A', 'A', 4]],
   );
-  assert.deepEqual(ids(groups[0]), ['root']);
-  assert.deepEqual(ids(groups[1]), ['a1', 'b2', 'b3']);
-  assert.deepEqual(ids(groups[2]), ['b2', 'b3']);
+
+  const inner = subdirsOf(NESTED, 'A');
+  assert.deepEqual(
+    inner.map((entry) => [entry.dir, entry.name, entry.count]),
+    [['A/B', 'B', 3]],
+  );
+  assert.deepEqual(
+    subdirsOf(NESTED, 'A/B').map((entry) => [entry.dir, entry.count]),
+    [['A/B/C', 1]],
+  );
+  assert.deepEqual(subdirsOf(NESTED, 'A/B/C'), []);
 });
 
-test('groupByFolder orders tracks by trackNo first, then naturally by name', () => {
+test('subdirsOf lists only direct children, never grandchildren', () => {
+  const tracks = [track('x', 'Music/x.mp3'), track('y', 'Music/Sub/y.mp3')];
+
+  assert.deepEqual(
+    subdirsOf(tracks).map((entry) => entry.dir),
+    ['Music'],
+  );
+  assert.deepEqual(
+    subdirsOf(tracks, 'Music').map((entry) => entry.dir),
+    ['Music/Sub'],
+  );
+});
+
+test('tracksDirect keeps only this directory, tracksUnder keeps the subtree', () => {
+  assert.deepEqual(ids(tracksDirect(NESTED, 'A')), ['a1']);
+  assert.deepEqual(ids(tracksDirect(NESTED, 'A/B')), ['b2', 'b3']);
+  assert.deepEqual(ids(tracksUnder(NESTED, 'A')), ['a1', 'c1', 'b2', 'b3']);
+  assert.deepEqual(ids(tracksUnder(NESTED, 'A/B')), ['c1', 'b2', 'b3']);
+});
+
+test('tracksUnder with an empty dir returns the whole library', () => {
+  assert.deepEqual(ids(tracksUnder(NESTED, '')), ['root', 'a1', 'c1', 'b2', 'b3']);
+  assert.deepEqual(ids(tracksDirect(NESTED, '')), ['root']);
+  assert.deepEqual(tracksUnder([]), []);
+  assert.deepEqual(tracksDirect([]), []);
+  assert.deepEqual(subdirsOf([]), []);
+});
+
+test('a sibling directory with a common prefix is not part of the subtree', () => {
+  const tracks = [track('a', 'A/1.mp3'), track('ab', 'AB/1.mp3')];
+
+  assert.deepEqual(ids(tracksUnder(tracks, 'A')), ['a']);
+  assert.deepEqual(
+    subdirsOf(tracks).map((entry) => entry.dir),
+    ['A', 'AB'],
+  );
+});
+
+test('tracks without a path count as root-directory tracks', () => {
+  const tracks = [{ id: 'noPath' }, track('p', 'A/1.mp3')];
+
+  assert.deepEqual(ids(tracksDirect(tracks, '')), ['noPath']);
+  assert.deepEqual(ids(tracksUnder(tracks, 'A')), ['p']);
+  assert.deepEqual(
+    subdirsOf(tracks).map((entry) => entry.dir),
+    ['A'],
+  );
+});
+
+test('ordering is by trackNo, then naturally by file name', () => {
   const tracks = [
     track('ten', 'A/10.mp3'),
     track('two', 'A/2.mp3'),
@@ -41,67 +93,32 @@ test('groupByFolder orders tracks by trackNo first, then naturally by name', () 
     track('three', 'A/03.mp3', 3),
   ];
 
-  const [group] = groupByFolder(tracks);
-
-  assert.deepEqual(ids(group), ['one', 'three', 'two', 'ten']);
+  assert.deepEqual(ids(tracksDirect(tracks, 'A')), ['one', 'three', 'two', 'ten']);
 });
 
-test('groupByFolder sorts directories ascending by relative path', () => {
+test('subdirectories sort naturally by name', () => {
   const tracks = [
-    track('b', 'B/1.mp3'),
-    track('ac', 'A/C/1.mp3'),
-    track('a', 'A/1.mp3'),
+    track('d10', 'A/10/1.mp3'),
+    track('d2', 'A/2/1.mp3'),
+    track('d1', 'A/1/1.mp3'),
   ];
 
-  const groups = groupByFolder(tracks);
-
   assert.deepEqual(
-    groups.map((group) => group.dir),
-    ['A', 'A/C', 'B'],
+    subdirsOf(tracks, 'A').map((entry) => entry.name),
+    ['1', '2', '10'],
   );
 });
 
-test('root-directory tracks stay in the root group only', () => {
-  const tracks = [track('root1', '1.mp3'), track('root2', '2.mp3'), track('nested', 'A/1.mp3')];
+test('the helpers do not mutate their input', () => {
+  const tracks = [track('two', 'A/2.mp3'), track('one', 'A/1.mp3'), track('deep', 'A/B/1.mp3')];
+  const snapshot = tracks.map((item) => [item.id, item.path]);
 
-  const groups = groupByFolder(tracks);
-
-  assert.deepEqual(
-    groups.map((group) => [group.dir, group.count]),
-    [
-      ['', 2],
-      ['A', 1],
-    ],
-  );
-  assert.deepEqual(ids(groups[0]), ['root1', 'root2']);
-});
-
-test('groupByFolder returns an empty list for empty input', () => {
-  assert.deepEqual(groupByFolder(), []);
-  assert.deepEqual(groupByFolder([]), []);
-});
-
-test('tracks without a path fall back to the root directory', () => {
-  const groups = groupByFolder([{ id: 'noPath' }, { id: 'p', path: 'A/1.mp3' }]);
+  tracksDirect(tracks, 'A');
+  tracksUnder(tracks, 'A');
+  subdirsOf(tracks, 'A');
 
   assert.deepEqual(
-    groups.map((group) => [group.dir, group.count]),
-    [
-      ['', 1],
-      ['A', 1],
-    ],
-  );
-  assert.deepEqual(ids(groups[0]), ['noPath']);
-});
-
-test('groupByFolder does not mutate its input', () => {
-  const tracks = [track('two', 'A/2.mp3'), track('one', 'A/1.mp3')];
-  const snapshot = tracks.map((item) => item.id);
-
-  groupByFolder(tracks);
-
-  assert.deepEqual(
-    tracks.map((item) => item.id),
+    tracks.map((item) => [item.id, item.path]),
     snapshot,
   );
 });

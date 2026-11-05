@@ -119,15 +119,17 @@ test('import mode copies files into OPFS and survives a reload', async ({ page }
       timeout: 20_000,
     });
     await page.locator('[data-testid="settings-back"]').click();
-    await expect(page.locator('li.row .row-hit')).toHaveCount(2);
+    await page.locator('[data-testid="folder-source-local"]').click();
+    await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
 
     chooserCount = 0;
     await page.reload();
     await expect(page.locator('#app h1')).toBeVisible();
-    await expect(page.locator('li.row .row-hit')).toHaveCount(2);
+    await page.locator('[data-testid="folder-source-local"]').click();
+    await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
     expect(chooserCount).toBe(0);
 
-    await page.locator('li.row .row-hit').first().click();
+    await page.locator('[data-testid="track-row"] .row-hit').first().click();
     await expect(page.locator('.player .meta h2')).not.toHaveText('');
     await expect
       .poll(() => page.evaluate(() => document.querySelector('audio')?.paused ?? true))
@@ -217,8 +219,10 @@ test('play log shows playback events, copies and clears', async ({ page, context
   await seedSingleTrack(page);
   await page.reload();
 
-  await expect(page.locator('li.row .row-hit')).toHaveCount(1);
-  await page.locator('li.row .row-hit').first().click();
+  await page.locator('[data-testid="folder-source-local"]').click();
+  await page.locator('[data-testid="folder-dir-Music"]').click();
+  await expect(page.locator('[data-testid="track-row"]')).toHaveCount(1);
+  await page.locator('[data-testid="track-row"] .row-hit').first().click();
   await expect
     .poll(() => page.evaluate(() => document.querySelector('audio')?.paused ?? true))
     .toBe(false);

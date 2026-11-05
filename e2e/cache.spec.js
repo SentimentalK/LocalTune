@@ -30,7 +30,7 @@ async function signInAndPickMusic(page) {
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
   await expect(page.locator('[data-testid="source-row-onedrive"]')).toContainText('2');
   await page.locator('[data-testid="settings-back"]').click();
-  await expect(page.locator('#tab-tracks')).toBeVisible();
+  await expect(page.locator('#tab-folders')).toBeVisible();
 }
 
 function elapsed(page) {
@@ -52,20 +52,24 @@ test('audio cache hits, offline replay, folder pins and clearing', async ({ page
   // ---- 0. a returning user lands on the library, not the picker ----------
   await page.reload();
   await expect(page.locator('#app h1')).toHaveText('LocalTune');
-  await expect(page.locator('#tab-tracks')).toBeVisible();
+  await expect(page.locator('#tab-folders')).toBeVisible();
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
   await expect(page.locator('[data-testid="settings-back"]')).toBeHidden();
-  await expect(page.locator('.row-hit')).toHaveCount(2);
+  await page.locator('[data-testid="folder-source-onedrive"]').click();
+  await expect(page.locator('[data-testid="track-row"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid="folder-dir-Jazz"]')).toBeVisible();
 
   // ---- 1. one whole download per track, none on replay -------------------
-  await page.locator('.row-hit').first().click();
+  await page.locator('[data-testid="track-row"] .row-hit').first().click();
   await expect.poll(() => mock.wholeRequests.length, { timeout: 10_000 }).toBe(1);
   await expectPlaying(page);
 
-  await page.locator('.row-hit').nth(1).click();
+  await page.locator('[data-testid="folder-dir-Jazz"]').click();
+  await page.locator('[data-testid="track-row"] .row-hit').first().click();
   await expect.poll(() => mock.wholeRequests.length, { timeout: 10_000 }).toBe(2);
 
-  await page.locator('.row-hit').first().click();
+  await page.locator('[data-testid="folder-up"]').click();
+  await page.locator('[data-testid="track-row"] .row-hit').first().click();
   await expectPlaying(page);
   // The cached track is served from Cache Storage: no new whole request.
   await page.waitForTimeout(500);
@@ -78,13 +82,15 @@ test('audio cache hits, offline replay, folder pins and clearing', async ({ page
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
   await expect(page.locator('[data-testid="settings-back"]')).toBeHidden();
 
-  await expect(page.locator('.row-hit').first()).toBeVisible();
-  await page.locator('.row-hit').first().click();
+  await page.locator('[data-testid="folder-source-onedrive"]').click();
+  await expect(page.locator('[data-testid="track-row"] .row-hit').first()).toBeVisible();
+  await page.locator('[data-testid="track-row"] .row-hit').first().click();
   await expectPlaying(page);
   await context.setOffline(false);
 
   // ---- 3. pin a subfolder for offline use -------------------------------
   await page.locator('#tab-folders').click();
+  await expect(page.locator('[data-testid="track-row"] .row-hit').first()).toBeVisible();
   const rootPin = page.locator('[data-testid="pin-root"]');
   const jazzPin = page.locator('[data-testid="pin-Jazz"]');
   await expect(jazzPin).toBeVisible();
