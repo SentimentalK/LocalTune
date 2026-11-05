@@ -247,6 +247,7 @@ test.describe('background card on desktop', () => {
     await expect(page.locator('[data-testid="install-button"]')).toBeHidden();
     await expect(page.locator('[data-testid="battery-button"]')).toBeHidden();
     await expect(page.locator('[data-testid="install-status"]')).toBeHidden();
+    await expect(page.locator('[data-testid="background-body"]')).toBeHidden();
   });
 
   test('the sentence does not overflow at 360px', async ({ page }) => {

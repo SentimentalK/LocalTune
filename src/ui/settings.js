@@ -303,9 +303,14 @@ export function createSettingsView(store, sw) {
     'data-testid': 'background-desktop',
     text: t('settings.background.desktop'),
   });
+  const backgroundBody = el('p', {
+    class: 'muted',
+    'data-testid': 'background-body',
+    text: t('settings.background.cardBody'),
+  });
   const backgroundCopy = el('div', { class: 'background-copy' }, [
     el('h4', { class: 'background-title', text: t('settings.background.title') }),
-    el('p', { class: 'muted', text: t('settings.background.cardBody') }),
+    backgroundBody,
   ]);
   const backgroundCard = el(
     'section',
@@ -316,6 +321,7 @@ export function createSettingsView(store, sw) {
   // an empty action row.
   setHidden(backgroundActions, desktopOnly);
   setHidden(installStatus, desktopOnly);
+  setHidden(backgroundBody, desktopOnly);
   setHidden(backgroundDesktop, !desktopOnly);
 
   // ---- OneDrive folder picker ----
