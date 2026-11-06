@@ -9,6 +9,22 @@
 
 ---
 
+## 构建注入（GitHub Actions / 本地）
+
+`GOOGLE_CLIENT_ID` 与 `DROPBOX_APP_KEY` 都是**公开标识符**（client ID / app key），不是 secret，可以随构建产物一起发到浏览器。因此 CI 里用 **repository variables** 而不是 secrets：
+
+- GitHub 仓库 **Settings → Secrets and variables → Actions → Variables**，新建 `GOOGLE_CLIENT_ID`、`DROPBOX_APP_KEY` 两个变量并填入对应值。
+- push 到 main 后，`.github/workflows/image.yaml` 会把这两个变量作为 Docker build-args 传入构建，新镜像的 bundle 自动带上；未设置时按空串构建，设置页显示“需要配置”，且不会发起任何网络请求。
+- 本地构建在同一 shell 里传入环境变量即可：
+
+  ```sh
+  GOOGLE_CLIENT_ID=... DROPBOX_APP_KEY=... npm run build
+  ```
+
+这两个值都是构建期常量（esbuild `define` 注入），不会在运行时读取：修改变量值后必须重新构建、重新 push 镜像才会生效，已经部署的旧镜像不会更新。
+
+---
+
 ## Google Drive
 
 LocalTune 的 Google Drive 来源使用 Google Identity Services（GIS）的 **token model**：浏览器里只保存短命的 access token，不涉及 client secret，也不使用 refresh token。应用只申请只读 scope：
@@ -76,7 +92,7 @@ GOOGLE_CLIENT_ID=1234567890-abcdefg.apps.googleusercontent.com npm run build
 - 修改 client ID 后必须重新构建；已经部署的旧构建不会读取新的环境变量。
 - 不要把这个值写进 `src/` 下的源码；它只应出现在构建环境的配置里。
 
-CI / 部署环境里把 `GOOGLE_CLIENT_ID` 配成环境变量（或 secret），再执行 `npm run build` 即可。
+CI 里改用 repository variables（`GOOGLE_CLIENT_ID` / `DROPBOX_APP_KEY`），由 GitHub Actions 作为 Docker build-args 注入，不要再配成 secret；详见开头的“构建注入（GitHub Actions / 本地）”一节。
 
 ---
 

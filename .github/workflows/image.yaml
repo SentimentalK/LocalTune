@@ -44,6 +44,9 @@ jobs:
           platforms: linux/amd64
           load: true
           tags: localtune:ci
+          build-args: |
+            GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }}
+            DROPBOX_APP_KEY=${{ vars.DROPBOX_APP_KEY }}
           cache-from: type=gha
 
       - name: Smoke test container
@@ -120,6 +123,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }}
+            DROPBOX_APP_KEY=${{ vars.DROPBOX_APP_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

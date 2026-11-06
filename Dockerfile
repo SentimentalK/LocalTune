@@ -3,9 +3,13 @@
 # ---- build ----
 FROM node:22-alpine AS build
 WORKDIR /app
+ARG GOOGLE_CLIENT_ID=""
+ARG DROPBOX_APP_KEY=""
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
+ENV GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID \
+    DROPBOX_APP_KEY=$DROPBOX_APP_KEY
 RUN npm run build
 
 # ---- serve ----
