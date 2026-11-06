@@ -338,6 +338,7 @@ const SPRITE = `
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/></symbol>
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
   <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol>
+  <symbol id="i-hard-drive" viewBox="0 0 24 24"><path d="M22 12H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11zM6 16h.01M10 16h.01"/></symbol>
 </svg>`;
 
 const TONEARM = `
@@ -1243,7 +1244,11 @@ export function mountUi(root, store, sw) {
       });
     }
 
-    const kind = local.permission === 'granted' ? 'local' : 'onedrive';
+    const kind =
+      local.permission === 'granted'
+        ? 'local'
+        : (state.sources.find((row) => row.id !== 'local' && row.permission === 'granted')?.id ??
+          'onedrive');
     return emptyState({
       title: t('empty.noTracksTitle'),
       text: t('empty.noTracksText'),
@@ -1331,13 +1336,21 @@ export function mountUi(root, store, sw) {
   }
 
   function trackKind(track) {
-    return track.source === 'onedrive' ? 'onedrive' : 'local';
+    if (track.source === 'gdrive') return 'gdrive';
+    if (track.source === 'onedrive') return 'onedrive';
+    return 'local';
   }
 
   function sourceDisplayName(state, kind) {
-    return kind === 'onedrive'
-      ? t('settings.source.onedrive')
-      : t('settings.library.localGroup');
+    if (kind === 'gdrive') return t('settings.source.gdrive');
+    if (kind === 'onedrive') return t('settings.source.onedrive');
+    return t('settings.library.localGroup');
+  }
+
+  function sourceIconId(kind) {
+    if (kind === 'gdrive') return 'i-hard-drive';
+    if (kind === 'onedrive') return 'i-cloud';
+    return 'i-folder';
   }
 
   function kindTracks(state, kind) {
@@ -1419,7 +1432,7 @@ export function mountUi(root, store, sw) {
             id: row.id,
             label: sourceDisplayName(state, row.id),
             count: list.length,
-            iconId: row.id === 'onedrive' ? 'i-cloud' : 'i-folder',
+            iconId: sourceIconId(row.id),
             onOpen: () => {
               folder = { source: row.id, dir: '' };
               render(store.state);
@@ -1647,8 +1660,10 @@ export function mountUi(root, store, sw) {
         openPanel('settings', { toggle: false });
         const section = ui.settingsView.node.querySelector('[data-testid="settings-section-library"]');
         section?.scrollIntoView({ block: 'start' });
-        if (pending.picker === 'onedrive') {
-          const picker = ui.settingsView.node.querySelector('[data-testid="onedrive-picker"]');
+        if (pending.picker) {
+          const picker = ui.settingsView.node.querySelector(
+            `[data-testid="${pending.picker}-picker"]`,
+          );
           if (picker) picker.focus({ preventScroll: true });
         }
       }

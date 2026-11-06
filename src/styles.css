@@ -989,6 +989,8 @@ a { color: inherit; }
   transition: width 0.2s;
 }
 .settings-error { padding: 0 13px 11px; margin: 0; color: var(--danger); font-size: 10.5px; }
+.settings-hint { padding: 0 13px 11px; margin: 0; color: var(--muted); font-size: 10.5px; }
+.settings-hint a { color: var(--accent); }
 .settings-view .muted { color: var(--muted); }
 .background-copy { display: flex; flex-direction: column; gap: 4px; }
 .background-title { font-size: 12.5px; font-weight: 600; }

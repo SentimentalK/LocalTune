@@ -19,8 +19,9 @@ export const TAG_PARSER_VERSION = 2;
  * Pick the tracks whose tags should be re-read for one source.
  *
  * Local and OPFS sources are fully re-read when the parser version moved on,
- * and only suspicious tracks otherwise. OneDrive never takes the full path:
- * listing every file is expensive, so it stays on the mojibake heuristic.
+ * and only suspicious tracks otherwise. Remote sources (OneDrive, Google
+ * Drive) never take the full path: reading every file is expensive, so they
+ * stay on the mojibake heuristic.
  *
  * @param {Iterable<object>|null|undefined} tracks
  * @param {{kind: string, parserVersion: number, lastParserVersion: (number|null|undefined)}} options
@@ -28,7 +29,7 @@ export const TAG_PARSER_VERSION = 2;
  */
 export function selectRereadTargets(tracks, { kind, parserVersion, lastParserVersion }) {
   const list = Array.from(tracks ?? []);
-  if (kind === 'onedrive') return list.filter(isGarbledTrack);
+  if (kind === 'onedrive' || kind === 'gdrive') return list.filter(isGarbledTrack);
   if (parserVersion !== lastParserVersion) return list;
   return list.filter(isGarbledTrack);
 }

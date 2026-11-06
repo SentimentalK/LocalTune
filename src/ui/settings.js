@@ -63,6 +63,26 @@ export function createSettingsView(store, sw) {
   // ---- library ----
   const sourceViews = new Map();
 
+  const GDRIVE_SETUP_URL =
+    'https://github.com/SentimentalK/LocalTune/blob/main/docs/oauth-setup.md';
+
+  const CONNECT_LABELS = {
+    local: 'settings.source.connectLocal',
+    onedrive: 'settings.source.connectOneDrive',
+    gdrive: 'settings.source.connectGdrive',
+  };
+  const CHANGE_TESTIDS = {
+    local: 'settings-source-change',
+    onedrive: 'settings-source-onedrive',
+    gdrive: 'settings-source-gdrive',
+  };
+  const REMOVE_TESTIDS = {
+    local: 'settings-source-remove',
+    onedrive: 'settings-onedrive-remove',
+    gdrive: 'settings-gdrive-remove',
+  };
+  const SOURCE_ICONS = { local: 'folder', onedrive: 'onedrive', gdrive: 'gdrive' };
+
   function createSourceRow(kind) {
     const name = el('b', { text: t('settings.source.permissionNone') });
     const count = el('span', { text: t('settings.source.trackCount', { count: 0 }) });
@@ -87,6 +107,8 @@ export function createSettingsView(store, sw) {
       progressBar,
       syncing: false,
       connected: null,
+      hint: null,
+      needsReconnect: false,
     };
 
     // Disconnected rows show one text button; connected rows show three icon
@@ -96,9 +118,7 @@ export function createSettingsView(store, sw) {
       class: 'btn-pill source-connect',
       type: 'button',
       'data-testid': `source-connect-${kind}`,
-      text: kind === 'onedrive'
-        ? t('settings.source.connectOneDrive')
-        : t('settings.source.connectLocal'),
+      text: t(CONNECT_LABELS[kind]),
       onclick: () => changeSource(kind),
     });
 
@@ -140,10 +160,17 @@ export function createSettingsView(store, sw) {
       {
         class: 'icon-action',
         type: 'button',
-        'data-testid': kind === 'local' ? 'settings-source-change' : 'settings-source-onedrive',
+        'data-testid': CHANGE_TESTIDS[kind],
         'aria-label': t('settings.source.changeFolder'),
         title: t('settings.source.changeFolder'),
-        onclick: () => changeSource(kind),
+        onclick: () => {
+          const row = (store.state.sources ?? []).find((item) => item.id === kind);
+          if (kind === 'gdrive' && row?.needsReconnect) {
+            run(store.reconnectGdrive());
+            return;
+          }
+          changeSource(kind);
+        },
       },
       [icon('pencil')],
     );
@@ -153,7 +180,7 @@ export function createSettingsView(store, sw) {
       {
         class: 'icon-action',
         type: 'button',
-        'data-testid': kind === 'local' ? 'settings-source-remove' : 'settings-onedrive-remove',
+        'data-testid': REMOVE_TESTIDS[kind],
         'aria-label': t('settings.source.remove'),
         title: t('settings.source.remove'),
         onclick: () => {
@@ -173,16 +200,33 @@ export function createSettingsView(store, sw) {
 
     view.actions = el('div', { class: 'source-actions' }, [view.connectButton]);
 
+    if (kind === 'gdrive') {
+      // No client ID in this build: say so and link the setup guide instead of
+      // offering a button that would go nowhere.
+      view.hint = el('p', { class: 'settings-hint muted', 'data-testid': 'gdrive-unconfigured' }, [
+        t('settings.gdrive.unconfigured'),
+        ' ',
+        el('a', {
+          href: GDRIVE_SETUP_URL,
+          target: '_blank',
+          rel: 'noopener',
+          text: t('settings.gdrive.setupLink'),
+        }),
+      ]);
+      setHidden(view.hint, true);
+    }
+
     view.node = el('div', { class: 'source-card-body', 'data-testid': `source-row-${kind}` }, [
       el('div', { class: 'source-summary' }, [
         el('span', {
           class: `source-icon source-icon-${kind}`,
           'aria-hidden': 'true',
-        }, [icon(kind === 'onedrive' ? 'onedrive' : 'folder')]),
+        }, [icon(SOURCE_ICONS[kind])]),
         el('span', { class: 'source-body' }, [name, count]),
         view.actions,
       ]),
       progress,
+      ...(view.hint ? [view.hint] : []),
       rowError,
     ]);
 
@@ -207,16 +251,25 @@ export function createSettingsView(store, sw) {
       run(row.permission === 'prompt' ? store.requestSourcePermission() : store.connectSource());
       return;
     }
-    if (row.permission === 'prompt') run(store.reauthenticateOneDrive());
+    if (kind === 'gdrive') {
+      // `prompt` means the short-lived token is gone: reconnect keeps the root,
+      // the index and the cache instead of asking for a folder again.
+      if (row.permission === 'prompt') run(store.reconnectGdrive());
+      else if (row.permission === 'none') run(store.connectGdrive());
+      else run(store.browseSource('gdrive', ''));
+      return;
+    }
+    if (row.permission === 'prompt') run(store.reconnectOneDrive());
     else if (row.permission === 'none') run(store.connectOneDrive());
-    else run(store.browseOneDrive(''));
+    else run(store.browseSource('onedrive', ''));
   }
 
   const migrationError = el('p', { class: 'settings-error muted', role: 'alert' });
   setHidden(migrationError, true);
 
   function sourceCard(kind, title) {
-    return el('div', { 'data-testid': `settings-library-${kind === 'local' ? 'local' : 'cloud'}` }, [
+    const group = kind === 'local' ? 'local' : kind === 'gdrive' ? 'gdrive' : 'cloud';
+    return el('div', { 'data-testid': `settings-library-${group}` }, [
       el('h4', { class: 'settings-card-title', text: title }),
       el('section', { class: 'card settings-card source-card' }, [createSourceRow(kind)]),
     ]);
@@ -230,6 +283,7 @@ export function createSettingsView(store, sw) {
       el('div', { class: 'settings-sources' }, [
         sourceCard('local', t('settings.library.localGroup')),
         sourceCard('onedrive', t('settings.library.cloudGroup')),
+        sourceCard('gdrive', t('settings.library.gdriveGroup')),
       ]),
       migrationError,
     ],
@@ -317,10 +371,9 @@ export function createSettingsView(store, sw) {
   setHidden(backgroundBody, desktopOnly);
   setHidden(backgroundDesktop, !desktopOnly);
 
-  // ---- OneDrive folder picker ----
+  // ---- remote folder picker (OneDrive / Google Drive) ----
   const pickerCard = el('section', {
-    class: 'card settings-card onedrive-picker',
-    'data-testid': 'onedrive-picker',
+    class: 'card settings-card remote-picker',
     tabindex: '-1',
   });
   setHidden(pickerCard, true);
@@ -333,9 +386,10 @@ export function createSettingsView(store, sw) {
   }
 
   function renderPicker(state) {
-    const picker = state.onedrivePicker ?? { open: false };
-    setHidden(pickerCard, !picker.open);
-    if (!picker.open) {
+    const picker = state.picker ?? { open: false };
+    const kind = picker.kind ?? null;
+    setHidden(pickerCard, !picker.open || !kind);
+    if (!picker.open || !kind) {
       pickerSignature = null;
       return;
     }
@@ -343,6 +397,7 @@ export function createSettingsView(store, sw) {
     const path = picker.path ?? '';
     const items = picker.items ?? [];
     const signature = JSON.stringify({
+      kind,
       path,
       loading: Boolean(picker.loading),
       ids: items.map((item) => item.id),
@@ -350,20 +405,21 @@ export function createSettingsView(store, sw) {
     if (signature === pickerSignature) return;
     pickerSignature = signature;
 
-    const crumbs = [el('span', { class: 'picker-crumb', text: t('settings.onedrive.root') })];
+    pickerCard.setAttribute('data-testid', `${kind}-picker`);
+    const crumbs = [el('span', { class: 'picker-crumb', text: t(`settings.${kind}.root`) })];
     for (const segment of path.split('/').filter(Boolean)) {
       crumbs.push(el('span', { class: 'picker-crumb', text: segment }));
     }
 
     const children = [
-      el('h3', { text: t('settings.onedrive.title') }),
+      el('h3', { text: t(`settings.${kind}.title`) }),
       el('div', { class: 'picker-crumbs' }, crumbs),
     ];
 
     if (picker.loading) {
-      children.push(el('p', { class: 'muted', text: t('settings.onedrive.loading') }));
+      children.push(el('p', { class: 'muted', text: t('settings.picker.loading') }));
     } else if (!items.length) {
-      children.push(el('p', { class: 'muted', text: t('settings.onedrive.empty') }));
+      children.push(el('p', { class: 'muted', text: t('settings.picker.empty') }));
     } else {
       children.push(
         el(
@@ -374,9 +430,9 @@ export function createSettingsView(store, sw) {
               el('button', {
                 class: 'picker-folder',
                 type: 'button',
-                'data-testid': 'onedrive-folder',
+                'data-testid': `${kind}-folder`,
                 text: item.name,
-                onclick: () => run(store.browseOneDrive(item.path)),
+                onclick: () => run(store.browseSource(kind, item.path)),
               }),
             ]),
           ),
@@ -388,30 +444,28 @@ export function createSettingsView(store, sw) {
     const upButton = el('button', {
       class: 'btn-pill ghost',
       type: 'button',
-      'data-testid': 'onedrive-picker-up',
-      text: t('settings.onedrive.up'),
+      'data-testid': `${kind}-picker-up`,
+      text: t('settings.picker.up'),
       disabled: !path,
-      onclick: () => run(store.browseOneDrive(parentPath(path))),
+      onclick: () => run(store.browseSource(kind, parentPath(path))),
     });
     const chooseButton = el('button', {
       class: 'btn-pill',
       type: 'button',
-      'data-testid': 'onedrive-picker-choose',
-      text: t('settings.onedrive.choose'),
+      'data-testid': `${kind}-picker-choose`,
+      text: t('settings.picker.choose'),
       disabled: !path || !current,
       onclick: () => {
         if (!current) return;
-        run(
-          store.chooseOneDriveRoot({ id: current.id, path: current.path, name: current.name }),
-        );
+        run(store.chooseSourceRoot(kind, { id: current.id, path: current.path, name: current.name }));
       },
     });
     const cancelButton = el('button', {
       class: 'btn-pill ghost',
       type: 'button',
-      'data-testid': 'onedrive-picker-cancel',
-      text: t('settings.onedrive.cancel'),
-      onclick: () => store.closeOneDrivePicker(),
+      'data-testid': `${kind}-picker-cancel`,
+      text: t('settings.picker.cancel'),
+      onclick: () => store.closePicker(),
     });
 
     children.push(el('div', { class: 'settings-actions' }, [upButton, chooseButton, cancelButton]));
@@ -895,6 +949,8 @@ export function createSettingsView(store, sw) {
         scanning: false,
         progress: { done: 0, total: 0 },
         error: null,
+        configured: true,
+        needsReconnect: false,
       };
       setText(view.name, row.name || t('settings.source.permissionNone'));
       setText(view.count, t('settings.source.trackCount', { count: row.trackCount ?? 0 }));
@@ -905,17 +961,26 @@ export function createSettingsView(store, sw) {
       const connected = permission === 'granted' || trackCount > 0;
       syncActions(view, connected);
 
-      const connectLabel =
-        kind === 'onedrive'
-          ? t('settings.source.connectOneDrive')
-          : t('settings.source.connectLocal');
+      const configured = row.configured !== false;
+      const needsReconnect = Boolean(row.needsReconnect);
+      const reconnect = kind === 'gdrive' && needsReconnect;
+      const connectLabel = reconnect
+        ? t('settings.source.reconnect')
+        : t(CONNECT_LABELS[kind]);
       setText(view.connectButton, connectLabel);
       view.connectButton.setAttribute('aria-label', connectLabel);
       view.connectButton.setAttribute('title', connectLabel);
+      // An unconfigured Google build cannot start GIS at all: no network, no
+      // enabled connect button.
+      view.connectButton.disabled = kind === 'gdrive' && !configured;
+      if (view.hint) setHidden(view.hint, configured);
 
-      view.syncButton.disabled = view.syncing || scanning || permission === 'none';
+      view.syncButton.disabled =
+        view.syncing || scanning || permission === 'none' || (kind === 'gdrive' && !configured);
       view.changeButton.disabled = scanning;
-      const changeLabel = t('settings.source.changeFolder');
+      const changeLabel = reconnect
+        ? t('settings.source.reconnect')
+        : t('settings.source.changeFolder');
       view.changeButton.setAttribute('aria-label', changeLabel);
       view.changeButton.setAttribute('title', changeLabel);
       view.removeButton.disabled = scanning || (permission === 'none' && trackCount === 0);
@@ -945,7 +1010,10 @@ export function createSettingsView(store, sw) {
               paths: `${failures.slice(0, 3).join('、')}${failures.length > 3 ? '…' : ''}`,
             })
           : '';
-      const message = row.error || warning;
+      // A dead token is the actionable fact; the provider's raw 401 text adds
+      // nothing on top of it.
+      const reconnectMessage = needsReconnect ? t('settings.gdrive.authFailed') : '';
+      const message = reconnectMessage || row.error || warning;
       setHidden(view.error, !message);
       if (message) setText(view.error, message);
     }

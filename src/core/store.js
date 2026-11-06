@@ -3,9 +3,9 @@
  * Owns the library, the queue, the audio element and persistence, and emits
  * a 'change' event whenever the read-only state snapshot is updated.
  *
- * Two library sources are supported: a local folder (File System Access or
- * `<input webkitdirectory>`) and OneDrive. Each has its own row in
- * `state.sources`; tracks remember which adapter produced them.
+ * Three library sources are supported: a local folder (File System Access or
+ * `<input webkitdirectory>`), OneDrive and Google Drive. Each has its own row
+ * in `state.sources`; tracks remember which adapter produced them.
  */
 
 import {
@@ -30,6 +30,7 @@ import { detachSource } from './sources/detach.js';
 import { OpfsSource } from './sources/opfs/source.js';
 import { defaultLocalMode } from './sources/opfs/mode.js';
 import { OneDriveSource } from './sources/onedrive/source.js';
+import { GdriveSource } from './sources/googledrive/source.js';
 import { AudioCache, cacheKey } from './cache/audioCache.js';
 import { createCacheIndex } from './cache/index.js';
 import { readMetadata, describeTags } from './metadata/index.js';
@@ -74,10 +75,10 @@ import { yieldToMain } from './timing.js';
 const VIEWS = new Set(['folders', 'queue', 'search', 'settings', 'vip']);
 const MEDIA_SYNC_INTERVAL = 1000;
 const REPLAYGAIN_HEAD_BYTES = 1 << 19;
-const SOURCE_KINDS = ['local', 'onedrive'];
-const TRACK_SOURCE = { local: 'fsa', onedrive: 'onedrive' };
+const SOURCE_KINDS = ['local', 'onedrive', 'gdrive'];
+const TRACK_SOURCE = { local: 'fsa', onedrive: 'onedrive', gdrive: 'gdrive' };
 const LOCAL_MODE_KEY = 'localMode';
-const ONEDRIVE_SYNC_INTERVAL = 60 * 60 * 1000;
+const SOURCE_SYNC_INTERVAL = 60 * 60 * 1000;
 const ENRICH_FLUSH_EVERY = 25;
 const ENRICH_EMIT_INTERVAL = 1000;
 const PROGRESS_INTERVAL = 100;
@@ -124,7 +125,14 @@ function trackSourceOf(kind) {
 }
 
 function kindOfTrack(track) {
-  return track?.source === 'onedrive' ? 'onedrive' : 'local';
+  if (track?.source === 'gdrive') return 'gdrive';
+  if (track?.source === 'onedrive') return 'onedrive';
+  return 'local';
+}
+
+/** Tracks whose adapter reads over the network instead of the device. */
+function isRemoteTrack(track) {
+  return track?.source === 'onedrive' || track?.source === 'gdrive';
 }
 
 function sortTracks(tracks) {
@@ -156,7 +164,7 @@ function emptyRow(kind, adapter) {
   const permission = adapter.permission();
   return {
     id: kind,
-    kind: kind === 'onedrive' ? 'onedrive' : adapter.kind,
+    kind: adapter.kind,
     name: adapter.name ?? '',
     connected: permission !== 'none',
     permission,
@@ -168,7 +176,9 @@ function emptyRow(kind, adapter) {
     sync: null,
     cacheFailed: 0,
     cacheFailures: [],
-    root: kind === 'onedrive' ? adapter.root()?.path ?? null : null,
+    root: adapter.root?.()?.path ?? null,
+    configured: typeof adapter.configured === 'function' ? adapter.configured() : true,
+    needsReconnect: kind === 'gdrive' && permission === 'prompt',
   };
 }
 
@@ -227,15 +237,14 @@ export class Store extends EventTarget {
     this.cache = new AudioCache({
       index: createCacheIndex(db),
     });
-    this.onedrive = new OneDriveSource({
-      meta: {
-        get: (key) => getMeta(db, key),
-        set: (key, value) => setMeta(db, key, value),
-        update: (key, updater) => updateMeta(db, key, updater),
-      },
-      cache: this.cache,
-    });
-    this.sources = { local: this.local, onedrive: this.onedrive };
+    const meta = {
+      get: (key) => getMeta(db, key),
+      set: (key, value) => setMeta(db, key, value),
+      update: (key, updater) => updateMeta(db, key, updater),
+    };
+    this.onedrive = new OneDriveSource({ meta, cache: this.cache });
+    this.gdrive = new GdriveSource({ meta, cache: this.cache });
+    this.sources = { local: this.local, onedrive: this.onedrive, gdrive: this.gdrive };
 
     this.audio = typeof Audio === 'function' ? new Audio() : null;
     if (this.audio && typeof document !== 'undefined' && document?.body) {
@@ -278,7 +287,7 @@ export class Store extends EventTarget {
       queue: { tracks: [], index: -1, shuffle: false, repeat: 'off' },
       current: { track: null, playing: false, position: 0, duration: 0, volume: 1 },
       sources: SOURCE_KINDS.map((kind) => emptyRow(kind, this.sources[kind])),
-      onedrivePicker: { open: false, path: '', items: [], loading: false, current: null },
+      picker: { kind: null, open: false, path: '', items: [], loading: false, current: null },
       stats: {},
       sleep: { mode: 'off', endsAt: null, remaining: null, fading: false },
       settings: {
@@ -457,14 +466,23 @@ export class Store extends EventTarget {
     } catch {
       // Same for a malformed token/root entry.
     }
+    try {
+      await this.gdrive.restore();
+    } catch {
+      // A malformed Google token/root entry is treated as signed out.
+    }
 
     // The picker only helps while no library root exists: a returning user
     // keeps their last view, and a re-auth redirect that lands with a root
-    // must not detour through it again.
-    const needsRoot = this.onedrive.permission() !== 'none' && !this.onedrive.hasRoot();
-    if (needsRoot) {
+    // must not detour through it again. Only the first source that still needs
+    // a root opens it; the other keeps its row in settings.
+    const pickerKind = ['onedrive', 'gdrive'].find(
+      (kind) => this.sources[kind].permission() !== 'none' && !this.sources[kind].hasRoot(),
+    );
+    if (pickerKind) {
       this._state.view = 'settings';
-      this._state.onedrivePicker = {
+      this._state.picker = {
+        kind: pickerKind,
         open: true,
         path: '',
         items: [],
@@ -605,14 +623,17 @@ export class Store extends EventTarget {
     this._emit();
     void this._maybeMigrateTags();
 
-    if (this._state.onedrivePicker.open && this.onedrive.permission() === 'granted') {
-      void this.browseOneDrive('');
+    const openPicker = this._state.picker.open ? this._state.picker.kind : null;
+    if (openPicker && this.sources[openPicker]?.permission() === 'granted') {
+      void this.browseSource(openPicker, '');
     }
 
-    if (this.onedrive.hasRoot() && this.onedrive.permission() === 'granted') {
-      const lastScan = await getMeta(this.db, 'lastScanBySource').catch(() => null);
-      const at = lastScan?.onedrive?.at ?? 0;
-      if (Date.now() - at > ONEDRIVE_SYNC_INTERVAL) void this.syncSource('onedrive');
+    const lastScan = await getMeta(this.db, 'lastScanBySource').catch(() => null);
+    for (const kind of ['onedrive', 'gdrive']) {
+      const adapter = this.sources[kind];
+      if (!adapter.hasRoot() || adapter.permission() !== 'granted') continue;
+      const at = lastScan?.[kind]?.at ?? 0;
+      if (Date.now() - at > SOURCE_SYNC_INTERVAL) void this.syncSource(kind);
     }
   }
 
@@ -637,18 +658,21 @@ export class Store extends EventTarget {
     const adapter = this.sources[kind];
     const permission = adapter.permission();
     this._patchSource(kind, {
-      kind: kind === 'onedrive' ? 'onedrive' : adapter.kind,
+      kind: adapter.kind,
       name: adapter.name ?? '',
       connected: permission !== 'none',
       permission,
       trackCount: this._countTracks(kind),
-      root: kind === 'onedrive' ? adapter.root()?.path ?? null : null,
+      root: adapter.root?.()?.path ?? null,
+      configured: typeof adapter.configured === 'function' ? adapter.configured() : true,
+      needsReconnect: kind === 'gdrive' && permission === 'prompt',
       ...(kind === 'local' ? { mode: this.localMode } : {}),
       ...patch,
     });
   }
 
   _adapterForTrack(track) {
+    if (track?.source === 'gdrive') return this.gdrive;
     if (track?.source === 'onedrive') return this.onedrive;
     if (track?.source === 'opfs') return this.opfs;
     return this.reference;
@@ -800,65 +824,11 @@ export class Store extends EventTarget {
     return this.onedrive.startLogin();
   }
 
-  async browseOneDrive(path = '') {
-    this._state.onedrivePicker = { ...this._state.onedrivePicker, open: true, path, loading: true };
-    this._emit();
-    try {
-      const items = await this.onedrive.browse(path);
-      for (const item of items) this._pickerIndex.set(item.path, item);
-      const current = path ? this._pickerIndex.get(path) ?? null : null;
-      this._state.onedrivePicker = { open: true, path, items, loading: false, current };
-      this._refreshSource('onedrive', {
-        error: null,
-        errorStage: null,
-        cacheFailed: 0,
-        cacheFailures: [],
-      });
-      this._emit();
-      return items;
-    } catch (error) {
-      this._state.onedrivePicker = {
-        ...this._state.onedrivePicker,
-        open: true,
-        path,
-        items: [],
-        loading: false,
-        current: null,
-      };
-      this._refreshSource('onedrive', {
-        error: errorMessage(error),
-        cacheFailed: 0,
-        cacheFailures: [],
-      });
-      this._emit();
-      return [];
-    }
-  }
-
-  closeOneDrivePicker() {
-    this._state.onedrivePicker = {
-      open: false,
-      path: '',
-      items: [],
-      loading: false,
-      current: null,
-    };
-    this._emit();
-  }
-
-  async chooseOneDriveRoot({ id, path, name }) {
-    const previous = this.onedrive.root();
-    const cleanPath = String(path ?? '').replace(/^\/+|\/+$/g, '');
-    const changed = !previous || previous.itemId !== id || previous.path !== cleanPath;
-    if (changed) await this._purgeSource('onedrive');
-    await this.onedrive.setRoot({ driveId: previous?.driveId ?? null, itemId: id, path, name });
-    this._refreshSource('onedrive');
-    this._emit();
-    this.closeOneDrivePicker();
-    await this.rescan('onedrive');
-  }
-
-  async reauthenticateOneDrive() {
+  /**
+   * Drop the stale OneDrive grant and restart the redirect. The index and the
+   * cached audio survive; the user is asked for a folder again.
+   */
+  async reconnectOneDrive() {
     await this.onedrive.forget();
     this._refreshSource('onedrive', {
       error: null,
@@ -869,6 +839,112 @@ export class Store extends EventTarget {
     });
     this._emit();
     return this.connectOneDrive();
+  }
+
+  /**
+   * Run the GIS token flow and open the Drive picker. A failure lands on the
+   * source row; this call never throws.
+   */
+  async connectGdrive() {
+    try {
+      await this.gdrive.connect();
+      this._refreshSource('gdrive', { error: null, errorStage: null });
+      this._emit();
+      await this.browseSource('gdrive', '');
+      return true;
+    } catch (error) {
+      this._refreshSource('gdrive', { error: errorMessage(error) });
+      this._emit();
+      return false;
+    }
+  }
+
+  async browseSource(kind, path = '') {
+    const adapter = this.sources[kind];
+    if (!adapter) return [];
+    const key = (itemPath) => `${kind}:${itemPath}`;
+    this._state.picker = { ...this._state.picker, kind, open: true, path, loading: true };
+    this._emit();
+    try {
+      const items = await adapter.browse(path);
+      for (const item of items) this._pickerIndex.set(key(item.path), item);
+      const current = path ? this._pickerIndex.get(key(path)) ?? null : null;
+      this._state.picker = { kind, open: true, path, items, loading: false, current };
+      this._refreshSource(kind, {
+        error: null,
+        errorStage: null,
+        cacheFailed: 0,
+        cacheFailures: [],
+      });
+      this._emit();
+      return items;
+    } catch (error) {
+      this._state.picker = {
+        ...this._state.picker,
+        kind,
+        open: true,
+        path,
+        items: [],
+        loading: false,
+        current: null,
+      };
+      this._refreshSource(kind, {
+        error: errorMessage(error),
+        cacheFailed: 0,
+        cacheFailures: [],
+      });
+      this._emit();
+      return [];
+    }
+  }
+
+  closePicker() {
+    this._state.picker = {
+      kind: null,
+      open: false,
+      path: '',
+      items: [],
+      loading: false,
+      current: null,
+    };
+    this._emit();
+  }
+
+  async chooseSourceRoot(kind, { id, path, name }) {
+    const adapter = this.sources[kind];
+    if (!adapter) return;
+    const previous = adapter.root();
+    const cleanPath = String(path ?? '').replace(/^\/+|\/+$/g, '');
+    const previousId = previous?.itemId ?? previous?.id ?? null;
+    const changed = !previous || previousId !== id || previous.path !== cleanPath;
+    if (changed) await this._purgeSource(kind);
+    if (kind === 'onedrive') {
+      await adapter.setRoot({ driveId: previous?.driveId ?? null, itemId: id, path, name });
+    } else {
+      await adapter.setRoot({ id, path, name });
+    }
+    this._refreshSource(kind);
+    this._emit();
+    this.closePicker();
+    await this.rescan(kind);
+  }
+
+  /**
+   * Re-run GIS for Google Drive. The chosen root, the index and the cached
+   * audio all survive: only the short-lived access token is replaced.
+   */
+  async reconnectGdrive() {
+    try {
+      await this.gdrive.connect();
+      this._refreshSource('gdrive', { error: null, errorStage: null });
+      this._emit();
+      await this.browseSource('gdrive', '');
+      return true;
+    } catch (error) {
+      this._refreshSource('gdrive', { error: errorMessage(error) });
+      this._emit();
+      return false;
+    }
   }
 
   async rescan(kind = 'local') {
@@ -1202,7 +1278,7 @@ export class Store extends EventTarget {
         try {
           blob = await adapter.getFile(entry.path, {
             awaitCache: true,
-            itemId: entry.externalIds?.onedrive ?? null,
+            itemId: entry.externalIds?.[trackSource] ?? null,
           });
           present = await this.cache.has(key);
         } catch (error) {
@@ -1247,7 +1323,7 @@ export class Store extends EventTarget {
     return { cached, uncached };
   }
 
-  async syncSource(kind = 'onedrive') {
+  async syncSource(kind) {
     const result = await this.rescan(kind);
     if (result) this._patchSource(kind, { sync: result });
     this._emit();
@@ -1285,7 +1361,10 @@ export class Store extends EventTarget {
       queue.pending.clear();
       this._enrichQueues.delete(kind);
     }
-    if (kind === 'onedrive') this._pickerIndex.clear();
+    const prefix = `${kind}:`;
+    for (const key of this._pickerIndex.keys()) {
+      if (key.startsWith(prefix)) this._pickerIndex.delete(key);
+    }
     this._refreshSource(kind);
     this._emit();
     return removedIds;
@@ -1357,10 +1436,11 @@ export class Store extends EventTarget {
     await clearStats(this.db).catch(() => {});
     await this.playlog.clear().catch(() => {});
     const lastScan = (await getMeta(this.db, 'lastScanBySource').catch(() => null)) ?? {};
-    await setMeta(this.db, 'lastScanBySource', {
-      ...lastScan,
-      onedrive: { ...(lastScan.onedrive ?? {}), at: 0 },
-    }).catch(() => {});
+    const resetScan = { ...lastScan };
+    for (const kind of SOURCE_KINDS) {
+      resetScan[kind] = { ...(lastScan[kind] ?? {}), at: 0 };
+    }
+    await setMeta(this.db, 'lastScanBySource', resetScan).catch(() => {});
 
     this._state.tracks = [];
     this._state.stats = {};
@@ -1828,7 +1908,7 @@ export class Store extends EventTarget {
     if (
       !this._state.settings.leveling ||
       !this.player ||
-      track?.source === 'onedrive' ||
+      isRemoteTrack(track) ||
       track?.demoUrl
     ) {
       this.player?.setGain(null);
@@ -1976,7 +2056,7 @@ export class Store extends EventTarget {
       this.log('prefetch', { id: next.id, ok: false, skipped: 'demo' });
       return;
     }
-    if (kindOfTrack(next) !== 'local') {
+    if (isRemoteTrack(next)) {
       // Remote sources fetch a whole file per read; eager prefetch would
       // double the network traffic for tracks that may never play.
       this.log('prefetch', { id: next.id, ok: false, skipped: 'remote' });
@@ -2008,7 +2088,7 @@ export class Store extends EventTarget {
         : await (async () => {
             const adapter = this._adapterForTrack(track);
             return typeof adapter.open === 'function'
-              ? adapter.open(track.path, { itemId: track.externalIds?.onedrive ?? null })
+              ? adapter.open(track.path, { itemId: track.externalIds?.[track.source] ?? null })
               : { file: await adapter.getFile(track.path) };
           })();
       if (currentTrack(this.queue)?.id !== track.id) return false;

@@ -162,7 +162,7 @@ test('settings cards fill the width and controls hug the trailing edge', async (
       overflow: row.scrollWidth - row.clientWidth,
     })),
   );
-  expect(rows.length).toBe(2);
+  expect(rows.length).toBe(3);
   for (const row of rows) {
     expect(row.overflow, `${row.id} horizontal overflow`).toBeLessThanOrEqual(0);
   }
