@@ -953,7 +953,7 @@ a { color: inherit; }
 }
 .icon-action:hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
 .icon-action:disabled { opacity: 0.4; cursor: default; }
-.icon-action .icon { width: 20px; height: 20px; fill: currentColor; stroke: none; }
+.icon-action .icon { width: 20px; height: 20px; }
 .icon-action[data-testid$="-remove"]:hover { color: var(--danger); }
 .settings-progress {
   padding: 0 13px 11px;
