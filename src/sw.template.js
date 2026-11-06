@@ -38,11 +38,14 @@ self.addEventListener('message', (event) => {
 });
 
 async function cacheFirst(request) {
+  // Range requests must go straight to the network: Cache.put rejects a 206
+  // partial response, and the audio element relies on ranges for streaming.
+  if (request.headers.has('range')) return fetch(request);
   const cache = await caches.open(CACHE);
   const hit = await cache.match(request);
   if (hit) return hit;
   const response = await fetch(request);
-  if (response.ok && response.type === 'basic') {
+  if (response.status === 200 && response.type === 'basic') {
     await cache.put(request, response.clone());
   }
   return response;
@@ -53,7 +56,9 @@ async function networkFirst(request, fallbackUrl) {
   try {
     const response = await fetch(request);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    if (response.type === 'basic') await cache.put(request, response.clone());
+    if (response.status === 200 && response.type === 'basic') {
+      await cache.put(request, response.clone());
+    }
     return response;
   } catch {
     const cached = (await cache.match(request)) || (fallbackUrl && (await cache.match(fallbackUrl)));
@@ -103,6 +108,10 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(networkFirst(request, './manifest.webmanifest'));
     return;
   }
+
+  // Demo files are streamed with Range requests; leave them to the network so
+  // the browser can seek and the Cache API never sees a 206 response.
+  if (url.pathname.includes('/demo/')) return;
 
   // Hashed /assets/ and every other same-origin GET: cache-first.
   event.respondWith(cacheFirst(request));
