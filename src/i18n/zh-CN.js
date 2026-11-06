@@ -258,7 +258,6 @@ export default {
   'panel.settingsTitle': '设置。',
   'panel.vipTitle': 'VIP。',
   'panel.libraryKicker': '你的音乐 / {count} 首',
-  'panel.settingsKicker': '偏好 / 仅本机',
   'panel.vipKicker': 'VIP / 开发中',
   'panel.close': '关闭面板',
   'theme.switch': '切换主题颜色，当前 {name}',

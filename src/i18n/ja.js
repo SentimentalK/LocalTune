@@ -273,7 +273,6 @@ export default {
   'panel.settingsTitle': '設定。',
   'panel.vipTitle': 'VIP。',
   'panel.libraryKicker': 'あなたの音楽 / {count} 曲',
-  'panel.settingsKicker': '環境設定 / この端末のみ',
   'panel.vipKicker': 'VIP / 開発中',
   'panel.close': 'パネルを閉じる',
   'theme.switch': 'テーマカラーを変更、現在 {name}',

@@ -266,7 +266,6 @@ export default {
   'panel.settingsTitle': 'Réglages.',
   'panel.vipTitle': 'VIP.',
   'panel.libraryKicker': 'TA MUSIQUE / {count} PISTES',
-  'panel.settingsKicker': 'PRÉFÉRENCES / LOCAL UNIQUEMENT',
   'panel.vipKicker': 'VIP / EN COURS',
   'panel.close': 'Fermer le panneau',
   'theme.switch': 'Changer le thème de couleur, actuel {name}',

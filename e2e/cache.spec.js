@@ -66,7 +66,7 @@ test('audio cache hits, offline replay and Clear all', async ({ page, context })
   await expect(page.locator('.wordmark')).toHaveText('localtune.');
   await expect(page.locator('#tab-folders')).toBeVisible();
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
-  await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
+  await expect(page.locator('[data-testid="settings-open"]')).toHaveAttribute('aria-expanded', 'false');
   await page.locator('[data-testid="folder-source-onedrive"]').click();
   await expect(page.locator('[data-testid="track-row"]')).toHaveCount(1);
   await expect(page.locator('[data-testid="folder-dir-Jazz"]')).toBeVisible();
@@ -95,7 +95,7 @@ test('audio cache hits, offline replay and Clear all', async ({ page, context })
   await page.reload();
   await expect(page.locator('.wordmark')).toHaveText('localtune.');
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
-  await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
+  await expect(page.locator('[data-testid="settings-open"]')).toHaveAttribute('aria-expanded', 'false');
 
   await page.locator('[data-testid="folder-source-onedrive"]').click();
   await expect(page.locator('[data-testid="track-row"] .track').first()).toBeVisible();

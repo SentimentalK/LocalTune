@@ -259,7 +259,6 @@ export default {
   'panel.settingsTitle': '設定。',
   'panel.vipTitle': 'VIP。',
   'panel.libraryKicker': '你的音樂 / {count} 首',
-  'panel.settingsKicker': '偏好 / 僅本機',
   'panel.vipKicker': 'VIP / 開發中',
   'panel.close': '關閉面板',
   'theme.switch': '切換主題顏色，目前 {name}',

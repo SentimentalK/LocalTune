@@ -262,7 +262,6 @@ export default {
   'panel.settingsTitle': 'Настройки.',
   'panel.vipTitle': 'VIP.',
   'panel.libraryKicker': 'ВАША МУЗЫКА / {count} ТРЕКОВ',
-  'panel.settingsKicker': 'НАСТРОЙКИ / ТОЛЬКО ЛОКАЛЬНО',
   'panel.vipKicker': 'VIP / В РАЗРАБОТКЕ',
   'panel.close': 'Закрыть панель',
   'theme.switch': 'Сменить цветовую тему, сейчас {name}',

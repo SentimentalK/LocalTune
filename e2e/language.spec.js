@@ -65,7 +65,7 @@ test('auto follows the browser locale on a 360px phone', async ({ page }) => {
   await page.locator('[data-testid="settings-section-language"]').scrollIntoViewIfNeeded();
   await page.screenshot({ path: 'test-results/language-360.png' });
 
-  await page.locator('[data-testid="settings-close"]').click();
+  await page.locator('[data-testid="settings-open"]').click();
   await expect(page.locator('#tab-folders')).toHaveText(fr['tabs.folders']);
 });
 
@@ -87,7 +87,7 @@ test('picking Korean loads its chunk and applies immediately', async ({ page }) 
     .poll(() => page.evaluate(() => document.documentElement.lang))
     .toBe('ko');
 
-  await page.locator('[data-testid="settings-close"]').click();
+  await page.locator('[data-testid="settings-open"]').click();
   await expect(page.locator('#tab-folders')).toHaveText(ko['tabs.folders']);
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -177,6 +177,6 @@ test('the English UI language beats Chinese content preferences', async ({ page 
   await expect
     .poll(() => page.evaluate(() => document.documentElement.lang))
     .toBe('zh-CN');
-  await page.locator('[data-testid="settings-close"]').click();
+  await page.locator('[data-testid="settings-open"]').click();
   await expect(page.locator('#tab-folders')).toHaveText(zhCN['tabs.folders']);
 });

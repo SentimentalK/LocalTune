@@ -268,7 +268,6 @@ export default {
   'panel.settingsTitle': 'Settings.',
   'panel.vipTitle': 'VIP.',
   'panel.libraryKicker': 'YOUR MUSIC / {count} TRACKS',
-  'panel.settingsKicker': 'PREFERENCES / LOCAL ONLY',
   'panel.vipKicker': 'VIP / IN PROGRESS',
   'panel.close': 'Close panel',
   'theme.switch': 'Change color theme, current {name}',

@@ -551,18 +551,12 @@ function createShell(store, sw) {
   ]);
 
   const libraryKicker = el('p', { class: 'eyebrow', id: 'libraryKicker' });
-  const settingsKicker = el('p', { class: 'eyebrow', id: 'settingsKicker', hidden: true, text: t('panel.settingsKicker') });
   const vipKicker = el(
     'p',
     { class: 'eyebrow vip-kicker', id: 'vipKicker', hidden: true },
     [symbolIcon('i-crown'), el('span', { text: t('panel.vipKicker') })],
   );
   const panelTitle = el('h2', { id: 'panelTitle' });
-  const panelClose = el(
-    'button',
-    { class: 'icon-btn panel-close', type: 'button', 'data-testid': 'settings-close', 'aria-label': t('panel.close') },
-    [symbolIcon('i-x')],
-  );
 
   const panel = el(
     'aside',
@@ -570,8 +564,7 @@ function createShell(store, sw) {
     [
       el('div', { class: 'panel-inner' }, [
         el('div', { class: 'panel-head' }, [
-          el('div', {}, [libraryKicker, settingsKicker, vipKicker, panelTitle]),
-          panelClose,
+          el('div', {}, [libraryKicker, vipKicker, panelTitle]),
         ]),
         libraryView,
         settingsHost,
@@ -628,7 +621,6 @@ function createShell(store, sw) {
     themeButton,
     panelButton,
     panel,
-    panelClose,
     libraryView,
     settingsHost,
     vipHost,
@@ -639,7 +631,6 @@ function createShell(store, sw) {
     tabButtons,
     trackList,
     libraryKicker,
-    settingsKicker,
     vipKicker,
     panelTitle,
     updateBanner,
@@ -870,7 +861,6 @@ export function mountUi(root, store, sw) {
     ui.vipHost.hidden = panelView !== 'vip';
 
     ui.libraryKicker.hidden = panelView !== 'library';
-    ui.settingsKicker.hidden = panelView !== 'settings';
     ui.vipKicker.hidden = panelView !== 'vip';
 
     ui.panelTitle.textContent =
@@ -885,14 +875,10 @@ export function mountUi(root, store, sw) {
     );
 
     const expanded = mobile ? overlay : panelOpen;
-    ui.panelClose.setAttribute(
-      'aria-label',
-      panelView === 'library' ? t('panel.close') : t('common.back'),
-    );
     ui.panelButton.setAttribute('aria-expanded', String(expanded));
     ui.panelButton.setAttribute('aria-label', expanded ? t('panel.close') : t('aria.library'));
-    ui.settingsButton.setAttribute('aria-expanded', String(overlay && panelView === 'settings'));
-    ui.vipButton.setAttribute('aria-expanded', String(overlay && panelView === 'vip'));
+    ui.settingsButton.setAttribute('aria-expanded', String(panelOpen && panelView === 'settings'));
+    ui.vipButton.setAttribute('aria-expanded', String(panelOpen && panelView === 'vip'));
     ui.panelButton.classList.toggle('is-open', expanded);
   }
 
@@ -902,7 +888,6 @@ export function mountUi(root, store, sw) {
     ui.settingsButton.addEventListener('click', () => openPanel('settings'));
     ui.vipButton.addEventListener('click', () => openPanel('vip'));
     ui.panelButton.addEventListener('click', () => openPanel('library'));
-    ui.panelClose.addEventListener('click', closePanel);
     ui.themeButton.addEventListener('click', () => {
       const active = currentTheme();
       const next = THEMES[(THEMES.indexOf(active) + 1) % THEMES.length];

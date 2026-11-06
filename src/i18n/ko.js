@@ -262,7 +262,6 @@ export default {
   'panel.settingsTitle': '설정.',
   'panel.vipTitle': 'VIP.',
   'panel.libraryKicker': '당신의 음악 / {count}곡',
-  'panel.settingsKicker': '환경설정 / 이 기기에서만',
   'panel.vipKicker': 'VIP / 개발 중',
   'panel.close': '패널 닫기',
   'theme.switch': '테마 색상 변경, 현재 {name}',

@@ -265,7 +265,6 @@ export default {
   'panel.settingsTitle': 'Einstellungen.',
   'panel.vipTitle': 'VIP.',
   'panel.libraryKicker': 'DEINE MUSIK / {count} TITEL',
-  'panel.settingsKicker': 'EINSTELLUNGEN / NUR LOKAL',
   'panel.vipKicker': 'VIP / IN ARBEIT',
   'panel.close': 'Panel schließen',
   'theme.switch': 'Farbschema ändern, aktuell {name}',

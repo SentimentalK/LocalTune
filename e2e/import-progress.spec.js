@@ -122,7 +122,7 @@ test('an OPFS import reports progress only in the header', async ({ page }) => {
     await page.screenshot({ path: 'test-results/import-progress-360.png' });
 
     await expect(page.locator('#status')).toBeHidden({ timeout: 30_000 });
-    await page.locator('[data-testid="settings-close"]').click();
+    await page.locator('[data-testid="settings-open"]').click();
     await page.locator('[data-testid="folder-source-local"]').click();
     await expect(page.locator('[data-testid="track-row"]')).toHaveCount(FILES);
   } finally {

@@ -8,7 +8,9 @@ test('the vinyl shell has one transport surface and no button row', async ({ pag
     await expect(page.locator(`[data-testid="${testid}"]`)).toHaveCount(1);
   }
   await expect(page.locator('[data-testid="search-open"]')).toHaveCount(0);
-  await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
+  await expect(page.locator('[data-testid="settings-open"]')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('[data-testid="settings-close"]')).toHaveCount(0);
+  await expect(page.locator('#settingsKicker')).toHaveCount(0);
   await expect(page.locator('.controls')).toHaveCount(0);
   await expect(page.locator('.progress')).toHaveCount(0);
   await expect(page.locator('.scan')).toHaveCount(0);
@@ -28,19 +30,19 @@ test('the vinyl shell has one transport surface and no button row', async ({ pag
   await expect(page.locator('[data-testid="lyrics-host"]')).toHaveCount(0);
 });
 
-test('the top close button leaves settings', async ({ page }) => {
+test('the top bar settings button switches the desktop panel', async ({ page }) => {
   await page.goto('/');
   await page.locator('[data-testid="settings-open"]').click();
 
   await expect(page.locator('[data-testid="settings-section-playback"]')).toBeVisible();
-  await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
+  await expect(page.locator('[data-testid="settings-open"]')).toHaveAttribute('aria-expanded', 'true');
   await expect(page.locator('[data-testid="panel-open"]')).toBeVisible();
   await expect(page.locator('[data-testid="panel-open"]')).toHaveAttribute('aria-expanded', 'true');
   await expect(page.locator('.settings-view h2')).toHaveCount(0);
 
   await page.locator('[data-testid="panel-open"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();
-  await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
+  await expect(page.locator('[data-testid="settings-open"]')).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('[data-testid="settings-open"]')).toBeVisible();
 });
 
