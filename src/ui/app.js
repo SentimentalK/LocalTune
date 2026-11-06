@@ -9,7 +9,7 @@ import { formatTime } from '../core/selectors.js';
 import { subdirsOf, tracksDirect, tracksUnder } from '../core/folders.js';
 import { runSearch } from '../core/search.js';
 import { libraryVisible, visibleSources } from '../core/library.js';
-import { el, icon, symbolIcon, setIcon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
+import { el, icon, symbolIcon, setIcon, setText, setHidden } from './dom.js';
 import { createSettingsView } from './settings.js';
 import { createVipView } from './vip.js';
 import { openTagInfo } from './diagnostics.js';
@@ -89,10 +89,32 @@ function subtitleOf(track) {
   return parts.filter(Boolean).join(' · ');
 }
 
+// The store that owns cover URLs, plus the ids each rendered list holds. Lists
+// build into `buildingCoverIds`, then swap with `renderedCoverIds` once the new
+// nodes are attached, so old URLs are released only after the new ones exist.
+let coverStore = null;
+let renderedCoverIds = [];
+let buildingCoverIds = [];
+
 function coverNode(track, className = 'track-cover') {
-  const img = el('img', { class: className, alt: '', draggable: 'false' });
-  const url = track?.coverSrc || coverUrl(track?.cover);
-  if (url) img.src = url;
+  const img = el('img', {
+    class: className,
+    alt: '',
+    draggable: 'false',
+    loading: 'lazy',
+    decoding: 'async',
+  });
+  if (track?.coverSrc) {
+    img.src = track.coverSrc;
+    return img;
+  }
+  if (track?.hasCover && track.id) {
+    const id = track.id;
+    buildingCoverIds.push(id);
+    void coverStore?.coverUrl(track).then((url) => {
+      if (url && img.isConnected) img.src = url;
+    });
+  }
   return img;
 }
 
@@ -626,6 +648,13 @@ function createShell(store, sw) {
 }
 
 export function mountUi(root, store, sw) {
+  coverStore = store;
+  renderedCoverIds = [];
+  buildingCoverIds = [];
+  let stageCoverId = null;
+  let stageCoverUrl = undefined;
+  let stageCoverPending = null;
+  let stageCoverToken = 0;
   let menuNode = null;
   let menuCleanup = null;
   let toastTimer = null;
@@ -690,6 +719,21 @@ export function mountUi(root, store, sw) {
     searchQuery = '';
     searchResult = null;
     folder = { source: null, dir: '' };
+    clearRenderedCovers();
+    buildingCoverIds = [];
+  }
+
+  function clearRenderedCovers() {
+    for (const id of renderedCoverIds) store.releaseCover(id);
+    renderedCoverIds = [];
+  }
+
+  /** Attach a freshly built list and hand the previous list's covers back. */
+  function replaceTrackList(children) {
+    clearRenderedCovers();
+    ui.trackList.replaceChildren(...children);
+    renderedCoverIds = buildingCoverIds;
+    buildingCoverIds = [];
   }
 
   function showToast(text) {
@@ -967,6 +1011,16 @@ export function mountUi(root, store, sw) {
     return Math.min(Math.max((state.current.position || 0) / duration, 0), 1);
   }
 
+  function applyStageCover(url) {
+    if (url) {
+      if (ui.cover.getAttribute('src') !== url) ui.cover.src = url;
+      setHidden(ui.cover, false);
+    } else {
+      ui.cover.removeAttribute('src');
+      setHidden(ui.cover, true);
+    }
+  }
+
   function renderStage(state) {
     const { current, queue } = state;
     const track = current.track;
@@ -978,13 +1032,37 @@ export function mountUi(root, store, sw) {
     ui.stage.classList.toggle('playing', playing);
     ui.armRotor.dataset.playing = String(playing);
 
-    const url = track?.coverSrc || coverUrl(track?.cover ?? null);
-    if (url) {
-      if (ui.cover.getAttribute('src') !== url) ui.cover.src = url;
-      setHidden(ui.cover, false);
+    const nextId = track && track.hasCover && !track.coverSrc ? track.id : null;
+    if (nextId !== stageCoverId) {
+      if (stageCoverId) store.releaseCover(stageCoverId);
+      stageCoverId = nextId;
+      stageCoverUrl = undefined;
+      stageCoverPending = null;
+      stageCoverToken += 1;
+    }
+    if (track?.coverSrc) {
+      applyStageCover(track.coverSrc);
+    } else if (nextId && stageCoverUrl === undefined) {
+      const token = stageCoverToken;
+      if (!stageCoverPending) {
+        stageCoverPending = store.coverUrl(track).then(
+          (url) => {
+            if (token !== stageCoverToken) return;
+            stageCoverPending = null;
+            stageCoverUrl = url ?? null;
+            applyStageCover(stageCoverUrl);
+          },
+          () => {
+            if (token !== stageCoverToken) return;
+            stageCoverPending = null;
+            stageCoverUrl = null;
+            applyStageCover(null);
+          },
+        );
+      }
+      applyStageCover(null);
     } else {
-      ui.cover.removeAttribute('src');
-      setHidden(ui.cover, true);
+      applyStageCover(nextId ? stageCoverUrl : null);
     }
 
     setText(ui.title, track ? track.title : t('player.noTrack'));
@@ -1117,15 +1195,14 @@ export function mountUi(root, store, sw) {
 
   function renderSearch(state) {
     setHidden(ui.searchClear, !searchQuery);
+    buildingCoverIds = [];
 
     const query = searchQuery.trim() ? searchQuery : '';
     if (!query) return;
 
     const result = searchResult;
     if (!result || result.query !== query) {
-      ui.trackList.replaceChildren(
-        el('p', { class: 'muted', 'data-testid': 'search-count' }),
-      );
+      replaceTrackList([el('p', { class: 'muted', 'data-testid': 'search-count' })]);
       return;
     }
 
@@ -1146,7 +1223,7 @@ export function mountUi(root, store, sw) {
     ];
     if (result.total === 0) {
       nodes.push(el('p', { class: 'muted', 'data-testid': 'search-empty', text: t('search.empty') }));
-      ui.trackList.replaceChildren(...nodes);
+      replaceTrackList(nodes);
       return;
     }
 
@@ -1160,7 +1237,7 @@ export function mountUi(root, store, sw) {
         ]),
       );
     }
-    ui.trackList.replaceChildren(...nodes);
+    replaceTrackList(nodes);
   }
 
   function trackKind(track) {
@@ -1242,6 +1319,7 @@ export function mountUi(root, store, sw) {
   }
 
   function renderFolders(state) {
+    buildingCoverIds = [];
     if (folder.source === null) {
       const rows = [];
       for (const row of visibleSources(state.sources)) {
@@ -1260,10 +1338,10 @@ export function mountUi(root, store, sw) {
         );
       }
 
-      ui.trackList.replaceChildren(
-        ...(rows.length
+      replaceTrackList(
+        rows.length
           ? rows
-          : [el('p', { class: 'muted', 'data-testid': 'folder-empty', text: t('empty.noTracksText') })]),
+          : [el('p', { class: 'muted', 'data-testid': 'folder-empty', text: t('empty.noTracksText') })],
       );
       return;
     }
@@ -1303,13 +1381,14 @@ export function mountUi(root, store, sw) {
     if (!subs.length && !direct.length) {
       children.push(el('p', { class: 'muted', 'data-testid': 'folder-empty', text: t('empty.noTracksText') }));
     }
-    ui.trackList.replaceChildren(...children);
+    replaceTrackList(children);
   }
 
   function renderQueue(state) {
+    buildingCoverIds = [];
     const tracks = state.queue.tracks;
     if (!tracks.length) {
-      ui.trackList.replaceChildren(
+      replaceTrackList([
         emptyState({
           title: t('empty.queueTitle'),
           text: t('empty.queueText'),
@@ -1320,7 +1399,7 @@ export function mountUi(root, store, sw) {
             render(store.state);
           },
         }),
-      );
+      ]);
       return;
     }
 
@@ -1352,7 +1431,7 @@ export function mountUi(root, store, sw) {
       }),
     );
 
-    ui.trackList.replaceChildren(head, el('div', { class: 'track-list' }, rows));
+    replaceTrackList([head, el('div', { class: 'track-list' }, rows)]);
   }
 
   function renderLibrary(state) {
@@ -1396,7 +1475,6 @@ export function mountUi(root, store, sw) {
     last.queueTracks = state.queue.tracks;
     last.queueIndex = state.queue.index;
 
-    syncCoverCache(state.tracks.map((track) => track.cover).filter(Boolean));
     setHidden(ui.searchClear, !searchQuery);
 
     if (searchQuery.trim()) {
@@ -1410,7 +1488,8 @@ export function mountUi(root, store, sw) {
     }
 
     if (!libraryVisible(state)) {
-      ui.trackList.replaceChildren(renderEmpty(state));
+      buildingCoverIds = [];
+      replaceTrackList([renderEmpty(state)]);
       return;
     }
 
@@ -1496,6 +1575,7 @@ export function mountUi(root, store, sw) {
     syncTheme();
     applyPanel();
     render(store.state);
+    syncArm();
   }
 
   function togglePlayback() {
@@ -1523,12 +1603,16 @@ export function mountUi(root, store, sw) {
       getDuration: () => store.state.current.duration || store.state.current.track?.duration || 0,
       getPosition: () => store.state.current.position || 0,
       onToggle: togglePlayback,
-      onSeek: (seconds) => run(store.seek(seconds)),
+      onSeek: (seconds) => {
+        run(store.seek(seconds));
+        syncArm();
+      },
       onPause: () => {
         if (store.state.current.playing) store.pause();
       },
       onResume: () => {
         if (!store.state.current.playing) store.toggle();
+        syncArm();
       },
     });
   }
@@ -1615,23 +1699,56 @@ export function mountUi(root, store, sw) {
     frame = requestAnimationFrame(() => {
       frame = 0;
       render(store.state);
+      syncArm();
     });
   });
 
-  function armTick(now) {
+  let armFrame = 0;
+
+  /** One arm paint from the live audio clock; no self-renewal. */
+  function paintArmOnce(now = performance.now()) {
+    if (activeArm?.isDragging()) return;
     const current = store.state.current;
-    if (current.playing && !activeArm?.isDragging()) {
-      const duration = current.duration || current.track?.duration || 0;
-      const live = Number(store.audio?.currentTime);
-      const position = Number.isFinite(live)
-        ? Math.min(Math.max(live, 0), duration || live)
-        : current.position || 0;
-      if (duration > 0) {
-        ui.armRotor.style.transform = `rotate(${angleForProgress(position / duration).toFixed(3)}deg)`;
-        if (now >= armEngageUntil) ui.armSvg.classList.add('is-tracking');
-      }
+    if (!current.playing) {
+      ui.armRotor.style.transform = `rotate(${ARM_PARK}deg)`;
+      ui.armSvg.classList.remove('is-tracking');
+      return;
     }
-    requestAnimationFrame(armTick);
+    const duration = current.duration || current.track?.duration || 0;
+    const live = Number(store.audio?.currentTime);
+    const position = Number.isFinite(live)
+      ? Math.min(Math.max(live, 0), duration || live)
+      : current.position || 0;
+    if (duration > 0) {
+      ui.armRotor.style.transform = `rotate(${angleForProgress(position / duration).toFixed(3)}deg)`;
+      if (now >= armEngageUntil) ui.armSvg.classList.add('is-tracking');
+    }
   }
-  requestAnimationFrame(armTick);
+
+  function armTick(now) {
+    armFrame = 0;
+    paintArmOnce(now);
+    scheduleArm();
+  }
+
+  function scheduleArm() {
+    if (!armFrame && store.state.current.playing) armFrame = requestAnimationFrame(armTick);
+  }
+
+  function stopArm() {
+    if (armFrame) cancelAnimationFrame(armFrame);
+    armFrame = 0;
+  }
+
+  /** Playing: keep the frame loop alive. Idle/paused: park once and stop. */
+  function syncArm() {
+    if (store.state.current.playing) {
+      scheduleArm();
+    } else {
+      stopArm();
+      paintArmOnce();
+    }
+  }
+
+  syncArm();
 }

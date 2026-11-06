@@ -44,15 +44,18 @@ Dockerfile, nginx.conf, .github/workflows/image.yaml   # Build Worker
  * @property {number} duration      // 秒，未知为 0
  * @property {number} mtime         // File.lastModified
  * @property {number} size          // bytes
- * @property {Blob|null} cover
+ * @property {boolean} hasCover     // 封面在 covers store 里是否存在
+ * @property {number} coverSize     // 封面字节数，无封面为 0
+ * @property {string|null} coverType
  * @property {'fsa'|'opfs'|'onedrive'} source
  * @property {Object<string,string>} externalIds  // onedrive: { onedrive: itemId }；本地为空对象
  */
 ```
 
-IndexedDB（`localtune`，version 5）：
+IndexedDB（`localtune`，version 6）：
 
-- `tracks`：keyPath `id`；index `album`（`album`）、`artist`（`artist`）。
+- `tracks`：keyPath `id`；index `album`（`album`）、`artist`（`artist`）。行内不再存 `cover` Blob，只留 `hasCover` / `coverSize` / `coverType`。
+- `covers`：keyPath `id`（= `Track.id`）；`{ id, cover: Blob }`。v5 的内嵌封面在 upgrade 事务里逐行搬入，单行失败只跳过该行。
 - `meta`：keyPath `key`；键 `dirHandle`、`localMode`（`'import'|'reference'`）、`opfsRootName`、`lastScanBySource`（`{local?: {at,added,updated,removed}, onedrive?: {at,added,updated,removed}}`）、`lastBuildVersion`（最近一次乱码标签迁移针对的 `BUILD_VERSION` 字符串）、`playback`、`settings`、`onedriveToken`、`onedriveRoot`（`{driveId,itemId,path,name}`）、`onedriveItems`（`{ [相对路径]: itemId }`）、`onedriveAuthAt`。
 - `cacheIndex`：keyPath `key`；`{ key, source, path, size, lastAccess }`（音频缓存 LRU，细节归 D2）。
 - `playlog`：keyPath `id`，`autoIncrement`；`{ id, t, type, detail }`，环形保留最新 500 条（见 `src/core/playlog.js`）。
@@ -215,7 +218,7 @@ export async function estimateAudioCache(cachesImpl = globalThis.caches)  // →
 export async function clearAudioCache(cachesImpl = globalThis.caches)     // 删除音频条目 → 释放字节数
 ```
 
-- `indexBytes`：每首曲目去掉 `cover` 后单独 `JSON.stringify` 的 UTF-8 字节和；`coverBytes`：所有 `track.cover?.size` 之和。
+- `indexBytes`：每首曲目去掉 `cover` 后单独 `JSON.stringify` 的 UTF-8 字节和；`coverBytes`：所有 `track.coverSize` 之和（封面 Blob 在 `covers` store，不进内存）。
 - 音频条目判定：请求 URL pathname 以 `.mp3/.m4a/.flac/.ogg/.oga/.wav/.webm` 结尾，或响应 `content-type` 以 `audio/` 开头；只处理同源条目，遍历全部 Cache，单条 `match`/`blob` 失败跳过。
 - `clearAudioCache` 先累加命中响应 blob 的 size，再删除对应条目，返回总和；无命中返回 0。`cachesImpl` 可注入内存替身（`tests/storage.test.js`）。
 
@@ -240,7 +243,7 @@ export async function migrateGarbledTracks({ tracks, getFile, readMetadata, onPr
 
 - 只对 `isGarbledTrack(track)` 的曲目调用 `getFile(track.path)` + `readMetadata(file)`；`checked` 为可疑曲目数。
 - 单曲 `getFile`/`readMetadata` 抛错计入 `failed`，该曲目原样返回，不中断整体。
-- 合并规则：`title`/`artist`/`album` 新值非空才覆盖；`year`/`trackNo` 新值为有限数才覆盖；`duration` 新值 > 0 才覆盖；`cover` 新值非空才覆盖；`id`/`path`/`mtime`/`size`/`source`/`externalIds` 原样保留。
+- 合并规则：`title`/`artist`/`album` 新值非空才覆盖；`year`/`trackNo` 新值为有限数才覆盖；`duration` 新值 > 0 才覆盖；新封面（Blob）沿用旧值只在 `hasCover:false` 或 `coverSize` 变化时算变更，`id`/`path`/`mtime`/`size`/`source`/`externalIds` 原样保留。
 - 每首完成调用 `onProgress({ done, total, changed, failed })`，`total` = 可疑曲目数；`changed` 只含字段实际变化的曲目。
 
 ### `src/core/enrich.js` — 后台补标签（纯逻辑）
@@ -353,17 +356,29 @@ export class PlayLog {
 ### `src/core/db.js`
 
 ```js
-export const DB_NAME = 'localtune', DB_VERSION = 5;
+export const DB_NAME = 'localtune', DB_VERSION = 6;
 export const PLAYLISTS_STORE = 'playlists';
-export function openDb()                         // Promise<IDBDatabase>（onupgradeneeded 逐 store 补建）
-export function putTracks(db, tracks)            // 单事务覆盖写
-export function deleteTracksById(db, ids)
+export const COVERS_STORE = 'covers';
+export function openDb()                         // Promise<IDBDatabase>（onupgradeneeded 逐 store 补建，v1–v5 → v6 搬封面）
+export function putTracks(db, tracks)            // tracks+covers 单事务覆盖写；行内 cover 被剥离
+export function deleteTracksById(db, ids)        // 同时删 covers 行
+export function getCover(db, id)                 // Promise<Blob|null>
+export function withoutCover(track)              // 去掉临时 cover 字段的浅拷贝
 export function getAllTracks(db)                 // Promise<Track[]>
 export function getMeta(db, key)                 // Promise<any>
 export function setMeta(db, key, value)
 export function getAllStats(db)                   // Promise<StatsRow[]>
 export function putStat(db, row); export function putStats(db, rows)
 ```
+
+### `src/core/coverCache.js`
+
+```js
+export function createCoverCache({ load, createUrl, revokeUrl, limit = 64 })
+// → { acquire(id), release(id), retain(ids), clear(), size, has(id) }
+```
+
+引用计数 + LRU 的封面 object URL 缓存：同一 id 并发 `acquire` 共享一次 `load`；`release` 到 0 且超 `limit` 或 `retain` 未保留时立即 `revokeUrl`；`load` 抛错或返回非 Blob 时 resolve `null` 且不缓存。store 以 `getCover` 注入 `load`，UI 每轮列表渲染先构建新节点、再释放上一轮 id。
 
 ### `src/core/persist.js`
 
@@ -380,7 +395,7 @@ export async function saveSettings(db, settings) // 写四个字段并返回同�
 
 ```js
 export function installMediaSession(store)   // 绑定 play/pause/previoustrack/nexttrack/seekto/seekforward/seekbackward
-export function syncMediaSession(state)      // metadata + playbackState + positionState（duration>0 才设）
+export function syncMediaSession(state, artworkUrl = null)  // metadata + playbackState + positionState（duration>0 才设）；封面 URL 由 store 解析并持有
 ```
 
 ### `src/core/install.js` — PWA 安装状态

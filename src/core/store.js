@@ -20,7 +20,10 @@ import {
   getMeta,
   setMeta,
   updateMeta,
+  getCover,
+  withoutCover,
 } from './db.js';
+import { createCoverCache } from './coverCache.js';
 import { createSource, hasDirectoryPicker } from './source.js';
 import { purgeSourceRows } from './purge.js';
 import { detachSource } from './sources/detach.js';
@@ -171,7 +174,8 @@ function emptyRow(kind, adapter) {
 
 function buildTrack(entry, meta, { trackSource = 'fsa', externalIds = {} } = {}) {
   const path = entry.path;
-  return {
+  const cover = meta.cover instanceof Blob ? meta.cover : null;
+  const row = {
     id: `${trackSource}:${path}`,
     path,
     title: meta.title || fallbackTitle(path),
@@ -182,16 +186,39 @@ function buildTrack(entry, meta, { trackSource = 'fsa', externalIds = {} } = {})
     duration: Number.isFinite(meta.duration) && meta.duration > 0 ? meta.duration : 0,
     mtime: Number.isFinite(entry.mtime) ? entry.mtime : entry.file?.lastModified ?? 0,
     size: Number.isFinite(entry.size) ? entry.size : entry.file?.size ?? 0,
-    cover: meta.cover ?? null,
+    hasCover: Boolean(cover),
+    coverSize: cover?.size ?? 0,
+    coverType: cover?.type || null,
     source: trackSource,
     externalIds: externalIds && typeof externalIds === 'object' ? externalIds : {},
   };
+  // Only an actual Blob rides along for this write; a missing `cover` key
+  // tells putTracks to leave the covers store untouched.
+  if (cover) row.cover = cover;
+  return row;
+}
+
+/**
+ * A fresh metadata read may omit the embedded picture. Keep the stored
+ * `hasCover/coverSize/coverType` bookkeeping in that case so a tag refresh
+ * never drops artwork the covers store still holds. The transient `cover` key
+ * is removed: putTracks treats `cover === null` as an explicit erase.
+ *
+ * Exported for the regression test (APP-001-AA).
+ */
+export function carryCover(track, previous) {
+  if (track.cover instanceof Blob || !previous?.hasCover) return;
+  delete track.cover;
+  track.hasCover = true;
+  track.coverSize = previous.coverSize ?? 0;
+  track.coverType = previous.coverType ?? null;
 }
 
 export class Store extends EventTarget {
   constructor(db) {
     super();
     this.db = db;
+    this.covers = createCoverCache({ load: (id) => getCover(this.db, id) });
     this.reference = createSource(db);
     this.opfs = new OpfsSource({ db });
     this.localMode = 'reference';
@@ -237,6 +264,10 @@ export class Store extends EventTarget {
     this._playCounter = createPlayCounter();
     this._sleep = null;
     this._fadeFactor = 1;
+    this._mediaTrackId = null;
+    this._mediaUrl = undefined;
+    this._mediaPromise = null;
+    this._mediaToken = 0;
 
     this._state = {
       ready: false,
@@ -265,6 +296,21 @@ export class Store extends EventTarget {
 
   get state() {
     return this._state;
+  }
+
+  /**
+   * Object URL for one track's cover. Callers must pair it with
+   * `releaseCover(id)` so the cache can revoke it once off screen.
+   */
+  coverUrl(track) {
+    if (!track) return Promise.resolve(null);
+    if (track.coverSrc) return Promise.resolve(track.coverSrc);
+    if (!track.hasCover || !track.id) return Promise.resolve(null);
+    return this.covers.acquire(track.id);
+  }
+
+  releaseCover(id) {
+    this.covers.release(id);
   }
 
   #bindPlayer() {
@@ -554,7 +600,7 @@ export class Store extends EventTarget {
 
     this._state.ready = true;
     installMediaSession(this);
-    syncMediaSession(this._state);
+    this._syncMediaSession(true);
     this._emit();
     void this._maybeMigrateTags();
 
@@ -665,7 +711,12 @@ export class Store extends EventTarget {
           changed.push(...groupChanged);
         }
 
-        if (changed.length) await putTracks(this.db, changed);
+        if (changed.length) {
+          await putTracks(this.db, changed);
+          for (let index = 0; index < changed.length; index += 1) {
+            changed[index] = withoutCover(changed[index]);
+          }
+        }
         const byId = new Map(changed.map((track) => [track.id, track]));
         this._state.tracks = sortTracks(
           this._state.tracks.map((track) => byId.get(track.id) ?? track),
@@ -880,6 +931,12 @@ export class Store extends EventTarget {
         await putTracks(this.db, fresh.slice(index, index + TRACK_WRITE_BATCH));
         if (index + TRACK_WRITE_BATCH < fresh.length) await yieldToMain();
       }
+      // Rows are written; only cover-free copies may reach in-memory state.
+      for (let index = 0; index < fresh.length; index += 1) {
+        const row = withoutCover(fresh[index]);
+        fresh[index] = row;
+        byId.set(row.id, row);
+      }
       if (diff.removedIds.length) await deleteTracksById(this.db, diff.removedIds);
       for (const id of diff.removedIds) byId.delete(id);
 
@@ -999,11 +1056,16 @@ export class Store extends EventTarget {
           makeTrack: (entry, meta) =>
             buildTrack(entry, meta, { trackSource, externalIds: entry.externalIds ?? {} }),
           onTrack: async (track) => {
-            if (!this._replaceTrack(track)) return;
-            if (this.queue.tracks.some((item) => item.id === track.id)) {
+            const previous = this._state.tracks.find((item) => item.id === track.id);
+            carryCover(track, previous);
+            // The cover Blob only survives in the pending write; state gets
+            // the cover-free row immediately (see spec APP-001-AA).
+            const row = withoutCover(track);
+            if (!this._replaceTrack(row)) return;
+            if (this.queue.tracks.some((item) => item.id === row.id)) {
               this.queue = {
                 ...this.queue,
-                tracks: this.queue.tracks.map((item) => (item.id === track.id ? track : item)),
+                tracks: this.queue.tracks.map((item) => (item.id === row.id ? row : item)),
               };
               this._reflectQueue();
             }
@@ -1050,7 +1112,7 @@ export class Store extends EventTarget {
     const trackSource = adapter?.trackSource ?? trackSourceOf(kind);
     const id = `${trackSource}:${entry.path}`;
     const previous = this._state.tracks.find((track) => track.id === id);
-    if (previous?.duration > 0 && previous?.cover) return;
+    if (previous?.duration > 0 && previous?.hasCover) return;
     let meta = {};
     try {
       meta = await readMetadata(blob, entry.path);
@@ -1060,24 +1122,28 @@ export class Store extends EventTarget {
     const useful =
       meta?.duration > 0 || meta?.cover || meta?.title || meta?.artist || meta?.album;
     if (!useful) return;
+    // The row may have been dropped while metadata was being read; writing it
+    // now would resurrect a deleted track.
+    if (!this._state.tracks.some((track) => track.id === id)) return;
     const track = buildTrack(entry, meta, {
       trackSource,
       externalIds: entry.externalIds ?? previous?.externalIds ?? {},
     });
-    if (!track.cover && previous?.cover) track.cover = previous.cover;
+    carryCover(track, previous);
     if (!(track.duration > 0) && previous?.duration > 0) track.duration = previous.duration;
-    if (!this._replaceTrack(track)) return;
-    if (this.queue?.tracks?.some((item) => item.id === id)) {
-      this.queue = {
-        ...this.queue,
-        tracks: this.queue.tracks.map((item) => (item.id === id ? track : item)),
-      };
-      this._reflectQueue();
-    }
     try {
       await putTracks(this.db, [track]);
     } catch {
       // The row is already on screen; the next sync writes it again.
+    }
+    const row = withoutCover(track);
+    if (!this._replaceTrack(row)) return;
+    if (this.queue?.tracks?.some((item) => item.id === id)) {
+      this.queue = {
+        ...this.queue,
+        tracks: this.queue.tracks.map((item) => (item.id === id ? row : item)),
+      };
+      this._reflectQueue();
     }
   }
 
@@ -1603,7 +1669,59 @@ export class Store extends EventTarget {
     const now = Date.now();
     if (!force && now - this._lastSyncAt < MEDIA_SYNC_INTERVAL) return;
     this._lastSyncAt = now;
-    syncMediaSession(this._state);
+
+    const track = this._state.current.track;
+    const nextId = track?.id ?? null;
+    if (nextId !== this._mediaTrackId) {
+      const previous = this._mediaTrackId;
+      this._mediaTrackId = nextId;
+      this._mediaUrl = undefined;
+      this._mediaPromise = null;
+      if (previous) this.releaseCover(previous);
+    }
+
+    const token = (this._mediaToken += 1);
+    const deliver = (url) => {
+      if (token !== this._mediaToken) return; // a newer sync already won
+      syncMediaSession(this._state, url ?? null);
+    };
+
+    if (!track) {
+      this._mediaUrl = null;
+      deliver(null);
+      return;
+    }
+    if (track.coverSrc) {
+      this._mediaUrl = track.coverSrc;
+      deliver(track.coverSrc);
+      return;
+    }
+    if (!track.hasCover) {
+      this._mediaUrl = null;
+      deliver(null);
+      return;
+    }
+    if (this._mediaUrl !== undefined) {
+      deliver(this._mediaUrl);
+      return;
+    }
+    if (!this._mediaPromise) {
+      this._mediaPromise = this.covers.acquire(track.id).finally(() => {
+        this._mediaPromise = null;
+      });
+    }
+    this._mediaPromise.then(
+      (url) => {
+        if (this._mediaTrackId !== nextId) return;
+        this._mediaUrl = url ?? null;
+        deliver(this._mediaUrl);
+      },
+      () => {
+        if (this._mediaTrackId !== nextId) return;
+        this._mediaUrl = null;
+        deliver(null);
+      },
+    );
   }
 
   _savePlayback() {

@@ -4,35 +4,19 @@
  */
 
 const SEEK_STEP = 10;
-const artworkCache = { trackId: null, url: null };
 
 function getSession() {
   if (typeof navigator === 'undefined') return null;
   return navigator.mediaSession ?? null;
 }
 
-function artworkFor(track) {
-  if (!track || !track.cover || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
-    return [];
-  }
-  if (artworkCache.trackId === track.id && artworkCache.url) {
-    return [{ src: artworkCache.url, type: track.cover.type || 'image/jpeg' }];
-  }
-  if (artworkCache.url) {
-    URL.revokeObjectURL(artworkCache.url);
-    artworkCache.url = null;
-    artworkCache.trackId = null;
-  }
-  const url = URL.createObjectURL(track.cover);
-  artworkCache.trackId = track.id;
-  artworkCache.url = url;
-  return [{ src: url, type: track.cover.type || 'image/jpeg' }];
-}
-
-function clearArtwork() {
-  if (artworkCache.url) URL.revokeObjectURL(artworkCache.url);
-  artworkCache.url = null;
-  artworkCache.trackId = null;
+/**
+ * Artwork entries for one track. The store owns the object URL lifetime (and
+ * the covers store owns the Blob), so this module only maps a resolved string.
+ */
+function artworkFor(track, url) {
+  if (!track || typeof url !== 'string' || url === '') return [];
+  return [{ src: url, type: track.coverType || 'image/jpeg' }];
 }
 
 export function installMediaSession(store) {
@@ -87,7 +71,7 @@ export function installMediaSession(store) {
   }
 }
 
-export function syncMediaSession(state) {
+export function syncMediaSession(state, artworkUrl = null) {
   const session = getSession();
   if (!session) return;
 
@@ -100,14 +84,13 @@ export function syncMediaSession(state) {
         title: track.title || '',
         artist: track.artist || '',
         album: track.album || '',
-        artwork: artworkFor(track),
+        artwork: artworkFor(track, artworkUrl),
       });
     } catch {
       // Metadata assignment is best-effort.
     }
   } else if (!track) {
     session.metadata = null;
-    clearArtwork();
   }
 
   session.playbackState = current.playing ? 'playing' : track ? 'paused' : 'none';

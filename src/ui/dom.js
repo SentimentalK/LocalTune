@@ -92,28 +92,6 @@ export function symbolIcon(id, className = 'icon') {
   return svg;
 }
 
-// One object URL per cover Blob for the life of the page; revoked only when a
-// rescan drops the track that owned it.
-const coverUrls = new Map();
-
-export function coverUrl(blob) {
-  if (!blob) return null;
-  const cached = coverUrls.get(blob);
-  if (cached) return cached;
-  const url = URL.createObjectURL(blob);
-  coverUrls.set(blob, url);
-  return url;
-}
-
-export function syncCoverCache(blobs) {
-  const keep = new Set(blobs);
-  for (const [blob, url] of coverUrls) {
-    if (keep.has(blob)) continue;
-    URL.revokeObjectURL(url);
-    coverUrls.delete(blob);
-  }
-}
-
 export function setText(node, value) {
   const text = String(value ?? '');
   if (node.textContent !== text) node.textContent = text;

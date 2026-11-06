@@ -27,3 +27,4 @@ import './prefetch.test.js';
 import './install.test.js';
 import './battery.test.js';
 import './playerPrefs.test.js';
+import './covers.test.js';

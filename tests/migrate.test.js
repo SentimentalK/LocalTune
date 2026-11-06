@@ -17,7 +17,9 @@ function makeTrack(id, overrides = {}) {
     duration: 0,
     mtime: 1_700_000_000_000,
     size: 4096,
-    cover: null,
+    hasCover: false,
+    coverSize: 0,
+    coverType: null,
     source: 'fsa',
     externalIds: {},
     ...overrides,
@@ -48,7 +50,7 @@ test('migrateGarbledTracks re-reads only suspicious tracks and isolates failures
       year: 2001,
       trackNo: 3,
       duration: 180,
-      cover: { type: 'image/png' },
+      cover: new Blob(['png'], { type: 'image/png' }),
     };
   };
   const progress = [];
@@ -75,7 +77,11 @@ test('migrateGarbledTracks re-reads only suspicious tracks and isolates failures
   assert.equal(updated.year, 2001);
   assert.equal(updated.trackNo, 3);
   assert.equal(updated.duration, 180);
-  assert.deepEqual(updated.cover, { type: 'image/png' });
+  assert.ok(updated.cover instanceof Blob, 'the new picture rides along for the write');
+  assert.equal(updated.cover.type, 'image/png');
+  assert.equal(updated.hasCover, true);
+  assert.equal(updated.coverSize, 3);
+  assert.equal(updated.coverType, 'image/png');
   // Identity and scan bookkeeping are preserved.
   assert.equal(updated.path, 'garbled.mp3');
   assert.equal(updated.mtime, 1_700_000_000_000);
@@ -99,7 +105,9 @@ test('migrateGarbledTracks keeps old values when the new ones are empty or inval
     year: 1999,
     trackNo: 2,
     duration: 100,
-    cover: { type: 'image/jpeg' },
+    hasCover: true,
+    coverSize: 4,
+    coverType: 'image/jpeg',
   });
 
   const result = await migrateGarbledTracks({
@@ -124,7 +132,10 @@ test('migrateGarbledTracks keeps old values when the new ones are empty or inval
   assert.equal(updated.year, 1999);
   assert.equal(updated.trackNo, 2);
   assert.equal(updated.duration, 100);
-  assert.deepEqual(updated.cover, { type: 'image/jpeg' });
+  assert.equal(updated.hasCover, true);
+  assert.equal(updated.coverSize, 4);
+  assert.equal(updated.coverType, 'image/jpeg');
+  assert.equal('cover' in updated, false, 'no Blob is grafted when the file has none');
 });
 
 test('migrateGarbledTracks leaves thoroughly unchanged tracks out of changed', async () => {
@@ -214,4 +225,21 @@ test('migrateGarbledTracks re-reads all 60 tracks through shouldRead', async () 
   assert.equal(progress.at(-1).done, 60);
   assert.equal(progress.at(-1).total, 60);
   assert.ok(elapsed < 10_000, `elapsed ${elapsed}ms`);
+});
+
+test('mergeTrack treats an identical stored cover as unchanged', async () => {
+  const cover = new Blob(['jpeg'], { type: 'image/jpeg' });
+  const track = makeTrack('same-cover', {
+    hasCover: true,
+    coverSize: 4,
+    coverType: 'image/jpeg',
+  });
+
+  const result = await migrateGarbledTracks({
+    tracks: [track],
+    getFile: async () => ({}),
+    readMetadata: async () => ({ title: MOJIBAKE, artist: MOJIBAKE, album: '', cover }),
+  });
+
+  assert.deepEqual(result.changed, []);
 });

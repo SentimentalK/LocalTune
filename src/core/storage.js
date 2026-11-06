@@ -28,7 +28,8 @@ export function formatBytes(bytes) {
 /**
  * Approximate on-disk footprint of the index:
  * - indexBytes: each track record without `cover`, JSON-encoded as UTF-8;
- * - coverBytes: the size of every embedded cover Blob.
+ * - coverBytes: the summed `coverSize` of rows whose cover lives in the
+ *   separate covers store.
  */
 export async function estimateLibrary(tracks) {
   const list = Array.from(tracks ?? []);
@@ -38,7 +39,7 @@ export async function estimateLibrary(tracks) {
   for (const track of list) {
     const { cover, ...rest } = track ?? {};
     indexBytes += encoder.encode(JSON.stringify(rest)).length;
-    if (Number.isFinite(cover?.size) && cover.size > 0) coverBytes += cover.size;
+    if (Number.isFinite(track?.coverSize) && track.coverSize > 0) coverBytes += track.coverSize;
   }
 
   return { indexBytes, coverBytes };

@@ -6,9 +6,10 @@
 import { t } from '../i18n/index.js';
 
 export const DB_NAME = 'localtune';
-export const DB_VERSION = 5;
+export const DB_VERSION = 6;
 
 export const TRACKS_STORE = 'tracks';
+export const COVERS_STORE = 'covers';
 export const META_STORE = 'meta';
 export const CACHE_INDEX_STORE = 'cacheIndex';
 export const PLAYLOG_STORE = 'playlog';
@@ -39,12 +40,15 @@ export function openDb() {
       return;
     }
     const request = factory.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
       if (!db.objectStoreNames.contains(TRACKS_STORE)) {
         const store = db.createObjectStore(TRACKS_STORE, { keyPath: 'id' });
         store.createIndex('album', 'album', { unique: false });
         store.createIndex('artist', 'artist', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(COVERS_STORE)) {
+        db.createObjectStore(COVERS_STORE, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(META_STORE)) {
         db.createObjectStore(META_STORE, { keyPath: 'key' });
@@ -65,19 +69,72 @@ export function openDb() {
       if (!db.objectStoreNames.contains(STATS_STORE)) {
         db.createObjectStore(STATS_STORE, { keyPath: 'id' });
       }
+
+      if (event.oldVersion >= 1 && event.oldVersion < 6) {
+        migrateInlineCovers(request.transaction);
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error(t('error.db.open')));
   });
 }
 
+/**
+ * Move v5's inline `cover` Blobs into the `covers` store inside the upgrade
+ * transaction, so the library and its artwork switch versions atomically.
+ * A single bad row is skipped with a warning: one corrupt record must not
+ * abort the whole upgrade and leave the user without a database.
+ */
+function migrateInlineCovers(tx) {
+  const tracks = tx.objectStore(TRACKS_STORE);
+  const covers = tx.objectStore(COVERS_STORE);
+  const cursorRequest = tracks.openCursor();
+
+  cursorRequest.onsuccess = () => {
+    const cursor = cursorRequest.result;
+    if (!cursor) return;
+    try {
+      const row = cursor.value ?? {};
+      const { cover, ...rest } = row;
+      if (cover instanceof Blob) {
+        covers.put({ id: row.id, cover });
+        rest.hasCover = true;
+        rest.coverSize = cover.size;
+        rest.coverType = cover.type || null;
+      } else {
+        rest.hasCover = false;
+        rest.coverSize = 0;
+        rest.coverType = null;
+      }
+      cursor.update(rest);
+    } catch (error) {
+      console.warn('cover migration skipped one row', cursor.primaryKey, error);
+    }
+    cursor.continue();
+  };
+}
+
 export function putTracks(db, tracks) {
   const list = Array.from(tracks ?? []);
   if (!list.length) return Promise.resolve();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(TRACKS_STORE, 'readwrite');
+    const tx = db.transaction([TRACKS_STORE, COVERS_STORE], 'readwrite');
     const store = tx.objectStore(TRACKS_STORE);
-    for (const track of list) store.put(track);
+    const covers = tx.objectStore(COVERS_STORE);
+    for (const track of list) {
+      const { cover, ...row } = track ?? {};
+      if (cover instanceof Blob) {
+        row.hasCover = true;
+        row.coverSize = cover.size;
+        row.coverType = cover.type || row.coverType || null;
+        covers.put({ id: row.id, cover });
+      } else if (cover === null) {
+        row.hasCover = false;
+        row.coverSize = 0;
+        covers.delete(row.id);
+      }
+      store.put(row);
+    }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error ?? new Error(t('error.db.writeTracks')));
     tx.onabort = () => reject(tx.error ?? new Error(t('error.db.writeTracksAborted')));
@@ -88,13 +145,37 @@ export function deleteTracksById(db, ids) {
   const list = Array.from(ids ?? []);
   if (!list.length) return Promise.resolve();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(TRACKS_STORE, 'readwrite');
+    const tx = db.transaction([TRACKS_STORE, COVERS_STORE], 'readwrite');
     const store = tx.objectStore(TRACKS_STORE);
-    for (const id of list) store.delete(id);
+    const covers = tx.objectStore(COVERS_STORE);
+    for (const id of list) {
+      store.delete(id);
+      covers.delete(id);
+    }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error ?? new Error(t('error.db.deleteTracks')));
     tx.onabort = () => reject(tx.error ?? new Error(t('error.db.deleteTracksAborted')));
   });
+}
+
+/** Resolve one stored cover, or null when it is missing or not a Blob. */
+export function getCover(db, id) {
+  if (!id) return Promise.resolve(null);
+  try {
+    const tx = db.transaction(COVERS_STORE, 'readonly');
+    const request = tx.objectStore(COVERS_STORE).get(id);
+    return requestResult(request)
+      .then((row) => (row?.cover instanceof Blob ? row.cover : null))
+      .catch(() => null);
+  } catch {
+    return Promise.resolve(null);
+  }
+}
+
+/** Shallow copy of a track without its (transient) `cover` Blob. */
+export function withoutCover(track) {
+  const { cover, ...rest } = track ?? {};
+  return rest;
 }
 
 export function getAllTracks(db) {

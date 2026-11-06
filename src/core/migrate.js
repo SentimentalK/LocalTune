@@ -63,12 +63,17 @@ function mergeTrack(track, meta) {
   number('trackNo', () => true);
   number('duration', (value) => value > 0);
 
+  // Covers live in their own store now: carry the Blob for this one write and
+  // treat an identical `hasCover/coverSize` pair as "already known".
   const cover = meta?.cover;
-  if (cover) {
-    if (cover !== next.cover) {
-      next.cover = cover;
-      changed = true;
-    }
+  if (cover instanceof Blob) {
+    const size = cover.size;
+    const known = next.hasCover === true && next.coverSize === size;
+    next.cover = cover;
+    next.hasCover = true;
+    next.coverSize = size;
+    next.coverType = cover.type || next.coverType || null;
+    if (!known) changed = true;
   }
 
   return { next, changed };

@@ -53,25 +53,39 @@ test('formatBytes handles the byte and binary-unit boundaries', () => {
   assert.equal(formatBytes(1024 * 1024), '1 MB');
 });
 
-test('estimateLibrary counts records without covers and sums cover blobs', () => {
+test('estimateLibrary counts records without covers and sums stored cover sizes', () => {
   const withCover = {
     id: 'fsa:a.mp3',
     path: 'a.mp3',
     title: 'A',
-    cover: { size: 1234 },
+    hasCover: true,
+    coverSize: 1234,
   };
   const withoutCover = {
     id: 'fsa:b.mp3',
     path: 'b.mp3',
     title: 'B',
-    cover: null,
+    hasCover: false,
+    coverSize: 0,
   };
 
   const expected = new TextEncoder().encode(
-    JSON.stringify({ id: 'fsa:a.mp3', path: 'a.mp3', title: 'A' }),
+    JSON.stringify({
+      id: 'fsa:a.mp3',
+      path: 'a.mp3',
+      title: 'A',
+      hasCover: true,
+      coverSize: 1234,
+    }),
   ).length +
     new TextEncoder().encode(
-      JSON.stringify({ id: 'fsa:b.mp3', path: 'b.mp3', title: 'B' }),
+      JSON.stringify({
+        id: 'fsa:b.mp3',
+        path: 'b.mp3',
+        title: 'B',
+        hasCover: false,
+        coverSize: 0,
+      }),
     ).length;
 
   return estimateLibrary([withCover, withoutCover]).then((estimate) => {
