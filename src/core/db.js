@@ -103,32 +103,6 @@ export function getAllTracks(db) {
   return requestResult(request).then((tracks) => (Array.isArray(tracks) ? tracks : []));
 }
 
-export function putPlaylist(db, playlist) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(PLAYLISTS_STORE, 'readwrite');
-    tx.objectStore(PLAYLISTS_STORE).put(playlist);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error(t('error.db.writePlaylist')));
-    tx.onabort = () => reject(tx.error ?? new Error(t('error.db.writePlaylist')));
-  });
-}
-
-export function deletePlaylist(db, id) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(PLAYLISTS_STORE, 'readwrite');
-    tx.objectStore(PLAYLISTS_STORE).delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error(t('error.db.deletePlaylist')));
-    tx.onabort = () => reject(tx.error ?? new Error(t('error.db.deletePlaylist')));
-  });
-}
-
-export function getAllPlaylists(db) {
-  const tx = db.transaction(PLAYLISTS_STORE, 'readonly');
-  const request = tx.objectStore(PLAYLISTS_STORE).getAll();
-  return requestResult(request).then((rows) => (Array.isArray(rows) ? rows : []));
-}
-
 export function getMeta(db, key) {
   const tx = db.transaction(META_STORE, 'readonly');
   const request = tx.objectStore(META_STORE).get(key);

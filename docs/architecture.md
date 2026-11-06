@@ -57,7 +57,7 @@ IndexedDB（`localtune`，version 5）：
 - `cacheIndex`：keyPath `key`；`{ key, source, path, size, lastAccess }`（音频缓存 LRU，细节归 D2）。
 - `playlog`：keyPath `id`，`autoIncrement`；`{ id, t, type, detail }`，环形保留最新 500 条（见 `src/core/playlog.js`）。
 - `opfsIndex`：keyPath `path`；`{ path, size, mtime }`，记录已导入 OPFS 的文件（见 `src/core/sources/opfs/index.js`）。
-- `playlists`：keyPath `id`；index `createdAt`（`createdAt`，非唯一）。行即 `Playlist`：`{ id, name, source, sourceUrl, items, createdAt }`；`id` 为 `pl_<毫秒时间戳>_<6 位 hex>`，`items[]` 为 `{ title, artist, durationMs, matchedTrackId, status, reasons, coverUrl }`（见 `src/core/playlist/model.js`）。
+- `playlists`：keyPath `id`；index `createdAt`（`createdAt`，非唯一）。旧库的表保留，但 App 不再读写；不迁移、不清库。
 - `stats`：keyPath `id`（即 `Track.id`）；`{ id, plays, lastPlayedAt, addedAt }`，`lastPlayedAt` 未播放过为 `null`（见 `src/core/stats.js`）。
 
 ## 模块契约
@@ -96,8 +96,6 @@ export class FsaSource {
   async ensurePermission()         // 'prompt' 时 requestPermission，返回 boolean；不打开选择器
   async *scan()                    // 递归产出 SourceEntry；跳过隐藏目录；按扩展名过滤
   async getFile(path)              // 由缓存句柄按路径段取 File；找不到抛错
-  async writeTextFile(path, text)  // 未连接抛 error.source.notConnected；有 requestPermission 时先请求 {mode:'readwrite'}，
-                                   // 非 'granted' 抛 error.playlist.noWritePermission；目录段 create:true；createWritable → write → close
 }
 
 export class FileListSource {
@@ -159,7 +157,6 @@ Android Chrome 无法跨启动保留 File System Access 授权，因此提供“
   - `restore()` 只打开 OPFS 的 `music/` 与 `meta.opfsRootName`、`opfsIndex`；`permission()` 为 `opfsIndex` 有行时 `'granted'`，否则 `'none'`。不弹窗。
   - `scan()` 递归产出 `{ path, file, mtime, size }`，跳过点开头目录/文件、按扩展名过滤。
   - `getFile(path)` 按路径段从 `music/` 取 `File`，失败抛 `error.source.fileMissing`。
-  - `writeTextFile(path, text)` 写入 `music/` 下（`getDirectoryHandle('music', { create: true })`），目录段 `create: true`，`createWritable → write → close`；空文件名抛 `error.source.invalidPath`。
   - `usage()` 递归统计 `music/` 的 `bytes/count`（存储卡）；`clear()` 递归删除 `music/`、清空 `opfsIndex`、`meta.opfsRootName = null`；`forget()` 只清索引与名称，**不删已导入文件**。移除来源用 `detachSource(adapter)`（`src/core/sources/detach.js`）：`trackSource === 'opfs'` 时调 `clear()` 把导入副本一起删掉（否则副本占空间且 UI 再无处可删），reference 来源仍走 `forget()`，磁盘文件不动；`store.clearAll()` 不删 OPFS 副本（副本不是音频缓存，属于来源）。
 - OPFS 目录固定为 `music/`；文件保持选择目录内的相对路径。`meta.opfsRootName` 记住所选根目录名用于显示。`meta.localMode` 持久化 `'import'|'reference'`，`defaultLocalMode()`：UA 含 `Android` → 导入；否则有 `showDirectoryPicker` → 引用，否则导入。
 - 非音频文件（`.lrc`、`.txt`、图片等）在选择与目录遍历时被忽略，不会导入；一次选择里没有任何音频时抛 `error.source.noAudio`。
@@ -167,7 +164,7 @@ Android Chrome 无法跨启动保留 File System Access 授权，因此提供“
 - 进度回调形状（`onProgress`）：`{ phase: 'copy'|'remove'|'done', copied, total, removed, removedTotal, bytes, bytesTotal, skipped }`；`bytes` 为已复制字节。`store.connectSource()` 在导入模式下把它折算成 `state.sources[local] = { scanning: true, progress: { done, total, phase: 'import' } }`（`done/total` 取 `copied/total`，删除阶段取 `removed/removedTotal`，约 10 Hz 节流，结束前 flush 最后一帧）。进度**只**显示在顶部 `#status`（文案 `common.importProgress`）与 `.scan` 绿条；来源卡不再有第二套导入进度行。导入完成后的 rescan 沿用绿条当前百分比，不归零重涨。
 - 大幅文件（≥ 1 MiB）用 `file.stream()` 分块写入 OPFS，每 8 个文件让出一次主线程。
 
-iOS / 未来来源只需实现同一组方法（`connect/restore/permission/ensurePermission/scan/getFile`）；可选写能力为 `writeTextFile(path, text)`（FSA 与 OPFS 实现）。OneDrive **不写回**：`OneDriveSource` 没有 `writeTextFile`，歌单导出按钮在 OneDrive 或未授权的本地来源下为灰态（`store.writePlaylistM3u8()` 抛 `error.playlist.writeUnsupported`）。`state.sources[].kind` 为 `'fsa' | 'files' | 'opfs' | 'onedrive'`。
+iOS / 未来来源只需实现同一组方法（`connect/restore/permission/ensurePermission/scan/getFile`）。`state.sources[].kind` 为 `'fsa' | 'files' | 'opfs' | 'onedrive'`。
 
 ### `src/core/metadata/{index,id3,mp4}.js`
 
@@ -231,7 +228,7 @@ export async function clearAudioCache(cachesImpl = globalThis.caches)     // 删
 - 上限：`CACHE_LIMIT_OPTIONS` = `[512 MiB, 1 GiB, 2 GiB, 5 GiB, 0(不限)]`，默认 `2 GiB`（`DEFAULT_CACHE_LIMIT`）。`persist.js` 直接 re-export 这两个常量（`CACHE_LIMIT_VALUES` / `DEFAULT_CACHE_LIMIT_BYTES`），`meta.settings.cacheLimitBytes` 缺失或非法一律回落到默认值；`0` 表示不限。
 - 索引与依赖：`src/core/cache/index.js` 只导出 `createCacheIndex`；`AudioCache` 只依赖 `cacheIndex`，`db.js` 不创建任何 pin store（旧库残留的同名 store 不读不写）。
 - 启动同步：`init()` 只在 `meta.lastScanBySource.onedrive.at` 距今超过 1 小时（或缺失）时后台 `syncSource('onedrive')`，不阻塞首屏。
-- 同步预热缓存：`rescan(kind)` 在展示列表（`_syncStats()` 后 emit）之后、比对歌单之前，对 `adapter.cacheWholeFiles` 为真的来源 await `_warmCache`：先 `cache.has(cacheKey(source, path))`，缺失才顺序 `getFile(path, { awaitCache: true })`（并发 1，鉴权中途失效即停止剩余）；成功后仍以 `cache.has` 判定是否真进缓存。单曲失败只跳过、不中断，曲目仍留在列表里，路径进 `state.sources[*].cacheFailures`（`cacheFailed` 为数量）。同步摘要因此多出 `cached` / `cacheFailed`（`lastScanBySource` 仍只存摘要，不存路径）。本地来源（`fsa`/`files`/`opfs`）没有 `cacheWholeFiles`，永不预热，因此文件不会被复制进 `audio-v1`。
+- 同步预热缓存：`rescan(kind)` 在展示列表（`_syncStats()` 后 emit）之后、写同步摘要之前，对 `adapter.cacheWholeFiles` 为真的来源 await `_warmCache`：先 `cache.has(cacheKey(source, path))`，缺失才顺序 `getFile(path, { awaitCache: true })`（并发 1，鉴权中途失效即停止剩余）；成功后仍以 `cache.has` 判定是否真进缓存。单曲失败只跳过、不中断，曲目仍留在列表里，路径进 `state.sources[*].cacheFailures`（`cacheFailed` 为数量）。同步摘要因此多出 `cached` / `cacheFailed`（`lastScanBySource` 仍只存摘要，不存路径）。本地来源（`fsa`/`files`/`opfs`）没有 `cacheWholeFiles`，永不预热，因此文件不会被复制进 `audio-v1`。
 - 清除与移除：`cache.clear()` 删除全部音频条目与索引行并返回释放字节数，不触碰源文件；移除或切换来源用 `cache.removeBySource(source)`：按 `cacheIndex.source` 取 key，再用 Cache Storage 的 `keyFromRequest` 前缀 `${source}:` 兜底，删除条目与索引行并返回删除数。UI 的「清空所有」走 `store.clearAll()`（见存储卡），与移除来源都只经这两个缓存入口。
 
 ### `src/core/migrate.js` — 乱码标签迁移
@@ -362,57 +359,22 @@ export function openDb()                         // Promise<IDBDatabase>（onupg
 export function putTracks(db, tracks)            // 单事务覆盖写
 export function deleteTracksById(db, ids)
 export function getAllTracks(db)                 // Promise<Track[]>
-export function putPlaylist(db, playlist)        // 单事务 put；失败消息 error.db.writePlaylist
-export function deletePlaylist(db, id)           // 单事务 delete；失败消息 error.db.deletePlaylist
-export function getAllPlaylists(db)              // Promise<Playlist[]>；非数组结果回落 []
 export function getMeta(db, key)                 // Promise<any>
 export function setMeta(db, key, value)
 export function getAllStats(db)                   // Promise<StatsRow[]>
 export function putStat(db, row); export function putStats(db, rows)
 ```
 
-### `src/core/playlist/*` — 歌单
-
-歌单只存匹配结果，不存音频：`PlaylistItem.status` 为 `'matched' | 'suspect' | 'missing'`，`reasons` 为 `'artist' | 'duration'` 的子集，`matchedTrackId` 为 `Track.id` 或 `null`。
-
-```js
-// src/core/playlist/model.js —— 纯函数，无 DOM/IDB/网络
-export const PLAYLIST_SOURCES = ['text','youtube','spotify','netease','qq'];
-export function normalizePlaylistItem(item)   // 补默认：title/artist 为 ''，durationMs/matchedTrackId/coverUrl 为 null，
-                                              // status 'missing'，reasons []；非法 status → 'missing'；
-                                              // 非 missing 且无 matchedTrackId → 'missing'
-export function normalizePlaylist(input, { now = Date.now, id } = {})
-                                              // → Playlist；id 缺省 `pl_${now()}_${6 位 hex}`；name trim 后空 → t('playlists.untitled')；
-                                              // source 非法 → 'text'；sourceUrl 非 http(s) → null；createdAt 缺失取 now()
-export function playlistCounts(playlist)      // → { matched, suspect, missing }
-export function missingText(playlist)         // 仅 missing：有 artist 写 `${artist} - ${title}`，否则 `${title}`；'\n' 连接，
-                                              // 非空时末尾带一个 '\n'；无缺失 → ''
-export function sanitizeFileName(name)        // 去 / \ : * ? " < > | 与控制字符，trim，折叠空白，截 80 字符；空 → 'playlist'
-export function m3u8Text(playlist, tracks)    // 只写 status === 'matched' 且 matchedTrackId 能在 tracks 中解析的行，按 items 顺序；
-                                              // 首行 '#EXTM3U'，每行 `#EXTINF:<秒>,<艺人> - <歌名>` + `./<path>`；
-                                              // 秒 = duration > 0 ? round(duration) : -1；无艺人只写歌名；空歌单 → '#EXTM3U\n'
-export async function rematchPlaylist(playlist, tracks, options = {})
-                                              // 只重跑 missing 行（await matchItem）；命中时替换 matchedTrackId/status/reasons；
-                                              // → { playlist: 新对象, added }，不改入参
-// src/core/playlist/repo.js —— 存储无关
-export function createPlaylistRepo(ops)       // ops: { all(), put(playlist), remove(id) }
-                                              // → { list(): 过滤非法行 + createdAt 降序 + 同值按 id 字典序,
-                                              //     save(playlist): normalize 后 put，返回落库对象,
-                                              //     remove(id) }
-```
-
-`src/core/playlist/match.js`（`matchItem`/`matchPlaylist`/相似度）与 `src/core/playlist/parse-text.js`（粘贴文本 → `{ items, delimiter, order, warnings }`）只做算法，不认识歌单存储。
-
 ### `src/core/persist.js`
 
 ```js
 export async function loadPlayback(db)   // meta.playback → {trackId,position,queueIds,queueIndex,repeat,shuffle,volume}|null
 export function savePlayback(db, snapshot) // 1s 防抖；调用 stop() 可 flush（模块内导出 savePlayback.flush）
-export async function loadSettings(db)   // {language, cacheLimitBytes, youtubeApiKey, playlistProxyUrl}
+export async function loadSettings(db)   // {language, cacheLimitBytes, leveling, gapless}
 export async function saveSettings(db, settings) // 写四个字段并返回同一形状；非法值落盘为默认
 ```
 
-`meta.settings.language` 缺省 `'auto'`：`'auto'` 表示跟随浏览器 UI 语言（`navigator.language`，其后去重追加 `navigator.languages`），其余为显式语言。`youtubeApiKey` 为 trim 后 ≤ 200 字符的字符串，`playlistProxyUrl` 为 trim 后 ≤ 300 字符且以 `https://` 开头的字符串，两者不满足时读/写都落 `''`。旧库残留的 `vinylSpin` 字段读取时忽略，下次保存后消失。
+`meta.settings.language` 缺省 `'auto'`：`'auto'` 表示跟随浏览器 UI 语言（`navigator.language`，其后去重追加 `navigator.languages`），其余为显式语言。旧库残留的 `youtubeApiKey` / `playlistProxyUrl` / `vinylSpin` 字段读取时忽略，下次保存后消失。
 
 ### `src/core/mediaSession.js`
 
@@ -480,24 +442,12 @@ export class Store extends EventTarget {
   async syncSource(kind = 'onedrive') // rescan(kind)，列表阶段结束即返回，结果同时写入该行 sync
   async removeSource(kind = 'local') // _purgeSource(kind) → detachSource(adapter)（OPFS 导入走 clear() 连带删除副本，其它来源 forget() 只丢句柄）；该行 error/sync/cacheFailures 复位
   async _purgeSource(kind)         // purgeSourceRows：删该来源索引行 → cache.removeBySource(trackSource) → _reconcileQueue；随后取消挂起的补标签队列并清 picker 索引；不动已存 root
-  async clearAll()                 // 清全部曲目行（封面随行删除）→ cache.clear() → 清 stats → playlog.clear() → meta.lastScanBySource.onedrive.at 归 0 → 复位队列/当前曲目/rematch/migration → 各来源 trackCount 归 0 → _savePlayback()；保留 meta 与 playlists，不自动 rescan
+  async clearAll()                 // 清全部曲目行（封面随行删除）→ cache.clear() → 清 stats → playlog.clear() → meta.lastScanBySource.onedrive.at 归 0 → 复位队列/当前曲目/migration → 各来源 trackCount 归 0 → _savePlayback()；保留 meta，不自动 rescan
   // 后台补标签：每来源一条串行队列（_enrich/_drainEnrich）；重复同步合并进 pending；单曲失败只计数，不写 sources[kind].error
   // 每替换一行只在原位置写回（_replaceTrack），不再逐曲 sortTracks；emit 约 10 Hz、每 25 行批量 putTracks（大目录不冻结）
   async storageEstimate()          // → {indexBytes, coverBytes, audioBytes, usage, quota, limitBytes}
                                    // audioBytes = cache.total()；limitBytes = cache.limit
   async describeTrackTags(trackId) // 按 track.source 选 adapter → describeTags → formatTagReport
-  // 歌单：id 不存在时抛 t('error.playlist.notFound')
-  async createPlaylist({ name, source = 'text', sourceUrl = null, items = [] })
-                                   // normalize → repo.save → 插到 state.playlists 头部 → emit；返回落库对象
-  async deletePlaylist(id)         // repo.remove → 从 state 移除 → emit
-  async playlistTracks(id)         // status 为 matched/suspect 的 matchedTrackId 命中曲目，按 items 顺序
-  async confirmPlaylistItem(id, index)        // 已是 matched/suspect 且有 matchedTrackId → matched、reasons []；否则不改
-  async assignPlaylistItem(id, index, trackId) // 曲目存在且下标有效 → matchedTrackId=trackId、matched、reasons []；否则不改
-  async rematchPlaylist(id)        // 只重跑 missing 行；有新命中才保存/更新 state/emit；返回新增数
-  async playlistMissingText(id)    // → missingText(playlist)
-  async exportPlaylistM3u8(id)     // → { name: sanitizeFileName(name) + '.m3u8', text }；不写盘
-  async writePlaylistM3u8(id)      // 本地未授权抛 error.playlist.writeUnsupported；写入引用根或 OPFS music/，→ { name, path }
-  clearRematchNotice()             // state.rematch = null；emit
   setView(view)                    // 'tracks'|'albums'|'artists'|'folders'|'vip'|'queue'|'settings'
   async playTrack(trackId)         // 以全部歌曲为队列，从该曲开始
   async playQueue(tracks, startId) // 以给定列表为队列
@@ -509,7 +459,6 @@ export class Store extends EventTarget {
   toggleShuffle(); cycleRepeat()
   setSleepMode(mode)               // 'off'|'15'|'30'|'45'|'60'|'end'；非法值回落 'off'；立即写 state.sleep 并 emit
   setSetting(key, value)           // 'language'、'cacheLimitBytes'（校验合法值、写 meta、更新 cache.limit 并 enforceLimit）、
-                                   // 'youtubeApiKey'（trim 截 200）、'playlistProxyUrl'（trim 截 300，非 https:// 或空串则忽略）、
                                    // 'leveling' / 'gapless'（仅接受 boolean；leveling 切换同时 enable/disable Web Audio 增益图）
   async jumpTo(index)              // 队列内跳转
   removeQueueAt(index)
@@ -540,19 +489,11 @@ export class Store extends EventTarget {
   ],
   onedrivePicker: { open: boolean, path: string, items: [{id,name,path,isFolder}],
                     loading: boolean, current: {id,name,path}|null },
-  playlists: [ // 按 createdAt 降序；新建的排在最前
-    { id: 'pl_<ms>_<hex6>', name: string, source: 'text'|'youtube'|'spotify'|'netease'|'qq',
-      sourceUrl: string|null, items: [ { title, artist, durationMs, matchedTrackId,
-      status: 'matched'|'suspect'|'missing', reasons: ('artist'|'duration')[], coverUrl } ],
-      createdAt: number }
-  ],
-  rematch: { added: number } | null, // rescan 后自动补匹配的数量；clearRematchNotice() 清空
   stats: { [trackId: string]: { plays: number, lastPlayedAt: number|null, addedAt: number } },
                                      // init 时 getAllStats → ensureAdded 补行（新增行 best-effort putStats）
   sleep: { mode: 'off'|'15'|'30'|'45'|'60'|'end', endsAt: number|null,
            remaining: number|null, fading: boolean },  // 由 createSleepTimer 的 onTick 镜像
   settings: { language: 'auto'|'zh-CN'|'zh-TW'|'ja'|'en', cacheLimitBytes: number,
-              youtubeApiKey: string, playlistProxyUrl: string,
               leveling: boolean, gapless: boolean }, // leveling 缺省 false，gapless 缺省 true
   updateReady: false,
   install: { status: 'installed'|'installable'|'browser', canPrompt: boolean } | null,
@@ -567,15 +508,13 @@ export class Store extends EventTarget {
 - `onedrive` → `track.source = 'onedrive'`，`id = 'onedrive:' + path`，`path` 相对所选根，`externalIds = { onedrive: itemId }`。
 - `state.sources[].trackCount` 按 `track.source` 统计；`syncSource` 只替换该来源的轨道，`removedIds` 也只影响该来源。
 
-`init()` 顺序：`onedrive.handleRedirect()` → restore 两个来源 → 仅在 onedrive 已登录但尚无 root 时进入设置并打开 picker（有 root 的常规启动与重授权回跳都留在曲库）→ onedrive 有 root 且 `permission === 'prompt'` 时 `await onedrive.silentReauth()`（`prompt=none` 顶层跳转，10 分钟 guard，仅 init 调用）→ 读 tracks/playlists/playback/settings/stats，把 `settings.cacheLimitBytes` 写入 `cache.limit` 并构建 `state.sources`/`state.stats`/`state.playlists` → 恢复队列与播放位置 → emit。末尾以 `void this._maybeMigrateTags()` 启动后台迁移，**不 await**；若 onedrive 有 root、已授权且 `meta.lastScanBySource.onedrive.at` 距今超过 1 小时（或缺失），再 `void this.syncSource('onedrive')`。
+`init()` 顺序：`onedrive.handleRedirect()` → restore 两个来源 → 仅在 onedrive 已登录但尚无 root 时进入设置并打开 picker（有 root 的常规启动与重授权回跳都留在曲库）→ onedrive 有 root 且 `permission === 'prompt'` 时 `await onedrive.silentReauth()`（`prompt=none` 顶层跳转，10 分钟 guard，仅 init 调用）→ 读 tracks/playback/settings/stats，把 `settings.cacheLimitBytes` 写入 `cache.limit` 并构建 `state.sources`/`state.stats` → 恢复队列与播放位置 → emit。末尾以 `void this._maybeMigrateTags()` 启动后台迁移，**不 await**；若 onedrive 有 root、已授权且 `meta.lastScanBySource.onedrive.at` 距今超过 1 小时（或缺失），再 `void this.syncSource('onedrive')`。
 
 播放计数：`timeupdate` 每次把位置交给 `createPlayCounter().update(position)`；有效播放累计到 `min(30 s, duration / 2)`（`stats.PLAY_COUNT_SECONDS`，单次向前跳变超过 5 s 不计入）时只触发一次 `_recordPlay(trackId)` → `applyPlay` 生成新 `state.stats`、`putStat` best-effort 落库、记 `stats` 日志并 emit。会话在 `_loadTrack` 成功、无缝 handoff、repeat-one 与 `playQueue` 后由 `_startPlaySession` 重开；`pause`/`play` 只是挂起/恢复累计。`rescan` 新增曲目后调用 `_syncStats()`：`ensureAdded` 补零行（新增行 `putStats` best-effort）；`clearAll()` 直接把 `state.stats` 置空并 `clearStats(db)` 删除统计行，随后各来源 `trackCount` 归 0。
 
 睡眠定时：`setSleepMode(mode)` 交给 `createSleepTimer.set`（非法值回落 `'off'`）并把 `state.sleep` 立即镜像到 state；`onTick` 更新倒计时，`onFade` 把系数乘到播放器音量上（不改 `state.current.volume`），`onStop` 暂停、恢复音量、记 `sleep { stopped: true }`。`_handleEnded()` 在 `advance` 之前检查 `mode === 'end'`：命中则 `fireEnd()`（停止且不续播）并保存快照。
 
 音量均衡：`leveling` 为真时每次成功加载/无缝 handoff 异步读文件头（≤ 512 KiB），`parseReplayGain` + `decideGain` 得到 dB 后 `player.setGain(db)`；OneDrive 曲目（整文件读取成本高）、无 player、设置关闭或任何异常一律 `setGain(null)`（Unity）。Web Audio 图只在用户手势（`playTrack`/`playQueue`/`toggle`/`resume`）里 `enableLeveling()`，失败静默。`gapless` 只决定 `_handleEnded` 是否 `prefetcher.take(next.id)`：关闭时走原异步 `_loadTrack`，不新增 audio 元素。
-
-`rescan(kind)` 成功分支在写完 `meta.lastScanBySource` 之后、`_reconcileQueue()` 之前，对 `state.playlists` 逐条 `await rematchPlaylist()`（只重跑 missing 行）：有新增才 `repo.save` 并替换 state 中对应项，累计 `added > 0` 时置 `state.rematch = { added }`。rescan 成功后自动 rematch 缺失项，UI 在 `render(state)` 里以 toast（`playlists.rematchAdded`）提示并立即 `clearRematchNotice()` 清空 `state.rematch`。任何异常被吞掉，扫描结果不受影响。首次匹配会懒加载繁简表（数十毫秒），因此重匹配只在扫描路径里做，不进入播放路径。
 
 `_maybeMigrateTags()` 触发条件：`meta.lastBuildVersion !== BUILD_VERSION` 且至少一个来源 `permission === 'granted'`。按来源分组调用 `migrateGarbledTracks`（`getFile` 用该来源的 adapter），合并结果后 `putTracks` 并用同 id 覆盖 `state.tracks`（`sortTracks` 后），再 `_reconcileQueue([])`；每 5 首或最后一首 emit 一次进度。成功后写 `meta.lastBuildVersion = BUILD_VERSION`（可疑曲目为 0 也写）；任何异常写 `state.migration.error` 且**不写版本号**，下次启动重试；无已授权来源时直接跳过且不写版本号。finally 里 `running = false` 并 emit。`running` 期间顶部状态栏显示 `t('migration.progress', { done, total })`，优先于扫描文案；`error` 在设置视图曲库卡显示一行 muted 文案。
 
@@ -595,20 +534,16 @@ export function groupByFolder(tracks)  // [{dir, count, trackIds}]：每个直�
                                        // 结果按 dir 升序；根目录直接放歌时 dir = ''
 ```
 
-### `src/core/playlist/*` — 播放列表解析与匹配
+### `src/core/text.js` — 搜索文本归一化
 
 ```js
-// src/core/playlist/match.js
 export async function ensureNormalizer()     // 首次调用 import('./t2s-table.js') 填表；幂等，并发共享同一个 import
 export function isNormalizerLoaded()         // T2S.size > 0
-export async function matchItem(item, tracks, options = {})
-export async function matchPlaylist(items, tracks, options = {})  // 保序，长度同 items
-
-// 同步（签名不变）：normalizeText / normalizeTitle / splitArtists / normalizeArtist /
-// artistMatches / similarity
+export function normalizeText(value)         // NFKC、全角转半角、繁→简、小写、去版本/feat 噪声
+export function splitArtists(value)          // 规范化后按 feat/&/、/, 等拆分，去重保序
 ```
 
-繁简表（约 21 KB gzip）通过 `import()` 懒加载为独立 chunk，不进入首屏包。`matchItem` / `matchPlaylist` 为 async：调用前自动 `await ensureNormalizer()`，失败时清掉缓存以便重试并向上抛。同步规范化函数在表未加载时按 identity 处理（繁中字符原样保留），不得抛错。
+繁简表（约 21 KB gzip）通过 `import()` 懒加载为独立 chunk，不进入首屏包。`ensureNormalizer()` 失败时清掉缓存以便重试并向上抛；同步规范化函数在表未加载时按 identity 处理（繁中字符原样保留），不得抛错。
 
 ### UI（`src/ui/`）
 
@@ -629,16 +564,9 @@ export function createSettingsView(store, sw) // → { node, render(state) }
 // src/ui/diagnostics.js
 export function openTagInfo(track, { loadReport }) // 标签信息弹层；loadReport: () => Promise<string>
 
-// src/ui/playlist.js
-export function createPlaylistView(store)     // → { node, render(state) }；歌单列表 + 详情
-export function createImportDialog(store)     // → { node, open(), close() }；文本/链接导入弹层
-
 // src/ui/vip.js
-export function createVipView(playlistView, playlistSettings)
-                                               // → { node, render(state) }；VIP 占位头 + 唯一一份 playlistView.node + 设置卡
-
-// src/ui/playlist-settings.js
-export function createPlaylistSettings(store)  // → { node, render(state) }；VIP 底部的歌单解析设置卡
+export function createVipView()
+                                               // → { node, render(state) }；VIP 占位头 + Downtify 下载卡
 ```
 
 `sw` 是 `registerServiceWorker()` 的返回值（`{ applyUpdate, checkForUpdate }`），UI 只通过它触发更新，不直接碰 `navigator.serviceWorker`。
@@ -653,38 +581,30 @@ export function createPlaylistSettings(store)  // → { node, render(state) }；
   - 电池按钮文案恒为 `settings.background.checkSettings`（`batteryButtonState('unknown')`），点击打开同一弹窗；`settings.background.batteryOk` 只在未来探测返回 `'ok'` 时才会渲染，今天永不出现。Web 读不到 Android/iOS 的电池优化状态（`docs/research/pwa-background-battery.md`），所以不承诺已设置。
   - 弹窗由 `src/ui/batteryGuide.js` 提供：导出 `GUIDE_SECTIONS`（android / ios 各 `must` / `should` / `note` 两组 key）、`GUIDE_DIALOG_KEYS`（标题、引言、关闭）与 `createBatteryGuide()` → `{ node, open(platform, trigger), close() }`。`open(platform, trigger)` 只显示 Android 或 iOS 段并记住触发按钮；Esc / 点遮罩 / `battery-dialog-close` 关闭，关闭后焦点回到触发按钮；Tab 在 panel 内循环，打开期间 `body.style.overflow = 'hidden'` 锁滚动，关闭时恢复原值。弹窗节点首次打开时才挂到 `document.body`。
 - OneDrive 目录选择器：`state.onedrivePicker.open` 时作为独立 card 渲染在曲库卡下方（`data-testid="onedrive-picker"`）：面包屑（`settings.onedrive.root` + 已进入的路径段）、上一级（`onedrive-picker-up`，根层禁用）、文件夹列表（`onedrive-folder`）、选择此文件夹（`onedrive-picker-choose`，根层或没有记录当前项时禁用）、取消（`onedrive-picker-cancel`）。加载中显示 `settings.onedrive.loading`，空目录显示 `settings.onedrive.empty`；当前目录项（`{id,name,path}`）记在 `state.onedrivePicker.current`。
-- 存储卡：顶部五档上限一行紧凑 segmented（`data-testid="cache-limit"`，按钮 `cache-limit-0..4` = `0.5 GB / 1 GB / 2 GB / 5 GB / ∞`（第五档显示 `∞` 以免 360px 截断，`aria-label`/`title` 为完整 `settings.storage.limitUnlimited`，`aria-pressed` + `.is-active` 标记当前值，点击 `store.setSetting('cacheLimitBytes', value)`；`segment-glyph` 给符号 16px 字号；segment 不设 `text-overflow`，窄屏不换行且五格内容必须完整）。其下只保留索引 / 封面 / 缓存音乐三行（`storage-index|storage-cover|storage-audio`，`formatBytes`）加 usage 行（`settings.storage.usage`，`usage/quota` 都可用时显示）；挂载后及每次 store change 异步调 `store.storageEstimate()`（1s 节流，失败忽略）。唯一动作 `clear-all`（`settings.storage.clearAll`）：先 `confirm(settings.storage.clearAllConfirm)` 再 `store.clearAll()`，完成后 toast `settings.storage.clearedAll` 并刷新数值。`clearAll` 删除全部曲目行（封面随行删除，封面 object URL 由 app 下次渲染的 `syncCoverCache` 回收）、`cache.clear()`、清 stats、`playlog.clear()`、把 `meta.lastScanBySource.onedrive.at` 归 0、复位队列 / 当前曲目 / rematch / migration、`_refreshSource` 使各来源 `trackCount` 归 0、`_savePlayback()`；此前 `player.unload()` 停播并释放 src/objectURL。保留 `meta`（来源 token/root/handle、settings、cacheLimit、language）与 playlists；本次不自动 rescan。
+- 存储卡：顶部五档上限一行紧凑 segmented（`data-testid="cache-limit"`，按钮 `cache-limit-0..4` = `0.5 GB / 1 GB / 2 GB / 5 GB / ∞`（第五档显示 `∞` 以免 360px 截断，`aria-label`/`title` 为完整 `settings.storage.limitUnlimited`，`aria-pressed` + `.is-active` 标记当前值，点击 `store.setSetting('cacheLimitBytes', value)`；`segment-glyph` 给符号 16px 字号；segment 不设 `text-overflow`，窄屏不换行且五格内容必须完整）。其下只保留索引 / 封面 / 缓存音乐三行（`storage-index|storage-cover|storage-audio`，`formatBytes`）加 usage 行（`settings.storage.usage`，`usage/quota` 都可用时显示）；挂载后及每次 store change 异步调 `store.storageEstimate()`（1s 节流，失败忽略）。唯一动作 `clear-all`（`settings.storage.clearAll`）：先 `confirm(settings.storage.clearAllConfirm)` 再 `store.clearAll()`，完成后 toast `settings.storage.clearedAll` 并刷新数值。`clearAll` 删除全部曲目行（封面随行删除，封面 object URL 由 app 下次渲染的 `syncCoverCache` 回收）、`cache.clear()`、清 stats、`playlog.clear()`、把 `meta.lastScanBySource.onedrive.at` 归 0、复位队列 / 当前曲目 / migration、`_refreshSource` 使各来源 `trackCount` 归 0、`_savePlayback()`；此前 `player.unload()` 停播并释放 src/objectURL。保留 `meta`（来源 token/root/handle、settings、cacheLimit、language）；本次不自动 rescan。
 - 语言卡：五个 `segmented` 选项（`data-testid="language-auto|zh-CN|zh-TW|ja|en"`），点击 `store.setSetting('language', value)`；除 `auto` 外显示各语言本地名。
-- 关于卡：只有 Version 行（`BUILD_VERSION`，`data-testid="about-version"`）、Update 状态行，以及 `check-update`（`sw.checkForUpdate()`，waiting 时 `store.setUpdateReady(true)`）、`settings-update-apply`（`state.updateReady` 时出现 → `sw.applyUpdate()`）、`settings-reload`（`location.reload()`）、`playlog-open` 四个动作。`playlog-open`（文案 `settings.about.playLog`）在 `document.body` 追加 `data-testid="playlog-panel"` 弹层（复用 `.modal` / `.modal-panel` / `.modal-head` / `.modal-actions`，`role="dialog" aria-modal="true"`，Esc / 点遮罩 / `playlog-close` 关闭并注销 keydown 监听）：`playlog-text`（`.tag-report`）显示 `store.playLogText()` 即 `PlayLog.format` 的纯文本（首行 `LocalTune play log` + UA 行 + 每行一条 `ISO 时间 type detail`，加载中先显示 `common.loading`），`playlog-copy` 复制整段文本后 toast `settings.about.playLogCopied`（`navigator.clipboard.writeText` 失败时回退 textarea + `execCommand('copy')`），`playlog-clear` 调 `store.clearPlayLog()` 清空 IndexedDB `playlog` 并清屏。YouTube key / proxy 输入仍只在 VIP 视图。
+- 关于卡：只有 Version 行（`BUILD_VERSION`，`data-testid="about-version"`）、Update 状态行，以及 `check-update`（`sw.checkForUpdate()`，waiting 时 `store.setUpdateReady(true)`）、`settings-update-apply`（`state.updateReady` 时出现 → `sw.applyUpdate()`）、`settings-reload`（`location.reload()`）、`playlog-open` 四个动作。`playlog-open`（文案 `settings.about.playLog`）在 `document.body` 追加 `data-testid="playlog-panel"` 弹层（复用 `.modal` / `.modal-panel` / `.modal-head` / `.modal-actions`，`role="dialog" aria-modal="true"`，Esc / 点遮罩 / `playlog-close` 关闭并注销 keydown 监听）：`playlog-text`（`.tag-report`）显示 `store.playLogText()` 即 `PlayLog.format` 的纯文本（首行 `LocalTune play log` + UA 行 + 每行一条 `ISO 时间 type detail`，加载中先显示 `common.loading`），`playlog-copy` 复制整段文本后 toast `settings.about.playLogCopied`（`navigator.clipboard.writeText` 失败时回退 textarea + `execCommand('copy')`），`playlog-clear` 调 `store.clearPlayLog()` 清空 IndexedDB `playlog` 并清屏。
 - 更新 banner 固定在底部，文案 `update.available` + `update.apply`，`data-testid="update-apply"` 保留。
 - 曲目行尾「⋯」（`data-testid="row-more"`）、长按 500ms、右键都打开同一菜单（一项「标签信息」）；点击后 `openTagInfo(track, { loadReport: () => store.describeTrackTags(track.id) })`。弹层 `role="dialog" aria-modal="true"`（`data-testid="tag-info-modal"`），Esc/遮罩/关闭按钮关闭；复制失败时选中 `<pre>` 文本。数据全部来自 store，UI 不读文件。
 - toast 固定在底部一条，`role="status"`，3 秒后消失。
 
-VIP 视图（`state.view === 'vip'`，`store.js` 的 `VIEWS` 白名单包含它）顶部是 `data-testid="vip-head"` 占位卡（`.vip-crown` 里的 crown 图标 + `vip.title` + `data-testid="vip-placeholder"` 的 `vip.subtitle`），中间是全站唯一一份 playlistView（`createPlaylistView(store, { onImport })`，同一节点不克隆），底部是歌单解析设置卡（`createPlaylistSettings(store)`，`data-testid="vip-playlist-settings"`）。第一组「歌单」的 header 里有 `data-testid="import-open"` 导入按钮；第二组「自动列表」固定 `recent|most|never`。`renderView` 对 `vip` 直接返回，`render(state)` 只在进入 VIP 或 `state.playlists` / `state.tracks` / `state.stats` / `state.settings` 的引用变化时调用 `ui.vipView.render(state)`（`vipRendered` + `vipInputs` 闭包缓存），播放位置的 4 Hz emit 不会重建歌单 DOM；两个分组始终同时存在，没有歌单时组内显示 `playlists.empty`。
-
-- 列表行 `data-testid="playlist-row"`：名称、来源 chip（`playlists.source.<source>`）、代理来源旁的 `source-experimental` chip、`playlists.counts` 计数、`toLocaleString()` 创建的本地时间；行内按钮 `playlist-play`（全部播放）、`playlist-shuffle`（洗牌后播放）、`playlist-open`、`playlist-delete`（`confirm(playlists.deleteConfirm)` → `store.deletePlaylist`）。播放都走 `store.playlistTracks` → `store.playQueue`，空则 toast `playlists.emptyTracks`。
-- 自动列表行 `data-testid="auto-list-row-recent|most|never"`：名称、曲目数、`auto-list-play-<id>` / `auto-list-shuffle-<id>` / `auto-list-open-<id>`；打开后追加 `auto-list-detail`，顶部 `auto-list-detail-play|shuffle`，曲目行 `track-row` 点击 `store.playQueue(list, track.id)`；空列表显示 `auto-list-empty`。
-- 详情 `data-testid="playlist-detail"`：标题/来源/计数 + 三栏 `result-matched|result-suspect|result-missing`（共用 `renderColumns`，行 `result-row`；suspect 行带原因 chip 与 `confirm-item`，missing 行带 `assign-select` + `assign-item`）+ 动作 `missing-copy`（复制内容去掉末尾换行）、`missing-download`（`<name>-missing.txt`，保留末尾换行）、`m3u8-write`（`store.writePlaylistM3u8`，本地来源未授权或 OneDrive 时 `disabled` 且 `title=playlists.m3u8Unsupported`）。
-- 导入弹层 `role="dialog" aria-modal="true"`（`data-testid="import-dialog"`，`.import-dialog` 内层，`max-height:90vh`、`max-width:960px`）：`import-name`、`import-text`、`import-url`、列顺序 `import-order-auto|artist-title|title-artist`、`import-submit`、`import-close`、`import-error`、`import-result`。URL 非空时先按主机名走 YouTube（`resolveYouTubePlaylist`，key 取 `state.settings.youtubeApiKey`），再走 `platformOfUrl` + `resolveViaProxy`（`state.settings.playlistProxyUrl`），其余 URL 报 `playlists.error.unsupportedUrl`；URL 为空时 `parsePlaylistText` + `matchPlaylist`。未保存的 draft 由弹层闭包维护（`import-result` 内直接改 status/reasons 并重渲染）；`playlist-create` 调 `store.createPlaylist` 后关闭弹层、`store.setView('vip')`、toast `playlists.created`。draft 的缺失清单与 `.m3u8` 走 `missingText`/`m3u8Text` 纯函数（id 用 `'draft'`）。Spotify 且 `truncated`（或 ≥100 行）时显示 `import-truncated`；代理来源在结果与列表行显示实验性 chip。
-- 弹层内的 toast 与视图 toast 都通过 `CustomEvent('toast', { bubbles:true, detail:{text} })` 冒泡给 app，由 app 的 `showToast` 统一显示。
-
-VIP 底部歌单解析设置卡（`data-testid="vip-playlist-settings"`，标题 `vip.playlistSettings`）有两个输入（testid 不变）：`setting-youtube-key`（`vip.youtubeKey` / hint `vip.youtubeKeyHint`）与 `setting-proxy-url`（`vip.proxyUrl` / hint `vip.proxyUrlHint`，placeholder 为 `DEFAULT_PROXY_URL`）。`change` 时调 `store.setSetting('youtubeApiKey'|'playlistProxyUrl', value.trim().slice(0, 200|300))`，值落库后从卡片冒泡 `toast`（`vip.saved`，经 `vipView.node` 到 app 的 `showToast`）；无校验弹窗（store 清洗非法值）。`render(state)` 只在输入框未聚焦时回填，避免播放更新覆盖正在输入的文本；设置卡依赖 `state.settings`，因此 VIP 重绘 gating 也包含它。关于卡只有版本与更新，不再有输入。
+VIP 视图（`state.view === 'vip'`，`store.js` 的 `VIEWS` 白名单包含它）顶部是 `data-testid="vip-head"` 占位卡（`.vip-crown` 里的 crown 图标 + `vip.title` + `data-testid="vip-placeholder"` 的 `vip.subtitle`），下面是一张 `data-testid="vip-downtify"` 下载卡：`vip.downtify.title|about|intro|independent|hint` 文案 + GitHub / 文档两个外链（`vip-downtify-github`、`vip-downtify-docs`）。视图是静态节点，`renderView` 对 `vip` 直接返回；`render(state)` 只切换 `vip-host` 的 hidden，不重建。
 
 语言切换即时生效：`render(state)` 开头比较 `resolveLanguage(state.settings.language, browserLanguages())` 与 `getLocale()`，不同则 `setLocale()` + `applyDocumentLang()` + 用 `createShell` 重建整个壳（重新绑定进度条事件、`root.replaceChildren(ui.app)`、清空视图缓存后重渲染）。**不得用 `location.reload()` 切换语言**；`store` 的 `change` 监听只绑一次。
 
 UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.mediaSession`；全部经 Store。
 
-视图：文件夹 / 队列（主 tab，顺序固定）+ 搜索（顶部 `data-testid="search-open"` 图标进入的内部视图，不在 tab 里）/ VIP（顶部 `data-testid="vip-open"` 图标，全屏，承载歌单与自动列表）/ 设置（全屏，顶部 `data-testid="settings-open"`，关闭由头部 `settings-close` 接管）。`store.js` 的 `VIEWS` 为 `folders|vip|queue|search|settings`；歌曲 / 专辑 / 歌手没有 UI，索引的 album/artist 字段仍供搜索与元数据使用。设置区不再有唱片旋转开关；来源、存储、播放、语言、关于都在设置视图。文件夹视图两级：来源根（`data-testid="folder-source-local|onedrive"`，每个 `permission === 'granted'` 的来源一行，0 首也显示；文案固定为来源名 `settings.library.localGroup` / `settings.source.onedrive`，不读所选根目录名）→ 子文件夹行（`folder-dir-<dir>`）+ 当前目录直接曲目（`track-row`）；根级标题同样用来源名；顶部 `folder-up` 返回上一级或来源列表，`folder-play-all` / `folder-shuffle` 以 `tracksUnder`（含子目录）建队列，点某首曲目从该曲开始。每来源各自一棵根；`folderHeader` 只有 `folder-up`、目录名、`folder-play-all` 与 `folder-shuffle`，目录行没有 pin / 固定按钮。队列行 `queue-row` 只有 ×（`row-x`）删除；列表 header 的 `queue-clear` 确认后调 `store.clearQueue()`；没有拖拽排序，队列行也没有「⋯」菜单。
+视图：文件夹 / 队列（主 tab，顺序固定）+ 搜索（顶部 `data-testid="search-open"` 图标进入的内部视图，不在 tab 里）/ VIP（顶部 `data-testid="vip-open"` 图标，全屏，承载 Downtify 下载卡）/ 设置（全屏，顶部 `data-testid="settings-open"`，关闭由头部 `settings-close` 接管）。`store.js` 的 `VIEWS` 为 `folders|vip|queue|search|settings`；歌曲 / 专辑 / 歌手没有 UI，索引的 album/artist 字段仍供搜索与元数据使用。设置区不再有唱片旋转开关；来源、存储、播放、语言、关于都在设置视图。文件夹视图两级：来源根（`data-testid="folder-source-local|onedrive"`，每个 `permission === 'granted'` 的来源一行，0 首也显示；文案固定为来源名 `settings.library.localGroup` / `settings.source.onedrive`，不读所选根目录名）→ 子文件夹行（`folder-dir-<dir>`）+ 当前目录直接曲目（`track-row`）；根级标题同样用来源名；顶部 `folder-up` 返回上一级或来源列表，`folder-play-all` / `folder-shuffle` 以 `tracksUnder`（含子目录）建队列，点某首曲目从该曲开始。每来源各自一棵根；`folderHeader` 只有 `folder-up`、目录名、`folder-play-all` 与 `folder-shuffle`，目录行没有 pin / 固定按钮。队列行 `queue-row` 只有 ×（`row-x`）删除；列表 header 的 `queue-clear` 确认后调 `store.clearQueue()`；没有拖拽排序，队列行也没有「⋯」菜单。
 
-搜索视图（`state.view === 'search'`，由顶部 `search-open` 图标进入）覆盖整个库：搜索框 `data-testid="search-input"`（`aria-label`=`search.label`，`placeholder`=`search.placeholder`），输入 150 ms 防抖后调 `runSearch(state.tracks, 查询)`；`Escape` 或非空时出现的 `search-clear` 清空，空查询不渲染结果。查询非空时按分组渲染结果：每组一个 `search-group-title|artist|album|fileName` 标题与命中行（`track-row`，点击 `store.playQueue(state.tracks, track.id)`），计数行 `search-count` 用 `search.results`（`{count}` = `total`），无命中 `search-empty`。查询是 `mountUi` 闭包里的局部变量，语言切换重建壳后重置。自动列表不在搜索视图，见 VIP 视图的 `auto-list-*`。
+搜索视图（`state.view === 'search'`，由顶部 `search-open` 图标进入）覆盖整个库：搜索框 `data-testid="search-input"`（`aria-label`=`search.label`，`placeholder`=`search.placeholder`），输入 150 ms 防抖后调 `runSearch(state.tracks, 查询)`；`Escape` 或非空时出现的 `search-clear` 清空，空查询不渲染结果。查询非空时按分组渲染结果：每组一个 `search-group-title|artist|album|fileName` 标题与命中行（`track-row`，点击 `store.playQueue(state.tracks, track.id)`），计数行 `search-count` 用 `search.results`（`{count}` = `total`），无命中 `search-empty`。查询是 `mountUi` 闭包里的局部变量，语言切换重建壳后重置。
 
 设置视图的播放卡（`settings-section-playback`，位于存储卡与语言卡之间，只创建一次）：一行 `.playback-line`（`data-testid="playback-line"`）从左到右为睡眠定时 `<select data-testid="sleep-timer">`（选项 `off/15/30/45/60/end`，`change` 调 `store.setSleepMode(value)`）、`setting-leveling`、`setting-gapless` 两个 `role="switch"` 的 `.toggle-switch` 开关（`aria-checked` + `.is-on`，点击 `store.setSetting(key, !当前值)`）。分钟模式且有 `remaining` 时 `sleep-remaining` 显示 `settings.playback.sleepRemaining`（`{time}` 为 `formatTime(Math.ceil(remaining / 1000))`），`state.sleep.fading` 时改为 `settings.playback.sleepFading`；`render(state)` 只改文本、属性和 `hidden`。这一行是 CSS grid（`grid-template-columns: minmax(0, 1fr) auto auto`，gap 4px）：三个控件组各含一个 `.inline-label` + 控件，标签用短文案（`settings.playback.sleepShort|levelingShort|gaplessShort`，如 Sleep / Volume / Gapless）且 `flex: 0 0 auto` 不参与收缩，只有 `<select>` 可缩（`min-width: 56px`、`max-width: 116px`），所以 360px 与 390px 下标签、select、两个开关互不重叠且始终一行；select 与开关的 `aria-label` 仍用完整名称（`settings.playback.sleep|leveling|gapless`）。设置卡布局：`padding: 12px`、卡内 `gap: 10px`、视图 `gap: 11px`；分段控件 100% 宽，≤420 px 时两列等宽且奇数末项通栏；`.settings-actions` 右对齐；输入框 100% 宽；不设固定 `max-width`。
 
-data-testid 约定：导航用 `tab-folders|tab-queue` 与头部 `search-open|vip-open|settings-open|settings-close`；VIP 用 `vip-view|vip-head|vip-placeholder|vip-playlist-settings`；进度条用 `scan-progress`（`header.top .scan` 唯一一份，贴底 3px）；文件夹用 `folder-source-<kind>` / `folder-dir-<dir>` / `folder-up` / `folder-play-all` / `folder-shuffle` / `track-row`；来源卡用 `source-row-<kind>` / `source-connect-<kind>` / `settings-sync-<kind>` / `settings-source-change` / `settings-source-onedrive` / `settings-source-remove` / `settings-onedrive-remove`；后台卡用 `background-actions` / `install-button` / `install-status` / `battery-button` / `background-desktop`，引导弹窗用 `battery-dialog` / `battery-dialog-title` / `battery-dialog-intro` / `battery-dialog-close` / `battery-dialog-android` / `battery-dialog-ios`；存储用 `cache-limit-0..4` / `storage-index|storage-cover|storage-audio` / `clear-all`；搜索/自动列表用 `search-*` / `auto-list-*` / `search-group-*`；队列用 `queue-clear`；播放设置用 `settings-section-playback` / `playback-line` / `sleep-timer` / `sleep-remaining` / `setting-leveling|setting-gapless`；歌单解析设置用 `setting-youtube-key|setting-proxy-url`（只在 VIP 设置卡里）；播放日志用 `playlog-open` / `playlog-panel` / `playlog-text` / `playlog-copy` / `playlog-clear` / `playlog-close`。
+data-testid 约定：导航用 `tab-folders|tab-queue` 与头部 `search-open|vip-open|settings-open|settings-close`；VIP 用 `vip-view|vip-head|vip-placeholder|vip-downtify`；进度条用 `scan-progress`（`header.top .scan` 唯一一份，贴底 3px）；文件夹用 `folder-source-<kind>` / `folder-dir-<dir>` / `folder-up` / `folder-play-all` / `folder-shuffle` / `track-row`；来源卡用 `source-row-<kind>` / `source-connect-<kind>` / `settings-sync-<kind>` / `settings-source-change` / `settings-source-onedrive` / `settings-source-remove` / `settings-onedrive-remove`；后台卡用 `background-actions` / `install-button` / `install-status` / `battery-button` / `background-desktop`，引导弹窗用 `battery-dialog` / `battery-dialog-title` / `battery-dialog-intro` / `battery-dialog-close` / `battery-dialog-android` / `battery-dialog-ios`；存储用 `cache-limit-0..4` / `storage-index|storage-cover|storage-audio` / `clear-all`；搜索用 `search-*` / `search-group-*`；队列用 `queue-clear`；播放设置用 `settings-section-playback` / `playback-line` / `sleep-timer` / `sleep-remaining` / `setting-leveling|setting-gapless`；播放日志用 `playlog-open` / `playlog-panel` / `playlog-text` / `playlog-copy` / `playlog-clear` / `playlog-close`。
 
 ## 构建与 SW
 
-- `scripts/build.mjs`：清输出目录（默认 `dist/`，`--out <dir>` 可指定，所有产物路径都基于它，e2e 用它生成 v1/v2 两份构建）；esbuild 打包 `src/main.js`（ESM、minify、target es2022）与 `src/styles.css`，输出 `<out>/assets/<name>-<hash>.js|css`；JS 构建开 `splitting: true`（`charset: 'utf8'`），入口为 `main` 与 `t2s-table`，`match.js` 的繁简表通过 `import()` 懒加载为独立 chunk，不进首屏包；读 `src/index.html` 用 `__CSS__`/`__JS__` 替换；复制 `src/manifest.webmanifest`、`src/icons/*`、`src/.well-known/*`；用 `src/sw.template.js` 生成 `<out>/sw.js`（`__VERSION__` = 构建版本，`__PRECACHE__` = 全部产物相对 URL 的 JSON 数组，含 chunk）。
+- `scripts/build.mjs`：清输出目录（默认 `dist/`，`--out <dir>` 可指定，所有产物路径都基于它，e2e 用它生成 v1/v2 两份构建）；esbuild 打包 `src/main.js`（ESM、minify、target es2022）与 `src/styles.css`，输出 `<out>/assets/<name>-<hash>.js|css`；JS 构建开 `splitting: true`（`charset: 'utf8'`），入口为 `main`，`text.js` 的繁简表通过 `import()` 懒加载为独立 chunk，不进首屏包；读 `src/index.html` 用 `__CSS__`/`__JS__` 替换；复制 `src/manifest.webmanifest`、`src/icons/*`、`src/.well-known/*`；用 `src/sw.template.js` 生成 `<out>/sw.js`（`__VERSION__` = 构建版本，`__PRECACHE__` = 全部产物相对 URL 的 JSON 数组，含 chunk）。
 - 构建版本：`sha256`（`src/` 下所有文件按相对路径排序后逐个 update 路径与内容，再 update `process.env.BUILD_LABEL ?? ''`）取前 10 位 hex。只改一个 src 里的字符串版本就变；同一份源码 + 同一标签结果确定。该值同时注入 esbuild 的 `define: { __BUILD_VERSION__ }`（JS/CSS 两次构建都传，供源码引用）与 `sw.js` 的 `__VERSION__`（SW 在运行时即持有构建号，并用于缓存名）。`define` 只有这一项。
 - `scripts/size.mjs`：只统计 `dist/index.html` 里实际引用的 `<script src>`（首屏入口；其静态 import 链已被 esbuild 内联），gzip（`zlib.gzipSync`，level 9）后与总计；未被 HTML 引用的 `dist/assets/*.js`（懒加载 chunk）单独打印 `chunk:` 行，不计入 total。上限 `LIMIT = 102400`（100 KB gzip，APP-001-H：i18n 表 + 设置项把首屏预算从 80 KB 提高），超出退出码 1。
 - SW 策略：install 预缓存壳；activate 清旧版本缓存并 `clients.claim()`；导航请求 network-first → 失败回退缓存 `index.html`；`sw.js` 自身 network-first；`/assets/` cache-first；`manifest.webmanifest` network-first 回退缓存。`sw.js` 的 message 处理器只认 `SKIP_WAITING` → `self.skipWaiting()`。
@@ -705,9 +625,9 @@ AD
 - `searchGroup(track, query)`：对 `title`、`artist`、`album`、文件名（`track.path` 的 basename，保留扩展名）逐个规范化后做子串匹配，按 title → artist → album → fileName 返回首个命中的分组，全不命中返回 `null`。
 - `searchTracks(tracks, query, { limit = 200 } = {})`：同步搜索，返回 `{ items: [{ track, group }], counts: { title, artist, album, fileName }, total }`；`items` 先按分组优先级、组内按输入顺序排列并截断到 `limit`，`total` 与 `counts` 统计全部命中（不受 `limit` 影响）；query 规范化后为空时返回空结果。
 - `runSearch(tracks, query, options = {})`：先 `await ensureNormalizer()` 再调用 `searchTracks`；繁简表加载失败时返回空结果，不向 UI 抛错。
-- 规范化规则：`title`/`album`/文件名走 `normalizeText`（NFKC、全角转半角、繁→简、小写、去版本标签）；`artist` 走 `splitArtists(track.artist).join(' ')`，保留 feat 合作者以便按合作者搜索；模块顶层只静态导入 `./playlist/match.js`，繁简表仍由其内部 `import()` 懒加载。
+- 规范化规则：`title`/`album`/文件名走 `normalizeText`（NFKC、全角转半角、繁→简、小写、去版本标签）；`artist` 走 `splitArtists(track.artist).join(' ')`，保留 feat 合作者以便按合作者搜索；模块顶层只静态导入 `./text.js`，繁简表仍由其内部 `import()` 懒加载。
 
-### stats 与自动列表（APP-001-F1）
+### stats（APP-001-F1）
 
 `src/core/stats.js` 全是纯函数（不碰 DOM/IDB，不取时钟），store 与 UI 各自接线。`stats` store 的 row 结构：
 
@@ -724,6 +644,7 @@ AD
 - `recentlyAdded`：按 `addedAt` 降序（缺行按 0），同值按 `path` 升序，取前 `limit`（默认 50）。
 - `mostPlayed`：只保留 `plays > 0`，按 `plays` 降序、`lastPlayedAt` 降序（`null` 按 0）、`path` 升序，取前 `limit`（默认 50）。
 - `neverPlayed`：`plays` 为 0 或没有行，按 `path` 升序，无上限。
+
 ### 播放扩展（APP-001-F2）
 
 - 睡眠定时状态机（`src/core/sleepTimer.js`，纯逻辑，时钟与 `setInterval`/`clearInterval` 全部注入）：`SLEEP_MODES = ['off','15','30','45','60','end']`，`sleepMinutes(mode)` 只对分钟模式返回 `15|30|45|60`。`set(mode)` 非法值按 `'off'`（等价 `cancel()`）；分钟模式 `endsAt = now() + 分钟 * 60000`，每个 `intervalMs`（默认 1000 ms）tick 一次并立即 `onTick(state())`；剩余 `0 < remaining <= fadeMs`（默认 5000 ms）时 `fading = true` 并以 `remaining / fadeMs`（1→0 线性）调 `onFade`；归零时清 interval、复位 `'off'`、`fading = false`，并只调一次 `onStop`。`'end'` 不排 interval，由 `fireEnd()` 在队列结束时调 `onStop`（只生效一次）。`cancel()` 清 interval 但不调 `onStop`；`destroy()` 之后所有动作（含已排的 tick）无效。`state()` → `{ mode, endsAt, remaining, fading }`，`off`/`end` 的 `remaining` 为 `null`。

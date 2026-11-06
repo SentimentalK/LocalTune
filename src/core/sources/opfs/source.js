@@ -299,17 +299,6 @@ export class OpfsSource {
     }
   }
 
-  /** Write a UTF-8 text file under `music/`, creating directories as needed. */
-  async writeTextFile(path, text) {
-    const { dirs, name } = splitPath(path);
-    if (!name) throw new Error(t('error.source.invalidPath', { path }));
-    const dir = await directoryFor(await this.#root(), dirs, { create: true });
-    const handle = await dir.getFileHandle(name, { create: true });
-    const writable = await handle.createWritable();
-    await writable.write(text);
-    await writable.close();
-  }
-
   /** Bytes and file count of the imported folder, for the storage card. */
   async usage() {
     try {

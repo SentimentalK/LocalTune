@@ -70,17 +70,4 @@ test('settings view covers library, storage, language and about', async ({ page 
   await expect(page.locator('#tab-folders')).toBeVisible();
   await expect(page.locator('#tab-folders')).toHaveText('文件夹');
   expect(await page.evaluate(() => document.documentElement.lang)).toBe('zh-CN');
-
-  // Playlist resolving settings sit at the bottom of the VIP view.
-  await page.locator('[data-testid="vip-open"]').click();
-  await expect(page.locator('[data-testid="vip-playlist-settings"]')).toBeVisible();
-  await expect(page.locator('[data-testid="setting-proxy-url"]')).toHaveAttribute(
-    'placeholder',
-    '/api/resolve',
-  );
-  await expect(page.locator('[data-testid="setting-youtube-key"]')).toBeVisible();
-  await page.locator('[data-testid="settings-close"]').click();
-
-  await expect(page.locator('#tab-folders')).toBeVisible();
-  await expect(page.locator('[data-testid="vip-playlist-settings"]')).toBeHidden();
 });

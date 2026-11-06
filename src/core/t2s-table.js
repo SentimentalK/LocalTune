@@ -7,7 +7,7 @@
  * OpenCC TWVariants.txt (為/裡/麽/...).
  * https://github.com/BYVoid/OpenCC — Apache License 2.0.
  *
- * Generated once; do not edit by hand. {@link ../playlist/match.js} builds a
+ * Generated once; do not edit by hand. {@link ./text.js} builds a
  * Map from T2S_PAIRS on first use: every entry is a two-character pair
  * "traditional simplified", entries separated by a single space.
  */

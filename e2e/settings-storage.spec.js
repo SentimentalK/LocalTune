@@ -72,8 +72,6 @@ async function seedPlaylistAndSettings(page) {
           value: {
             language: 'auto',
             cacheLimitBytes: 1024 ** 3,
-            youtubeApiKey: '',
-            playlistProxyUrl: '',
             leveling: false,
             gapless: true,
           },
@@ -192,6 +190,8 @@ test('Clear all drops derived data but keeps sources, playlists and settings', a
   await expect(cloudRow.locator('button')).toHaveCount(3);
   await expect(cloudRow).toContainText('0');
 
+  // The playlists store is kept for old profiles, but the app no longer reads
+  // or writes it; Clear all must leave it untouched.
   const playlists = await readStore(page, 'playlists');
   expect(playlists.filter((row) => row.id === 'pl-seed')).toHaveLength(1);
 
