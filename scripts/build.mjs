@@ -129,6 +129,7 @@ async function main() {
   const define = {
     __BUILD_VERSION__: JSON.stringify(version),
     __GOOGLE_CLIENT_ID__: JSON.stringify(process.env.GOOGLE_CLIENT_ID ?? ''),
+    __DROPBOX_APP_KEY__: JSON.stringify(process.env.DROPBOX_APP_KEY ?? ''),
   };
 
   await rm(distDir, { recursive: true, force: true });
