@@ -54,6 +54,10 @@ const samples = String(option('samples', '5,30,60'))
 const headless = has('headless');
 const dpr = Number(option('dpr', '1'));
 const keep = has('keep');
+// Measure a profile that was seeded by an earlier run: seeding inside the
+// measured run holds the seed's own blobs in the browser process and hides
+// the boot read under it.
+const skipSeed = has('skip-seed');
 const openLibrary = has('open-library');
 const searchQueryFlag = option('search', null);
 const play = has('play');
@@ -62,7 +66,7 @@ const cacheBytes = has('cache-bytes');
 const width = Number(option('width', '1440'));
 const height = Number(option('height', '900'));
 
-const profileDir = path.join(outDir, 'profiles', label);
+const profileDir = path.join(outDir, 'profiles', String(option('profile', label)));
 
 /** CSS / JS overrides that isolate one suspect at a time. */
 const VARIANTS = {
@@ -365,21 +369,37 @@ async function main() {
           // Blob storage still counts the bytes.
           for (let i = fetched.length; i < wanted; i += 1) bytes[i] = i & 0xff;
         }
+        // DB v6 (APP-001-AA): covers live in their own store, never in the
+        // track row. The pre-fix baseline seeded the v5 inline shape instead.
         await new Promise((resolve, reject) => {
-          const tx = db.transaction(['tracks', 'meta'], 'readwrite');
+          const names = ['tracks', 'covers', 'meta'].filter((name) => db.objectStoreNames.contains(name));
+          const tx = db.transaction(names, 'readwrite');
           const tracks = tx.objectStore('tracks');
           tracks.clear();
+          const covers = db.objectStoreNames.contains('covers') ? tx.objectStore('covers') : null;
+          covers?.clear();
           for (let i = 0; i < 1000; i += 1) {
-            tracks.put({
-              id: `synth-${i}`,
+            const id = `synth-${i}`;
+            const cover = new Blob([bytes], { type: 'image/png' });
+            const row = {
+              id,
               title: `Synthetic track ${i}`,
               artist: `Artist ${i % 40}`,
               album: `Album ${i % 80}`,
               duration: 180 + (i % 120),
-              cover: new Blob([bytes], { type: 'image/png' }),
               path: `synthetic/${i}.mp3`,
               source: 'local',
-            });
+            };
+            if (covers) {
+              row.hasCover = true;
+              row.coverSize = cover.size;
+              row.coverType = 'image/png';
+              covers.put({ id, cover });
+            } else {
+              // v5 layout (pre-APP-001-AA): the Blob rides inside the row.
+              row.cover = cover;
+            }
+            tracks.put(row);
           }
           tx.objectStore('meta').put({ key: 'demoDismissed', value: true });
           tx.objectStore('meta').delete('playback');
@@ -404,7 +424,7 @@ async function main() {
   } else {
     await page.goto(url, { waitUntil: 'load', timeout: 60000 });
     await waitReady();
-    if (scenario !== 'demo') {
+    if (scenario !== 'demo' && !skipSeed) {
       await seed();
       await page.reload({ waitUntil: 'load' });
       await waitReady();

@@ -18,14 +18,17 @@
 3. **“降 50%”在空曲库场景数学上不可达**：下限是浏览器自己的 134.8 MB anon。
 4. **票里的 CSS 特效候选被量化排除**：filter / mask / mix-blend-mode / backdrop-filter /
    will-change / animation **全关**后 anon 194.2 MB，比基线 185.0 还高（噪声范围内）。
-5. **唯一能长到 GB 级的应用机制（已量化）：启动时把全库封面 Blob 读进内存。**
-   1000 首 × 200 KB 封面 → 开机 0–5 s anon **439.9 MB**（同样 1000 首、1 KB 封面只有 244.2），
-   30 s 内回落到 230.5，60 s 225.8。Δ ≈ 封面总字节 ×1.0。
-   3000 首 × 300 KB ≈ 0.9 GB；10000 首 ≈ 3 GB（线性外推，未实测）。
-6. **“打开就 1–3 GB”更可能是口径**：同一时刻把各进程 RSS 相加是 **1188 MB**（空白页都有 1085 MB），
+5. **封面 Blob 当初被误判成 GB 级机制，已被干净的对照实验证伪**（§3.4）：1000 首 × 200 KB
+   内嵌封面在旧构建上 60 s anon 只比无封面的 1000 首多 **24 MB**（186.0 vs 225.0 的 50 KB 组没有可比性，
+   见 §3.4 的干净对照）。Chrome 的 IDB Blob 只是句柄，字节留在磁盘，**开机不会把封面字节读进内存**。
+   早先那个 439.9 MB 是 harness 自己在被测量的页面里写入 200 MB 封面留下的，不是应用行为 ——
+   测量陷阱写在 §3.5。
+6. **修复后**（§6）：空曲库 anon 185.0 → 184.1（无变化，符合预期）；1000 首 × 200 KB 曲库
+   186.0 → 161.0（−25 MB，−13%）；**空闲 renderer task 时间 1.04 s/60 s → 0.02 s/60 s**（−98%）。
+7. **“打开就 1–3 GB”更可能是口径**：同一时刻把各进程 RSS 相加是 **1188 MB**（空白页都有 1085 MB），
    anon 的 6.4 倍。任何“把 working set 相加”的工具看一个空页面就已经是 GB 量级 `[推测，未在用户机器上观测]`。
-7. **空闲 CPU 有真实浪费**：不播放也常驻 `requestAnimationFrame`，60 s 烧 1.04 s task 时间
-   （空白页 0.01 s）≈ 1.7% CPU 常驻。已修（见 §5）。
+8. **空闲 CPU 有真实浪费**：不播放也常驻 `requestAnimationFrame`，60 s 烧 1.04 s task 时间
+   （空白页 0.01 s）≈ 1.7% CPU 常驻。已修（见 §6）。
 
 ## 1. 测量口径与可复跑
 
@@ -170,28 +173,37 @@ no-backdrop|no-raf|no-gpu|swiftshader|cv-auto`、`--dpr`、`--width/--height`、
 - DOM：827 节点 / 106 listener 恒定；1000 行搜索结果才到 3441 / 1918。
   `content-visibility:auto` 注入（`lib1000-search-cv`）对 anon 无影响（243.6 vs 246.1）。
 
-### 3.4 确认（并量化）：启动期把整库封面 Blob 读进内存
+### 3.4 封面：当初以为是主因，被干净对照证伪
 
-`src/core/db.js:100 getAllTracks()` 返回 `tracks` 表的全部记录，每条的 `cover` 就是封面 `Blob`
-（`src/core/metadata/id3.js:459`、`mp4.js:82` 生成）；`src/core/store.js:434` 在 `createApp()` 里一次读全库。
-同一批 1000 首、只改封面大小：
+`src/core/db.js:100 getAllTracks()` 返回 `tracks` 表的全部记录，v5 里每条的 `cover` 就是封面 `Blob`；
+`src/core/store.js:434` 在 `createApp()` 里一次读全库。第一版测量写成「开机峰值 ≈ 基线 + 全库封面字节」，
+那个数字（1000 × 200 KB → anon 439.9 MB）**是错的**：它把 harness 自己写 200 MB 封面的那份内存
+算进了 t0。把「写入」和「读取」拆成两个进程跑之后：
 
-| 曲库 | 0 s anon | 5 s anon | 30 s anon | 60 s anon | 0 s browser PSS |
-|---|---|---|---|---|---|
-| 1000 × 1 KB（合计 1 MB） | 244.2 | 244.8 | 225.3 | 225.0 | 131.9 |
-| 1000 × 50 KB（合计 49 MB） | 236.3 | 237.4 | 219.8 | 219.0 | 111.1 |
-| 1000 × 200 KB（合计 200 MB） | **439.9** | 439.8 | 230.5 | 225.8 | **325.8** |
-| 1000 × 200 KB（串行重跑，无并发干扰） | 439.7 | 440.6 | 228.0 | 226.4 | — |
+| 1000 首 × 200 KB 封面（合计 200 MB） | t0 anon | t5 anon | t30 anon | t60 anon | t60 browser PSS | t60 footprint |
+|---|---|---|---|---|---|---|
+| 旧构建（v5，封面内嵌在 track 行里） | 199.7 | 200.0 | 186.9 | **186.0** | 151.3 | 239.0 |
+| 新构建（v6，封面在 covers 存储） | 177.8 | 177.9 | 163.9 | **161.0** | 127.4 | 213.4 |
+| 空曲库（旧构建，串行） | 201.9 | 203.1 | 188.3 | 188.8 | — | — |
 
-- 200 KB 封面把开机 0–5 s 的 anon 推高 **+195.7 MB**，browser 进程 PSS 从 131.9 推到 325.8；
-  形状与「封面总字节」完全同步：0–5 s 平台 → 30 s 内释放。
-- 30 s 后 Chrome 把 Blob 数据页还回磁盘，所以**只看 60 s 稳态的测量会漏掉这段峰值**；
-  这也让「打开就 N GB、放一会儿又好了」能同时成立 `[推测]`。
-- 规模：3000 首 × 300 KB ≈ 0.9 GB；10000 首 ≈ 3 GB（线性外推）。
-  **这是代码里唯一能到票面量级的机制**，也正是票里列的第 1 个候选。
-- 它要求**库非空**。真正空的库不成立 —— 所以本机 `empty` 场景复现不到 2.9 GB。
-  注意「没有歌、demo 也没有」在本应用里可以由 `clearQueue()` 造成：`store.js:1290` 只清队列，
-  **不动曲库**，此时队列是空的、`state.tracks` 仍是整库。`[推测]` 这正是用户看到的状态。
+结论：
+- **没有开机峰值**。旧构建在 t0 只比稳态高 13.7 MB；Chrome 的 IDB Blob 是句柄，字节留在磁盘，
+  只有真正 `URL.createObjectURL` + 绘制时才解码。
+- 内嵌封面的真实代价是 **blob 注册表 + 行对象**：1000 首 200 KB 封面 ≈ **+25 MB anon / +24 MB browser PSS**
+  （186.0 → 161.0），与封面字节数无关，与**条数**有关（1 KB 与 200 KB 封面的稳态几乎一样，见 §2）。
+- 因此「封面总量 → GB 级」这条假设**不成立**。要把内存推到 GB，只有**同时渲染**海量封面被解码
+  才可能（实测 200 行 ≈ +60 MB anon，见 §2 的 `lib1000-search`），而搜索最多渲染 200 行。
+  10000 行同时渲染 ≈ 3 GB 只是外推，未实测，也没有用户数据支持。
+
+### 3.5 测量陷阱：三个会骗人的数字
+
+1. **在被测量的页面里播种数据。** 用 `page.evaluate` 往 IndexedDB 写 200 MB Blob，写入本身会把
+   这些字节挂到 browser / renderer 进程上，`page.reload()` 之后 30 s 内才释放。
+   先写入、再单独测量（`--profile <name> --skip-seed --keep`）才看得到应用真正读了多少。
+   第一版报告就是栽在这里，把 439.9 MB 当成了应用的开机峰值。
+2. **`Private_Clean` 会被回收。** 同一场景并行 4 个 Chromium：blank 的 footprint 139.4，单独跑 187.1；
+   `Private_Dirty` 只从 134.8 变到 135.8。所以主判据必须是 `Private_Dirty + Swap`。
+3. **PSS 会给共享页打折。** 并行实例越多，同一份 Chrome 共享页被分摊得越薄；browser 进程能差 20 MB。
 
 ## 4. “2.9 GB 从哪来”——本机能确认与不能确认的
 
@@ -209,25 +221,72 @@ no-backdrop|no-raf|no-gpu|swiftshader|cv-auto`、`--dpr`、`--width/--height`、
 是否开着 DevTools、同 profile 的其他标签与扩展、profile 里累积的 CacheStorage/audio cache
 （`DEFAULT_CACHE_LIMIT = 2 GB`，`src/core/cache/audioCache.js:9`）。
 
-## 5. 修复（阶段 2）
+## 5. 修复（阶段 2，已落地）
 
-见 §6。方案由 Conductor 2026-11-06 批准：**封面外置 + DB v5→v6 迁移 + UI 按需读封面**，
-并同时停掉空闲 `armTick`。
+方案由 Conductor 2026-11-06 批准：**封面外置 + DB v5→v6 迁移 + UI 按需读封面**，并停掉空闲 `armTick`。
 
-### 5.1 方案
+### 5.1 改动
 
-- `tracks` 行不再带 `cover` Blob；新 `covers` 存储（keyPath `id`）存 `{id, cover}`。
-- 开机 `getAllTracks()` 只读元数据（`hasCover` / `coverSize` / `coverType`），**不触发封面字节**。
-- UI 只对**当前渲染行 + 正在播放的那一首** `acquire` object URL；`createCoverCache` 用
-  引用计数 + LRU（上限 64）回收，列表重建时释放上一轮的 id。
-- 迁移在 `onupgradeneeded` 的同一事务内完成（原子），逐行 try/catch，单行坏不中止升级。
-- Media Session artwork 复用同一份缓存 URL，不再单独建 Blob URL。
+| 文件 | 改动 |
+|---|---|
+| `src/core/db.js` | `DB_VERSION = 6`；新增 `covers` 存储（keyPath `id`）；`onupgradeneeded` 内用同一事务的游标把 v5 的内嵌 `cover` 搬进 `covers`（逐行 try/catch，坏行只 warn）；`putTracks` 在 `[tracks, covers]` 单事务里剥离/写入封面；`deleteTracksById` 同事务删两表；新增 `getCover` / `withoutCover` |
+| `src/core/coverCache.js`（新） | 引用计数 + LRU（上限 64）的 object URL 缓存；同 id 并发只读一次；`release/retain/clear`；被 UI 持有时永不 revoke |
+| `src/core/store.js` | 构造函数建 `covers`；`coverUrl(track)` / `releaseCover(id)`；`buildTrack` 只在真有 Blob 时带 `cover`；`carryCover` 在元数据没读到图时**删掉** `cover` 键（否则 `putTracks` 会把已存封面当成"显式删除"）；状态树只存无 Blob 的行 |
+| `src/core/storage.js` | `coverBytes` 改为累加 `track.coverSize` |
+| `src/core/mediaSession.js` | artwork 用 store 给的缓存 URL，不再自建第二个 Blob URL |
+| `src/ui/app.js` | `coverNode` 改用 `loading="lazy"` + `decoding="async"` + `store.coverUrl`；列表重建时释放上一轮 id；正在播放的封面单槽持有；`armTick` 只在 `playing` 时续约，暂停时画一帧后停 |
+| `src/ui/dom.js` | 删除整页生命周期的 `coverUrls` / `coverUrl` / `syncCoverCache` |
+| 测试 | `tests/covers.test.js`（缓存语义）、`tests/storage.test.js`、`tests/migrate.test.js`、`e2e/covers.spec.js`（v5→v6 逐首字节一致 + 列表按需读）、`e2e/idle-raf.spec.js`（空闲 5 s rAF 计数为 0，播放后 >0，暂停后不再增长） |
+| 文档 | `docs/architecture.md` 的 v6 schema、`estimateLibrary`、merge 规则 |
 
-### 5.2 前后对比
+迁移保封面的证据：`e2e/covers.spec.js` 用 `addInitScript` 造 v5 库（2 首内嵌 Blob：1024 B png / 2048 B jpeg），
+打开应用后断言 `tracks` 行无 `cover` 字段且 `hasCover:true`、`covers` 两条且 `size`/`type` 与原字节一致，
+并且 `#cover` 与列表 `img[src^="blob:"]` 出现。
+回归证据：把 `carryCover` 的修复临时回退后，`e2e/covers.spec.js` 的「rescan 重读保留封面」用例实跑变红
+（`hasCover` 变 false、封面被删），恢复后变绿。
 
-见 §6（阶段 2 完成后补）。
+### 5.2 迁移安全
 
-## 6. 阶段 2 实测（完成前留空）
+- 搬迁在 `onupgradeneeded` 的同一事务里完成：要么整库到 v6，要么留在 v5，不会半套。
+- 单行异常只 `console.warn` 并跳过，不 abort 事务。
+- 打不开库仍是既有行为（`main.js` 的 `renderFatal` 错误页），不会白屏。
+- Clear all data 走 `reset.js` 的 `indexedDB.deleteDatabase`，整库删除，`covers` 一并清掉。
+
+## 6. 阶段 2 实测（同一 harness，串行单实例）
+
+| 指标 | 修复前 `4410a78` | 修复后 | 变化 |
+|---|---|---|---|
+| 空曲库静止 60 s · anon | 188.8 | 184.1 | −4.7 MB（在 ±5 MB 噪声内） |
+| 空曲库静止 60 s · PSS | 457.4 | 454.7 | −2.7 MB |
+| 空曲库静止 60 s · 私有 footprint | 242.9 | 240.5 | −2.4 MB |
+| 空曲库静止 60 s · renderer task | 1.04 s | **0.02 s** | **−98%** |
+| 1000 首 × 200 KB · t0 anon | 199.7 | 177.8 | −21.9 MB |
+| 1000 首 × 200 KB · 60 s anon | 186.0 | **161.0** | **−25.0 MB（−13%）** |
+| 1000 首 × 200 KB · 60 s browser PSS | 151.3 | 127.4 | −23.9 MB |
+| 1000 首 × 200 KB · 60 s footprint | 239.0 | 213.4 | −25.6 MB |
+| JS 堆（两个场景） | 2.22 / 2.30 MB | 2.16 / 2.26 MB | 不变 |
+| DOM 节点 / listener | 827 / 106 | 827 / 106 | 不变 |
+
+结论：
+
+- **空曲库场景降不动，而且本来就没有可降的东西**：应用自身只占 +50 MB，其中一半是 V8 隔离区与
+  一次真实页面的光栅。票里"降 50%"的分母是 Chrome 自己（134.8 MB anon），**数学上不可达**。
+- **曲库场景 −25 MB（−13%）**：省掉的是 1000 条内嵌 Blob 的注册表与行拷贝，不是封面字节
+  （字节本来就在磁盘上）。条数越多省得越多，与封面大小无关。
+- **空闲 CPU −98%**：1.04 s → 0.02 s per 60 s。这是这次改动最确定的收益（电池 / 后台标签）。
+- 曲库规模下"同时渲染的封面"仍是唯一可能到 GB 的路径，现在走进 `loading="lazy"` +
+  引用计数回收；200 行实测 +60 MB anon，未在 1000+ 行规模上复测（没有真实大目录数据）。
+
+### 6.1 验收结论
+
+| 票面验收项 | 结果 |
+|---|---|
+| 复现 2.9 GB | **不能**（19 个配置，最大 anon 190.5 / PSS 417.1） |
+| 至少一个被量化证据确认的主因 | 报告给出的是"没有主因"：应用自身 +50 MB anon，无泄漏；三个 GB 级候选（CSS 特效 / SW 缓存 / 封面 Blob 常驻）全部被量化排除 |
+| 修复后 60 s 数字与基线对比 | 见 §6 表 |
+| 目标下降 ≥50% | **不达标，且不可达**（下限是浏览器自身 134.8 MB anon） |
+| JS 堆与 DOM 在 60 s 内稳定 | 满足（5 min / 9 min 也稳定） |
+| `npm run build` / `npm test` / `npx playwright test` / `npm run size` | 全绿（299 unit、79 e2e、58044 B gzip / 102400） |
 
 ## 7. 用户侧如何复核
 
