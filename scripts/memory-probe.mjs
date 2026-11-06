@@ -159,11 +159,12 @@ function group(rows) {
   const groups = new Map();
   for (const row of rows) {
     const key = row.type.startsWith('utility:') ? 'utility' : row.type;
-    const acc = groups.get(key) ?? { type: key, count: 0, rss: 0, pss: 0, footprint: 0 };
+    const acc = groups.get(key) ?? { type: key, count: 0, rss: 0, pss: 0, footprint: 0, anon: 0 };
     acc.count += 1;
     acc.rss += row.VmRSS ?? 0;
     acc.pss += row.Pss ?? 0;
     acc.footprint += (row.Private_Clean ?? 0) + (row.Private_Dirty ?? 0) + (row.Swap ?? 0);
+    acc.anon += (row.Private_Dirty ?? 0) + (row.Swap ?? 0);
     groups.set(key, acc);
   }
   return [...groups.values()].sort((a, b) => b.pss - a.pss);
@@ -258,6 +259,7 @@ async function sampleProcesses() {
         (sum, row) => sum + (row.Private_Clean ?? 0) + (row.Private_Dirty ?? 0) + (row.Swap ?? 0),
         0,
       ),
+      anon: rows.reduce((sum, row) => sum + (row.Private_Dirty ?? 0) + (row.Swap ?? 0), 0),
       processes: rows.length,
     },
     groups: group(rows),
@@ -511,6 +513,7 @@ async function main() {
       `${label}`.padEnd(28),
       `pss=${mb(last.processes.totals.pss)}MB`,
       `(t0 ${mb(first.processes.totals.pss)}MB)`,
+      `anon=${mb(last.processes.totals.anon)}MB`,
       `fp=${mb(last.processes.totals.footprint)}MB`,
       `jsHeap=${mb(last.page.jsHeapUsed)}MB`,
       `nodes=${last.page.nodes}`,
