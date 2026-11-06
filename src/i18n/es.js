@@ -37,7 +37,17 @@ export default {
   'tabs.queue': 'Cola',
   'vip.open': 'VIP',
   'vip.title': 'VIP',
-  'vip.subtitle': 'Reconstruyendo las listas de reproducción',
+  'vip.subtitle': 'Descargar música',
+  'vip.downtify.title': 'Descarga música con Downtify',
+  'vip.downtify.about':
+    'LocalTune solo reproduce archivos de audio que ya tienes. Nunca descarga ni captura música.',
+  'vip.downtify.intro':
+    'Downtify es un descargador de código abierto y autoalojado: pega un enlace de Spotify o YouTube Music y obtén archivos de audio con etiquetas.',
+  'vip.downtify.independent': 'Downtify es un proyecto independiente, no forma parte de LocalTune.',
+  'vip.downtify.hint':
+    'Apunta LocalTune a la carpeta donde guarda Downtify (una carpeta local o OneDrive) y tu música estará lista para reproducirse.',
+  'vip.downtify.github': 'Abrir Downtify en GitHub',
+  'vip.downtify.docs': 'Documentación de Downtify',
   'vip.playlistSettings': 'Resolución de listas',
   'vip.youtubeKey': 'YouTube API key',
   'vip.youtubeKeyHint': 'Se usa para enlaces de listas de YouTube. Solo se guarda en este navegador.',

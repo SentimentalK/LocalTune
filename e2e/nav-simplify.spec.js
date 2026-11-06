@@ -40,19 +40,64 @@ test('the header close button leaves settings', async ({ page }) => {
   await expect(page.locator('[data-testid="settings-open"]')).toBeVisible();
 });
 
-test('the VIP view hosts the playlists', async ({ page }) => {
+test('the VIP view offers a single Downtify download card', async ({ page }) => {
   await page.goto('/');
   await page.locator('[data-testid="vip-open"]').click();
 
   await expect(page.locator('[data-testid="vip-view"]')).toBeVisible();
-  await expect(page.locator('[data-testid="vip-placeholder"]')).toBeVisible();
-  await expect(page.locator('[data-testid="playlist-view"]')).toBeVisible();
-  await expect(page.locator('[data-testid="import-open"]')).toBeVisible();
+  await expect(page.locator('[data-testid="vip-head"]')).toBeVisible();
+  await expect(page.locator('[data-testid="vip-head"] h2')).toHaveText('VIP');
+  await expect(page.locator('[data-testid="vip-placeholder"]')).toHaveText('下载音乐');
+  await expect(page.locator('[data-testid="vip-downtify"]')).toBeVisible();
+
+  await expect(page.locator('[data-testid="playlist-view"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="import-open"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="vip-playlist-settings"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="settings-open"]')).toBeHidden();
+
+  const github = page.locator('[data-testid="vip-downtify-github"]');
+  await expect(github).toHaveAttribute('href', 'https://github.com/henriquesebastiao/downtify');
+  await expect(github).toHaveAttribute('target', '_blank');
+  await expect(github).toHaveAttribute('rel', /noreferrer/);
+  await expect(github).toHaveAttribute('rel', /noopener/);
+  await expect(github).toBeVisible();
+
+  const docs = page.locator('[data-testid="vip-downtify-docs"]');
+  await expect(docs).toHaveAttribute('href', 'https://downtify.henriquesebastiao.com/');
+  await expect(docs).toBeVisible();
 
   await page.locator('[data-testid="settings-close"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();
 });
+
+for (const width of [360, 390]) {
+  test.describe(`${width}px viewport`, () => {
+    test.use({ viewport: { width, height: 780 } });
+
+    test('the Downtify card fits inside the viewport', async ({ page }) => {
+      await page.goto('/');
+      await page.locator('[data-testid="vip-open"]').click();
+
+      const card = page.locator('[data-testid="vip-downtify"]');
+      await expect(card).toBeVisible();
+      await card.scrollIntoViewIfNeeded();
+
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - window.innerWidth,
+      );
+      expect(overflow, 'the page does not scroll horizontally').toBeLessThanOrEqual(0);
+
+      const box = await card.boundingBox();
+      expect(box, 'the card has a box').not.toBeNull();
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(780);
+
+      await page.screenshot({ path: `test-results/vip-downtify-${width}.png` });
+    });
+  });
+}
 
 test.describe('360px viewport', () => {
   test.use({ viewport: { width: 360, height: 780 } });
