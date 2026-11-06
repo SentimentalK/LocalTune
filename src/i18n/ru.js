@@ -37,7 +37,17 @@ export default {
   'tabs.queue': 'Очередь',
   'vip.open': 'VIP',
   'vip.title': 'VIP',
-  'vip.subtitle': 'Плейлисты пересобираются',
+  'vip.subtitle': 'Скачать музыку',
+  'vip.downtify.title': 'Скачивайте музыку с Downtify',
+  'vip.downtify.about':
+    'LocalTune только воспроизводит аудиофайлы, которые у вас уже есть. Он не скачивает и не захватывает музыку.',
+  'vip.downtify.intro':
+    'Downtify — это самостоятельный открытый загрузчик: вставьте ссылку Spotify или YouTube Music и получите аудиофайлы с тегами.',
+  'vip.downtify.independent': 'Downtify — независимый проект, не часть LocalTune.',
+  'vip.downtify.hint':
+    'Укажите в LocalTune папку, куда сохраняет Downtify (локальную папку или OneDrive), и музыка будет готова к воспроизведению.',
+  'vip.downtify.github': 'Открыть Downtify на GitHub',
+  'vip.downtify.docs': 'Документация Downtify',
   'vip.playlistSettings': 'Разбор плейлистов',
   'vip.youtubeKey': 'YouTube API key',
   'vip.youtubeKeyHint': 'Используется для ссылок на плейлисты YouTube. Хранится только в этом браузере.',

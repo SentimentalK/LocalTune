@@ -563,6 +563,37 @@ time {
   font-size: 13px;
 }
 
+.vip-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vip-card h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.vip-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.vip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.vip-actions .btn-pill {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
 .vip-playlist-settings {
   display: flex;
   flex-direction: column;

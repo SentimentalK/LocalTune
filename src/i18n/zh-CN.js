@@ -38,7 +38,16 @@ export default {
   'tabs.queue': '队列',
   'vip.open': 'VIP',
   'vip.title': 'VIP',
-  'vip.subtitle': '歌单重构中',
+  'vip.subtitle': '下载音乐',
+  'vip.downtify.title': '用 Downtify 下载音乐',
+  'vip.downtify.about': 'LocalTune 只播放你已有的音频文件，不下载、也不抓取音乐。',
+  'vip.downtify.intro':
+    'Downtify 是一个可自托管的开源下载器：粘贴 Spotify 或 YouTube Music 链接，得到带标签的音频文件。',
+  'vip.downtify.independent': 'Downtify 是独立项目，不属于 LocalTune。',
+  'vip.downtify.hint':
+    '把 LocalTune 指向 Downtify 的保存目录（本地文件夹或 OneDrive），音乐就能直接播放。',
+  'vip.downtify.github': '在 GitHub 打开 Downtify',
+  'vip.downtify.docs': 'Downtify 文档',
   'vip.playlistSettings': '歌单解析设置',
   'vip.youtubeKey': 'YouTube API key',
   'vip.youtubeKeyHint': '用于 YouTube 歌单链接，仅保存在此浏览器。',

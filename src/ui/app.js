@@ -453,7 +453,7 @@ function createShell(store, sw) {
   const playlistView = createPlaylistView(store, { onImport: () => importDialog.open() });
   const importDialog = createImportDialog(store);
   const playlistSettings = createPlaylistSettings(store);
-  const vipView = createVipView(playlistView, playlistSettings);
+  const vipView = createVipView();
 
   // ---- settings view ----
   const settingsView = createSettingsView(store, sw);
