@@ -127,7 +127,7 @@ test('an explicit pick ignores later languagechange', async ({ page }) => {
   await page.waitForTimeout(300);
   expect(await page.evaluate(() => document.documentElement.lang)).toBe('ko');
 
-  await page.locator('[data-testid="settings-close"]').click();
+  await page.locator('[data-testid="panel-open"]').click();
   await expect(page.locator('#tab-folders')).toHaveText(ko['tabs.folders']);
 });
 

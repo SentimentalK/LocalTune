@@ -39,7 +39,8 @@ export default {
   'tabs.queue': 'キュー',
   'vip.open': 'VIP',
   'vip.title': 'VIP',
-  'vip.subtitle': '音楽をダウンロード',
+  'vip.subtitle': 'より良いダウンロードを開発中',
+  'vip.downtify.temporary': '今は Downtify を使いましょう。',
   'vip.downtify.title': 'Downtify で音楽をダウンロード',
   'vip.downtify.about':
     'LocalTune は手持ちの音声ファイルを再生するだけで、ダウンロードや取り込みは行いません。',
@@ -267,6 +268,19 @@ export default {
   'settings.playback.levelingShort': '音量',
   'settings.playback.gaplessShort': '無間隔',
   'settings.playback.gapless': 'ギャップレス再生',
+
+  'panel.libraryTitle': 'あなたのレコード。',
+  'panel.settingsTitle': '設定。',
+  'panel.vipTitle': 'VIP。',
+  'panel.libraryKicker': 'あなたの音楽 / {count} 曲',
+  'panel.settingsKicker': '環境設定 / この端末のみ',
+  'panel.vipKicker': 'VIP / 開発中',
+  'panel.close': 'パネルを閉じる',
+  'theme.switch': 'テーマカラーを変更、現在 {name}',
+  'aria.tonearm': 'トーンアーム：{state}。タップで{action}、ドラッグでシーク',
+  'player.statusPlaying': '再生中',
+  'player.statusPaused': '一時停止中',
+  'player.statusStopped': '停止中',
 
   'error.db.writeStats': '再生統計の書き込みに失敗しました',
 };

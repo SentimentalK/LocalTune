@@ -28,7 +28,7 @@ async function readPlayLogRows(page) {
 
 async function signInAndPickMusic(page, mock) {
   await page.goto('/');
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
   await page.locator('[data-testid="settings-open"]').click();
   await page.locator('[data-testid="source-connect-onedrive"]').click();
@@ -81,7 +81,7 @@ test('expired OneDrive token keeps the cached library visible and playable', asy
   await signInAndPickMusic(page, mock);
   await expireToken(page);
   await page.reload();
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
   const sourceRow = page.locator('[data-testid="folder-source-onedrive"]');
   await expect(sourceRow).toBeVisible();
@@ -98,11 +98,11 @@ test('expired OneDrive token keeps the cached library visible and playable', asy
   await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
 
   const before = mock.wholeRequests.length;
-  await page.locator('[data-testid="track-row"] .row-hit').first().click();
-  await expect(page.locator('.controls .btn.main')).toHaveAttribute('aria-label', '暂停');
+  await page.locator('[data-testid="track-row"] .track').first().click();
+  await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'true');
   await expect
-    .poll(async () => page.locator('.progress time').first().textContent(), { timeout: 10_000 })
-    .not.toBe('0:00');
+    .poll(async () => page.locator('#armRotor').getAttribute('aria-valuenow'), { timeout: 10_000 })
+    .not.toBe('0');
   await page.waitForTimeout(300);
   expect(mock.wholeRequests.length).toBe(before);
 
@@ -127,18 +127,18 @@ test('uncached tracks fail quietly and land in the play log', async ({ page }) =
   await signInAndPickMusic(page, mock);
   await expireToken(page);
   await page.reload();
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
   await page.evaluate(() => caches.delete('audio-v1'));
   await page.reload();
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
   const before = mock.wholeRequests.length;
   await page.locator('[data-testid="folder-source-onedrive"]').click();
   await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
 
-  await page.locator('[data-testid="track-row"] .row-hit').first().click();
-  await expect(page.locator('.controls .btn.main')).toHaveAttribute('aria-label', '播放');
+  await page.locator('[data-testid="track-row"] .track').first().click();
+  await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'false');
   // The header error box is a permanent (hidden) placeholder node, so assert
   // on visibility: an empty hidden box never surfaces login state.
   await expect(page.locator('.app > .alert[role="alert"]')).toBeHidden();

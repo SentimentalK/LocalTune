@@ -32,7 +32,7 @@ test('shell renders without console errors', async ({ page }) => {
 
   const response = await page.goto('/');
   expect(response?.status()).toBe(200);
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
   await expect(page.locator('#status')).toBeHidden();
   expect(await waitForServiceWorker(page)).toBe('activated');
 
@@ -64,7 +64,7 @@ test('service worker becomes ready and controls the page', async ({ page }) => {
 
   await page.reload();
   expect(await page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
   expect(errors).toEqual([]);
 });
@@ -76,12 +76,12 @@ test('offline reload is served from the precache', async ({ page, context }) => 
   expect(await waitForServiceWorker(page)).toBe('activated');
   // One reload while online guarantees the navigation is SW-controlled.
   await page.reload();
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
   await context.setOffline(true);
   await page.reload();
   await expect(page.locator('#app')).toBeVisible();
-  await expect(page.locator('#app')).toContainText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
   await context.setOffline(false);
 
   expect(errors.filter((error) => !expectedOffline.test(error))).toEqual([]);

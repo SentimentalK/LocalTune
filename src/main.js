@@ -18,10 +18,13 @@ const root = document.getElementById('app');
 // the store. mountUi() replaces this tree once the app is ready.
 root.replaceChildren(
   el('div', { class: 'app' }, [
-    el('header', { class: 'top' }, [
-      el('div', { class: 'brand' }, [
-        el('h1', { text: 'LocalTune' }),
-        el('span', { class: 'status', id: 'status', text: t('common.loading') }),
+    el('div', { class: 'main-col' }, [
+      el('header', { class: 'topbar' }, [
+        el('div', { class: 'brand-group' }, [
+          el('div', { class: 'wordmark' }, ['localtune', el('span', { text: '.' })]),
+          el('span', { class: 'status-sep', 'aria-hidden': 'true' }),
+          el('span', { class: 'status', id: 'status', text: t('common.loading') }),
+        ]),
       ]),
     ]),
   ]),

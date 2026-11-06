@@ -15,7 +15,7 @@ async function waitForServiceWorker(page) {
 
 async function signInAndPickMusic(page) {
   await page.goto('/');
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
   await page.locator('[data-testid="settings-open"]').click();
   await page.locator('[data-testid="source-connect-onedrive"]').click();
@@ -85,7 +85,7 @@ async function seedPlaylistAndSettings(page) {
     });
   });
   await page.reload();
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 }
 
 test('the cache limit chooser stays on one row at 360px in every locale', async ({ page }) => {

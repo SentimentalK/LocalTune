@@ -40,7 +40,8 @@ export default {
   'tabs.queue': 'Queue',
   'vip.open': 'VIP',
   'vip.title': 'VIP',
-  'vip.subtitle': 'Download music',
+  'vip.subtitle': 'Better downloads, in progress',
+  'vip.downtify.temporary': 'For now, use Downtify.',
   'vip.downtify.title': 'Download music with Downtify',
   'vip.downtify.about':
     'LocalTune only plays audio files you already have. It never downloads or captures music.',
@@ -262,6 +263,19 @@ export default {
   'settings.playback.levelingShort': 'Volume',
   'settings.playback.gaplessShort': 'Gapless',
   'settings.playback.gapless': 'Gapless playback',
+
+  'panel.libraryTitle': 'Your records.',
+  'panel.settingsTitle': 'Settings.',
+  'panel.vipTitle': 'VIP.',
+  'panel.libraryKicker': 'YOUR MUSIC / {count} TRACKS',
+  'panel.settingsKicker': 'PREFERENCES / LOCAL ONLY',
+  'panel.vipKicker': 'VIP / IN PROGRESS',
+  'panel.close': 'Close panel',
+  'theme.switch': 'Change color theme, current {name}',
+  'aria.tonearm': 'Tonearm: {state}. Tap to {action}, drag to seek',
+  'player.statusPlaying': 'Playing',
+  'player.statusPaused': 'Paused',
+  'player.statusStopped': 'Stopped',
 
   'error.db.writeStats': 'Writing play statistics failed',
 };

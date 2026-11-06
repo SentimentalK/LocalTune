@@ -170,6 +170,7 @@ async function main() {
   // Static PWA files.
   await cp(path.join(srcDir, 'manifest.webmanifest'), path.join(distDir, 'manifest.webmanifest'));
   await cp(path.join(srcDir, 'icons'), path.join(distDir, 'icons'), { recursive: true });
+  await cp(path.join(srcDir, 'demo'), path.join(distDir, 'demo'), { recursive: true });
   await cp(path.join(srcDir, 'well-known'), path.join(distDir, '.well-known'), { recursive: true });
 
   const icons = (await readdir(path.join(srcDir, 'icons')))

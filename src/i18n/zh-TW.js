@@ -38,7 +38,8 @@ export default {
   'tabs.queue': '佇列',
   'vip.open': 'VIP',
   'vip.title': 'VIP',
-  'vip.subtitle': '下載音樂',
+  'vip.subtitle': '更好的下載正在開發中',
+  'vip.downtify.temporary': '暫時先用 Downtify。',
   'vip.downtify.title': '用 Downtify 下載音樂',
   'vip.downtify.about': 'LocalTune 只播放你已有的音訊檔案，不下載、也不擷取音樂。',
   'vip.downtify.intro':
@@ -253,6 +254,19 @@ export default {
   'settings.playback.levelingShort': '音量',
   'settings.playback.gaplessShort': '無縫',
   'settings.playback.gapless': '無縫播放',
+
+  'panel.libraryTitle': '你的唱片。',
+  'panel.settingsTitle': '設定。',
+  'panel.vipTitle': 'VIP。',
+  'panel.libraryKicker': '你的音樂 / {count} 首',
+  'panel.settingsKicker': '偏好 / 僅本機',
+  'panel.vipKicker': 'VIP / 開發中',
+  'panel.close': '關閉面板',
+  'theme.switch': '切換主題顏色，目前 {name}',
+  'aria.tonearm': '唱臂：{state}。點擊{action}，拖曳定位進度',
+  'player.statusPlaying': '正在播放',
+  'player.statusPaused': '已暫停',
+  'player.statusStopped': '已停止',
 
   'error.db.writeStats': '寫入播放統計失敗',
 };

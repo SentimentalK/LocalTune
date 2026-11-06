@@ -37,7 +37,8 @@ export default {
   'tabs.queue': 'File',
   'vip.open': 'VIP',
   'vip.title': 'VIP',
-  'vip.subtitle': 'Télécharger de la musique',
+  'vip.subtitle': 'De meilleurs téléchargements, en cours',
+  'vip.downtify.temporary': 'Pour l’instant, utilisez Downtify.',
   'vip.downtify.title': 'Téléchargez de la musique avec Downtify',
   'vip.downtify.about':
     'LocalTune ne lit que les fichiers audio que vous possédez déjà. Il ne télécharge ni ne capture de musique.',
@@ -260,6 +261,19 @@ export default {
   'settings.playback.levelingShort': 'Volume',
   'settings.playback.gaplessShort': 'Sans coupure',
   'settings.playback.gapless': 'Lecture sans coupure',
+
+  'panel.libraryTitle': 'Tes disques.',
+  'panel.settingsTitle': 'Réglages.',
+  'panel.vipTitle': 'VIP.',
+  'panel.libraryKicker': 'TA MUSIQUE / {count} PISTES',
+  'panel.settingsKicker': 'PRÉFÉRENCES / LOCAL UNIQUEMENT',
+  'panel.vipKicker': 'VIP / EN COURS',
+  'panel.close': 'Fermer le panneau',
+  'theme.switch': 'Changer le thème de couleur, actuel {name}',
+  'aria.tonearm': 'Bras : {state}. Touchez pour {action}, faites glisser pour naviguer',
+  'player.statusPlaying': 'Lecture',
+  'player.statusPaused': 'En pause',
+  'player.statusStopped': 'Arrêté',
 
   'error.db.writeStats': 'Échec de l’écriture des statistiques de lecture',
 };

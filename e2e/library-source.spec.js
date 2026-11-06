@@ -8,7 +8,7 @@ const FILES = [
 
 async function signInAndPickMusic(page, { count = '2' } = {}) {
   await page.goto('/');
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
   await page.locator('[data-testid="settings-open"]').click();
   await page.locator('[data-testid="source-connect-onedrive"]').click();
@@ -23,7 +23,7 @@ async function signInAndPickMusic(page, { count = '2' } = {}) {
 }
 
 async function backToFolders(page) {
-  await page.locator('[data-testid="settings-close"]').click();
+  await page.locator('[data-testid="panel-open"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();
 }
 
@@ -33,10 +33,10 @@ async function openSource(page, kind) {
 }
 
 async function expectPlaying(page) {
-  await expect(page.locator('.controls .btn.main')).toHaveAttribute('aria-label', '暂停');
+  await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'true');
   await expect
-    .poll(async () => page.locator('.progress time').first().textContent(), { timeout: 10_000 })
-    .not.toBe('0:00');
+    .poll(async () => page.locator('#armRotor').getAttribute('aria-valuenow'), { timeout: 10_000 })
+    .not.toBe('0');
 }
 
 async function readStore(page, name) {
@@ -147,7 +147,7 @@ test('lists OneDrive tracks while tags are pending and plays from the cache', as
 
   await openSource(page, 'onedrive');
   await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
-  await page.locator('[data-testid="track-row"] .row-hit').first().click();
+  await page.locator('[data-testid="track-row"] .track').first().click();
   await expectPlaying(page);
 
   // Playback read Cache Storage, and tag reads are still parked.
@@ -169,7 +169,7 @@ test('a single failed tag read keeps the source and both tracks', async ({ page 
   // track-2 kept its placeholder row with the file-name title.
   await expect(page.locator('[data-testid="track-row"]').nth(1)).toContainText('two');
 
-  await page.locator('[data-testid="track-row"] .row-hit').first().click();
+  await page.locator('[data-testid="track-row"] .track').first().click();
   await expectPlaying(page);
 
   await page.locator('[data-testid="settings-open"]').click();
@@ -207,30 +207,30 @@ test('a single failed playback never marks the source or blocks the next track',
   await expect(failedRow).toHaveCount(1);
 
   const cachedBefore = countFor('track-1');
-  await cachedRow.locator('.row-hit').click();
+  await cachedRow.locator('.track').click();
   await expectPlaying(page);
   // track-1 came from the cache: no extra whole request.
   await page.waitForTimeout(300);
   expect(countFor('track-1')).toBe(cachedBefore);
 
   const failedBefore = countFor('track-2');
-  await failedRow.locator('.row-hit').click();
+  await failedRow.locator('.track').click();
   // The download is retried once, then playback gives up on this track only.
   await expect
     .poll(() => countFor('track-2'), { timeout: 10_000 })
     .toBeGreaterThan(failedBefore);
   // The failed load hands over to the cached neighbour; the button returns to
   // "play" once that finishes, i.e. the failure never stuck the player.
-  await expect(page.locator('.controls .btn.main')).toHaveAttribute('aria-label', '播放', {
-    timeout: 15_000,
-  });
+  await expect
+    .poll(async () => page.locator('#armRotor').getAttribute('data-playing'), { timeout: 15_000 })
+    .toBe('false');
   await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
 
   await page.locator('[data-testid="settings-open"]').click();
   await expect(page.locator('[data-testid="source-row-onedrive"] .settings-error')).toBeVisible();
   await backToFolders(page);
 
-  await cachedRow.locator('.row-hit').click();
+  await cachedRow.locator('.track').click();
   await expectPlaying(page);
 });
 
@@ -247,12 +247,12 @@ test('local and OneDrive rows show source names together', async ({ page }) => {
   });
 
   await page.goto('/');
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
   await seedLocalLibrary(page);
   await page.reload();
 
   await expect(page.locator('[data-testid="folder-source-local"]')).toBeVisible();
-  await expect(page.locator('[data-testid="folder-source-local"] b')).toHaveText('本地');
+  await expect(page.locator('[data-testid="folder-source-local"] strong')).toHaveText('本地');
 
   await page.locator('[data-testid="settings-open"]').click();
   await page.locator('[data-testid="source-connect-onedrive"]').click();
@@ -266,8 +266,8 @@ test('local and OneDrive rows show source names together', async ({ page }) => {
   const cloudRow = page.locator('[data-testid="folder-source-onedrive"]');
   await expect(localRow).toBeVisible();
   await expect(cloudRow).toBeVisible();
-  await expect(localRow.locator('b')).toHaveText('本地');
-  await expect(cloudRow.locator('b')).toHaveText('OneDrive');
+  await expect(localRow.locator('strong')).toHaveText('本地');
+  await expect(cloudRow.locator('strong')).toHaveText('OneDrive');
   await expect(cloudRow).not.toContainText('Music');
 
   // The sync cached the cloud files only; local files stay where they are.
@@ -291,7 +291,7 @@ test('a granted source with zero tracks still gets a row', async ({ page }) => {
   await backToFolders(page);
   const row = page.locator('[data-testid="folder-source-onedrive"]');
   await expect(row).toBeVisible();
-  await expect(row.locator('b')).toHaveText('OneDrive');
+  await expect(row.locator('strong')).toHaveText('OneDrive');
 });
 
 test('removing a source drops its tracks and cached audio', async ({ page }) => {
@@ -301,7 +301,7 @@ test('removing a source drops its tracks and cached audio', async ({ page }) => 
   await signInAndPickMusic(page);
   await backToFolders(page);
   await openSource(page, 'onedrive');
-  const rows = page.locator('[data-testid="track-row"] .row-hit');
+  const rows = page.locator('[data-testid="track-row"] .track');
   await rows.first().click();
   await expectPlaying(page);
   await rows.nth(1).click();
@@ -331,7 +331,7 @@ test('clearing everything also clears the play log', async ({ page }) => {
   await signInAndPickMusic(page);
   await backToFolders(page);
   await openSource(page, 'onedrive');
-  await page.locator('[data-testid="track-row"] .row-hit').first().click();
+  await page.locator('[data-testid="track-row"] .track').first().click();
   await expectPlaying(page);
 
   await expect
@@ -339,7 +339,7 @@ test('clearing everything also clears the play log', async ({ page }) => {
     .toBeGreaterThan(0);
 
   // Pause first so no audio event lands after the clear.
-  await page.locator('.controls .btn.main').click();
+  await page.locator('.arm-head-hit').click();
   await page.waitForTimeout(300);
 
   await page.locator('[data-testid="settings-open"]').click();

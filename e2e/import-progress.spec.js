@@ -90,10 +90,10 @@ test('an OPFS import reports progress only in the header', async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 780 });
     await slowOpfsWrites(page);
     await page.goto('/');
-    await expect(page.locator('#app h1')).toBeVisible();
+    await expect(page.locator('.wordmark')).toBeVisible();
     await switchToImportMode(page);
     await page.reload();
-    await expect(page.locator('#app h1')).toBeVisible();
+    await expect(page.locator('.wordmark')).toBeVisible();
     await page.locator('[data-testid="settings-open"]').click();
 
     // There is exactly one progress surface for an import: the header.
@@ -105,29 +105,15 @@ test('an OPFS import reports progress only in the header', async ({ page }) => {
     await chooser.setFiles(dir);
 
     await expect(page.locator('#status')).toContainText('Importing', { timeout: 15_000 });
-    await expect(page.locator('[data-testid="scan-progress"]')).toBeVisible();
     // The source card must not repeat the import figure next to the header.
     await expect(
       page.locator('[data-testid="settings-library-local"] .settings-progress'),
     ).toBeHidden();
 
-    const percent = () =>
-      page.evaluate(() => {
-        const bar = document.querySelector('[data-testid="scan-progress"] i');
-        return bar ? Number.parseFloat(bar.style.width) || 0 : 0;
-      });
-    const first = await percent();
-    expect(first).toBeGreaterThan(0);
-    await expect.poll(percent, { timeout: 15_000 }).toBeGreaterThan(first);
-    // The bar never rewinds: the import percentage flows into the rescan.
-    const samples = [];
-    for (let index = 0; index < 8; index += 1) {
-      samples.push(await percent());
-      await page.waitForTimeout(40);
-    }
-    for (let index = 1; index < samples.length; index += 1) {
-      expect(samples[index]).toBeGreaterThanOrEqual(samples[index - 1] - 1);
-    }
+    // Progress is text next to the wordmark; there is no green bar.
+    await expect(page.locator('[data-testid="scan-progress"]')).toHaveCount(0);
+    const statusText = await page.locator('#status').textContent();
+    expect(statusText).toMatch(/Importing \d+ \/ \d+/);
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -135,9 +121,7 @@ test('an OPFS import reports progress only in the header', async ({ page }) => {
     expect(overflow).toBeLessThanOrEqual(0);
     await page.screenshot({ path: 'test-results/import-progress-360.png' });
 
-    await expect(page.locator('[data-testid="scan-progress"]')).toBeHidden({
-      timeout: 30_000,
-    });
+    await expect(page.locator('#status')).toBeHidden({ timeout: 30_000 });
     await page.locator('[data-testid="settings-close"]').click();
     await page.locator('[data-testid="folder-source-local"]').click();
     await expect(page.locator('[data-testid="track-row"]')).toHaveCount(FILES);

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('the about card opens, copies and clears the playback log', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
   await page.locator('[data-testid="settings-open"]').click();
   const about = page.locator('[data-testid="settings-section-about"]');

@@ -48,7 +48,7 @@ test('changing the OneDrive folder drops the old index and cache', async ({ page
   });
 
   await page.goto('/');
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
   await page.locator('[data-testid="settings-open"]').click();
   await page.locator('[data-testid="source-connect-onedrive"]').click();

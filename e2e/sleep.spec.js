@@ -87,22 +87,22 @@ test('sleep timer set to end of track stops after one song', async ({ page }) =>
   });
 
   await page.goto('/');
-  await expect(page.locator('#app h1')).toBeVisible();
+  await expect(page.locator('.wordmark')).toBeVisible();
 
   await seedLibrary(page);
   await page.reload();
 
   await page.locator('[data-testid="folder-source-local"]').click();
   await page.locator('[data-testid="folder-dir-Music"]').click();
-  const rows = page.locator('[data-testid="track-row"] .row-hit');
+  const rows = page.locator('[data-testid="track-row"] .track');
   await expect(rows).toHaveCount(2);
 
   await page.locator('[data-testid="settings-open"]').click();
   await page.locator('[data-testid="sleep-timer"]').selectOption('end');
   await expect(page.locator('[data-testid="sleep-timer"]')).toHaveValue('end');
-  await page.locator('[data-testid="settings-close"]').click();
+  await page.locator('[data-testid="panel-open"]').click();
 
-  const nowTitle = page.locator('.player .meta h2');
+  const nowTitle = page.locator('.song');
   await rows.first().click();
   await expect(nowTitle).toHaveText('a');
   await expect(page.locator('.player')).toHaveClass(/playing/);
@@ -112,5 +112,5 @@ test('sleep timer set to end of track stops after one song', async ({ page }) =>
 
   await expect(nowTitle).toHaveText('a');
   await expect(page.locator('.player')).not.toHaveClass(/playing/);
-  await expect(page.locator('.btn.main')).toHaveAttribute('aria-label', '播放');
+  await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'false');
 });

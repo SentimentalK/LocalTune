@@ -1,90 +1,110 @@
 import { expect, test } from '@playwright/test';
+import { openSeededLibrary } from './support/seed.js';
 
-// Narrow-phone transport row: every control must share the play button's
-// centre line, the row must fit without horizontal overflow, and the active
-// repeat control must read as the same solid accent button as play.
+// The tonearm is the transport: tap toggles playback, arrow keys seek. There is
+// no second control row on any viewport.
 
-async function layout(page) {
-  await page.goto('/');
-  await expect(page.locator('#app h1')).toBeVisible();
-
-  const controls = page.locator('.controls');
-  const buttons = controls.locator('.btn');
-  await expect(buttons).toHaveCount(5);
-
-  const boxes = [];
-  for (let index = 0; index < 5; index += 1) {
-    const box = await buttons.nth(index).boundingBox();
-    expect(box).not.toBeNull();
-    boxes.push(box);
-  }
-
-  const mainCenterY = boxes[2].y + boxes[2].height / 2;
-  for (const index of [0, 1, 3, 4]) {
-    const centerY = boxes[index].y + boxes[index].height / 2;
-    expect(Math.abs(centerY - mainCenterY)).toBeLessThanOrEqual(1);
-  }
-
-  const controlsBox = await controls.boundingBox();
-  const { width, height, scrollWidth } = await page.evaluate(() => ({
-    width: window.innerWidth,
-    height: window.innerHeight,
-    scrollWidth: document.documentElement.scrollWidth,
-  }));
-  expect(controlsBox.x).toBeGreaterThanOrEqual(0);
-  expect(controlsBox.y).toBeGreaterThanOrEqual(0);
-  expect(controlsBox.x + controlsBox.width).toBeLessThanOrEqual(width);
-  expect(controlsBox.y + controlsBox.height).toBeLessThanOrEqual(height);
-  expect(scrollWidth).toBeLessThanOrEqual(width);
-
-  // Resolve theme colours through a probe; never pin hex values here.
-  const theme = await page.evaluate(() => {
-    const rgb = (value) => {
-      const probe = document.createElement('span');
-      probe.style.color = value.trim();
-      document.body.append(probe);
-      const out = getComputedStyle(probe).color;
-      probe.remove();
-      return out;
-    };
-    const root = getComputedStyle(document.documentElement);
-    return {
-      accent: rgb(root.getPropertyValue('--accent')),
-      accentFg: rgb(root.getPropertyValue('--accent-fg')),
-      surface: rgb(root.getPropertyValue('--surface')),
-    };
-  });
-
-  const repeat = page.locator('[data-testid="control-repeat"]');
-  await repeat.click();
-  await expect(repeat).toHaveAttribute('aria-pressed', 'true');
-  // `.btn` transitions `color` over 120 ms; poll until it reaches the target.
-  await expect(repeat).toHaveCSS('color', theme.accentFg);
-
-  const background = (selector) =>
-    page.evaluate(
-      (target) => getComputedStyle(document.querySelector(target)).backgroundColor,
-      selector,
-    );
-  expect(await background('[data-testid="control-repeat"]')).toBe(theme.accent);
-  expect(await background('[data-testid="control-shuffle"]')).toBe(theme.surface);
-  expect(theme.surface).not.toBe(theme.accent);
+async function openPlaying(page) {
+  await openSeededLibrary(page);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'true');
 }
 
-test.describe('transport row at 390x844', () => {
+test.describe('tonearm transport at 390x844', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('controls align, fit, and show the accent when active', async ({ page }) => {
-    await layout(page);
+  test('tap pauses and resumes, arrows seek', async ({ page }) => {
+    await openPlaying(page);
+    const arm = page.locator('#armRotor');
+
+    await page.evaluate(() => document.activeElement?.blur?.());
+    await page.keyboard.press('Space');
+    await expect(arm).toHaveAttribute('data-playing', 'false');
+    await page.keyboard.press('Space');
+    await expect(arm).toHaveAttribute('data-playing', 'true');
+
+    await arm.evaluate((node) => node.focus());
+    await page.keyboard.press('Enter');
+    await expect(arm).toHaveAttribute('data-playing', 'false');
+    await expect(arm).toHaveAttribute('aria-valuetext', /0:0\d \/ 1:00/);
+
+    await arm.evaluate((node) => node.focus());
+    await page.keyboard.press('ArrowRight');
+    await expect
+      .poll(async () => Number(await arm.getAttribute('aria-valuenow')), { timeout: 3_000 })
+      .toBeGreaterThan(0);
+    const seeked = Number(await arm.getAttribute('aria-valuenow'));
+    expect(seeked).toBeGreaterThan(0);
+
+    // Parked arm is a stable tap target: tap resumes from the new position.
+    await page.locator('.arm-head-hit').click();
+    await expect(arm).toHaveAttribute('data-playing', 'true');
+
     await page.screenshot({ path: 'test-results/transport-390.png' });
+  });
+
+  test('dragging the arm seeks and resumes, swiping changes tracks', async ({ page }) => {
+    await openPlaying(page);
+    const arm = page.locator('#armRotor');
+
+    // Park the arm first so its head has a stable hit box.
+    await arm.evaluate((node) => node.focus());
+    await page.keyboard.press('Enter');
+    await expect(arm).toHaveAttribute('data-playing', 'false');
+
+    const head = await page.locator('.arm-head-hit').boundingBox();
+    expect(head).not.toBeNull();
+    const startX = head.x + head.width / 2;
+    const startY = head.y + head.height / 2;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX - 26, startY + 26, { steps: 12 });
+    await page.mouse.up();
+
+    await expect(arm).toHaveAttribute('data-playing', 'true');
+    await expect
+      .poll(async () => Number(await arm.getAttribute('aria-valuenow')), { timeout: 5_000 })
+      .toBeGreaterThan(0);
+
+    // Horizontal swipe on the stage: left = next track.
+    const before = await page.locator('.song').textContent();
+    await page.evaluate(() => {
+      const stage = document.querySelector('.stage');
+      const fire = (type, x, y) =>
+        stage.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            pointerId: 7,
+            pointerType: 'touch',
+            clientX: x,
+            clientY: y,
+          }),
+        );
+      fire('pointerdown', 260, 300);
+      fire('pointermove', 160, 302);
+      fire('pointerup', 160, 302);
+    });
+    await expect
+      .poll(async () => page.locator('.song').textContent(), { timeout: 5_000 })
+      .not.toBe(before);
   });
 });
 
-test.describe('transport row at 360x780', () => {
+test.describe('tonearm transport at 360x780', () => {
   test.use({ viewport: { width: 360, height: 780 } });
 
-  test('controls align, fit, and show the accent when active', async ({ page }) => {
-    await layout(page);
+  test('stage, modes and inline library fit without horizontal overflow', async ({ page }) => {
+    await openPlaying(page);
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+
+    await expect(page.locator('.controls')).toHaveCount(0);
+    await expect(page.locator('.progress')).toHaveCount(0);
+    await expect(page.locator('#tab-folders')).toBeVisible();
+
     await page.screenshot({ path: 'test-results/transport-360.png' });
   });
 });

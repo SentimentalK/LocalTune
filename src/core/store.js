@@ -53,6 +53,7 @@ import { initInstall } from './install.js';
 import { createPlayCounter, applyPlay, ensureAdded } from './stats.js';
 import { createSleepTimer } from './sleepTimer.js';
 import { decideGain } from './gain.js';
+import { DEMO_BY_ID, DEMO_TRACKS, isDemoTrack } from './demo.js';
 import { parseReplayGain } from './metadata/id3.js';
 import {
   loadPlayback,
@@ -228,6 +229,7 @@ export class Store extends EventTarget {
     this._migrating = false;
     this._enrichQueues = new Map();
     this._loading = false;
+    this._pauseAfterLoad = false;
     this._loadedId = null;
     this._pendingSeek = null;
     this._lastSyncAt = 0;
@@ -486,21 +488,22 @@ export class Store extends EventTarget {
     }
 
     const volume = Number.isFinite(playback?.volume) ? playback.volume : 1;
-    if (tracks.length) {
-      const byId = new Map(tracks.map((track) => [track.id, track]));
-      let queueTracks = tracks;
-      let startIndex = 0;
-      if (playback?.queueIds?.length) {
-        const restored = playback.queueIds.map((id) => byId.get(id)).filter(Boolean);
-        if (restored.length) {
-          queueTracks = restored;
-          startIndex = clamp(playback.queueIndex ?? 0, 0, restored.length - 1);
-        }
-      }
+    const demoDismissed = Boolean(await getMeta(this.db, 'demoDismissed').catch(() => false));
+    const byId = new Map(tracks.map((track) => [track.id, track]));
+    if (!demoDismissed) {
+      for (const [id, track] of DEMO_BY_ID) byId.set(id, track);
+    }
+    const restored =
+      playback?.queueIds?.map((id) => byId.get(id)).filter(Boolean) ?? [];
+    const queueTracks = restored.length ? restored : tracks;
+
+    if (queueTracks.length) {
+      let startIndex = Number.isInteger(playback?.queueIndex) ? playback.queueIndex : 0;
       if (playback?.trackId) {
         const found = queueTracks.findIndex((track) => track.id === playback.trackId);
         if (found >= 0) startIndex = found;
       }
+      startIndex = clamp(startIndex, 0, queueTracks.length - 1);
       this.queue = setQueue(
         { ...createQueue([]), shuffle: initialShuffle, repeat: initialRepeat },
         queueTracks,
@@ -517,6 +520,25 @@ export class Store extends EventTarget {
         volume,
       };
       this._pendingSeek = position > 0 ? position : null;
+      this.player?.setVolume(volume);
+      this._reflectQueue();
+    } else if (!demoDismissed) {
+      // First launch with an empty library: the demo records live only in the
+      // queue. Any play of the user's own music, or clearing/removing them,
+      // marks them dismissed permanently.
+      this.queue = setQueue(
+        { ...createQueue([]), shuffle: initialShuffle, repeat: initialRepeat },
+        DEMO_TRACKS,
+        0,
+      );
+      const track = DEMO_TRACKS[0];
+      this._state.current = {
+        track,
+        playing: false,
+        position: 0,
+        duration: track.duration,
+        volume,
+      };
       this.player?.setVolume(volume);
       this._reflectQueue();
     } else {
@@ -1265,6 +1287,9 @@ export class Store extends EventTarget {
   /** Empty the play queue; the library and the playing file stay untouched. */
   clearQueue() {
     if (!this.queue.tracks.length) return;
+    if (this.queue.tracks.some(isDemoTrack)) {
+      void setMeta(this.db, 'demoDismissed', true).catch(() => {});
+    }
     this.player?.pause();
     this._loadedId = null;
     this.queue = createQueue([]);
@@ -1323,6 +1348,9 @@ export class Store extends EventTarget {
   async playQueue(tracks, startId, source = 'user') {
     const list = Array.from(tracks ?? []);
     if (!list.length) return;
+    if (!list.some(isDemoTrack) && this.queue.tracks.some(isDemoTrack)) {
+      void setMeta(this.db, 'demoDismissed', true).catch(() => {});
+    }
     let startIndex = list.findIndex((track) => track.id === startId);
     if (startIndex < 0) startIndex = 0;
     this.queue = setQueue(this.queue, list, startIndex);
@@ -1350,6 +1378,14 @@ export class Store extends EventTarget {
   toggle() {
     if (!this.player) return;
     this.log('control', { action: 'toggle' });
+    if (this._loading) {
+      // The load will start playback a moment later. The first tap parks it;
+      // a second tap before the load finishes lets it play.
+      this._pauseAfterLoad = !this._pauseAfterLoad;
+      this._state.current.playing = !this._pauseAfterLoad;
+      this._emit();
+      return;
+    }
     if (this._state.current.playing) {
       this.player.pause();
       return;
@@ -1534,6 +1570,9 @@ export class Store extends EventTarget {
 
   removeQueueAt(index) {
     const before = this.queue;
+    if (isDemoTrack(before.tracks[index])) {
+      void setMeta(this.db, 'demoDismissed', true).catch(() => {});
+    }
     const removedCurrent = before.index === index;
     const next = removeAtState(before, index);
     if (next === before) return;
@@ -1638,7 +1677,12 @@ export class Store extends EventTarget {
 
   /** ReplayGain for one track; every failure falls back to unity gain. */
   async _applyGainForTrack(track) {
-    if (!this._state.settings.leveling || !this.player || track?.source === 'onedrive') {
+    if (
+      !this._state.settings.leveling ||
+      !this.player ||
+      track?.source === 'onedrive' ||
+      track?.demoUrl
+    ) {
       this.player?.setGain(null);
       return;
     }
@@ -1780,6 +1824,10 @@ export class Store extends EventTarget {
     const { state } = advance(this.queue, { auto: true });
     const next = currentTrack(state);
     if (!next) return;
+    if (next.demoUrl) {
+      this.log('prefetch', { id: next.id, ok: false, skipped: 'demo' });
+      return;
+    }
     if (kindOfTrack(next) !== 'local') {
       // Remote sources fetch a whole file per read; eager prefetch would
       // double the network traffic for tracks that may never play.
@@ -1800,23 +1848,32 @@ export class Store extends EventTarget {
   async _loadTrack(track, { play = true, position = 0, source = 'user' } = {}) {
     if (!track || !this.player) return false;
     this._loading = true;
+    this._pauseAfterLoad = false;
     this._state.current.playing = Boolean(play);
     this._state.current.position = position;
     if (track.duration) this._state.current.duration = track.duration;
     this._pendingSeek = position > 0 ? position : null;
     this._emit();
     try {
-      const adapter = this._adapterForTrack(track);
-      const opened =
-        typeof adapter.open === 'function'
-          ? await adapter.open(track.path, { itemId: track.externalIds?.onedrive ?? null })
-          : { file: await adapter.getFile(track.path) };
+      const opened = track.demoUrl
+        ? { url: track.demoUrl }
+        : await (async () => {
+            const adapter = this._adapterForTrack(track);
+            return typeof adapter.open === 'function'
+              ? adapter.open(track.path, { itemId: track.externalIds?.onedrive ?? null })
+              : { file: await adapter.getFile(track.path) };
+          })();
       if (currentTrack(this.queue)?.id !== track.id) return false;
       if (opened.file) {
         await this.player.load(opened.file);
         this._loadedId = track.id;
         this._applyPendingSeek();
         if (play) await this.player.play();
+        if (this._pauseAfterLoad) {
+          this._pauseAfterLoad = false;
+          this.player.pause();
+          this._state.current.playing = false;
+        }
       } else if (opened.url) {
         // The download URL plays immediately. The body keeps copying into
         // the cache; a cache failure must not cancel the song already playing.
@@ -1825,11 +1882,18 @@ export class Store extends EventTarget {
         this._applyPendingSeek();
         if (play) {
           const pending = this.player.playNow();
-          pending.catch((error) => {
-            this._state.current.playing = false;
-            this.log('playblocked', { error: String(error?.name ?? error) });
-            this._emit();
-          });
+          pending
+            .then(() => {
+              if (!this._pauseAfterLoad) return;
+              this._pauseAfterLoad = false;
+              this.player.pause();
+              this._state.current.playing = false;
+            })
+            .catch((error) => {
+              this._state.current.playing = false;
+              this.log('playblocked', { error: String(error?.name ?? error) });
+              this._emit();
+            });
         }
         if (opened.cache && typeof opened.cache.then === 'function') {
           void opened.cache.catch((error) => {

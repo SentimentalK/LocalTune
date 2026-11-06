@@ -37,7 +37,8 @@ export default {
   'tabs.queue': '대기열',
   'vip.open': 'VIP',
   'vip.title': 'VIP',
-  'vip.subtitle': '음악 다운로드',
+  'vip.subtitle': '더 나은 다운로드를 개발 중',
+  'vip.downtify.temporary': '지금은 Downtify를 사용하세요.',
   'vip.downtify.title': 'Downtify로 음악 다운로드',
   'vip.downtify.about':
     'LocalTune은 이미 가지고 있는 오디오 파일만 재생합니다. 음악을 다운로드하거나 캡처하지 않습니다.',
@@ -256,6 +257,19 @@ export default {
   'settings.playback.levelingShort': '볼륨',
   'settings.playback.gaplessShort': '끊김 없음',
   'settings.playback.gapless': '끊김 없는 재생',
+
+  'panel.libraryTitle': '당신의 레코드.',
+  'panel.settingsTitle': '설정.',
+  'panel.vipTitle': 'VIP.',
+  'panel.libraryKicker': '당신의 음악 / {count}곡',
+  'panel.settingsKicker': '환경설정 / 이 기기에서만',
+  'panel.vipKicker': 'VIP / 개발 중',
+  'panel.close': '패널 닫기',
+  'theme.switch': '테마 색상 변경, 현재 {name}',
+  'aria.tonearm': '톤암: {state}. 탭하여 {action}, 드래그하여 탐색',
+  'player.statusPlaying': '재생 중',
+  'player.statusPaused': '일시정지됨',
+  'player.statusStopped': '정지됨',
 
   'error.db.writeStats': '재생 통계 쓰기 실패',
 };

@@ -37,7 +37,8 @@ export default {
   'tabs.queue': 'Очередь',
   'vip.open': 'VIP',
   'vip.title': 'VIP',
-  'vip.subtitle': 'Скачать музыку',
+  'vip.subtitle': 'Улучшенные загрузки в разработке',
+  'vip.downtify.temporary': 'Пока используйте Downtify.',
   'vip.downtify.title': 'Скачивайте музыку с Downtify',
   'vip.downtify.about':
     'LocalTune только воспроизводит аудиофайлы, которые у вас уже есть. Он не скачивает и не захватывает музыку.',
@@ -256,6 +257,19 @@ export default {
   'settings.playback.levelingShort': 'Громкость',
   'settings.playback.gaplessShort': 'Без пауз',
   'settings.playback.gapless': 'Без пауз между треками',
+
+  'panel.libraryTitle': 'Ваши пластинки.',
+  'panel.settingsTitle': 'Настройки.',
+  'panel.vipTitle': 'VIP.',
+  'panel.libraryKicker': 'ВАША МУЗЫКА / {count} ТРЕКОВ',
+  'panel.settingsKicker': 'НАСТРОЙКИ / ТОЛЬКО ЛОКАЛЬНО',
+  'panel.vipKicker': 'VIP / В РАЗРАБОТКЕ',
+  'panel.close': 'Закрыть панель',
+  'theme.switch': 'Сменить цветовую тему, сейчас {name}',
+  'aria.tonearm': 'Тонарм: {state}. Нажмите для {action}, тяните для перемотки',
+  'player.statusPlaying': 'Играет',
+  'player.statusPaused': 'Пауза',
+  'player.statusStopped': 'Остановлено',
 
   'error.db.writeStats': 'Не удалось записать статистику воспроизведения',
 };

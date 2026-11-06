@@ -16,7 +16,7 @@ async function waitForServiceWorker(page) {
 
 async function signInAndPickMusic(page) {
   await page.goto('/');
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
   await page.locator('[data-testid="settings-open"]').click();
   await page.locator('[data-testid="source-connect-onedrive"]').click();
@@ -38,17 +38,17 @@ async function signInAndPickMusic(page) {
     'aria-label',
     '更换文件夹',
   );
-  await page.locator('[data-testid="settings-close"]').click();
+  await page.locator('[data-testid="panel-open"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();
 }
 
 function elapsed(page) {
-  return page.locator('.progress time').first().textContent();
+  return page.locator('#armRotor').getAttribute('aria-valuenow');
 }
 
 async function expectPlaying(page) {
-  await expect(page.locator('.controls .btn.main')).toHaveAttribute('aria-label', '暂停');
-  await expect.poll(() => elapsed(page), { timeout: 10_000 }).not.toBe('0:00');
+  await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'true');
+  await expect.poll(() => elapsed(page), { timeout: 10_000 }).not.toBe('0');
 }
 
 test('audio cache hits, offline replay and Clear all', async ({ page, context }) => {
@@ -63,7 +63,7 @@ test('audio cache hits, offline replay and Clear all', async ({ page, context })
 
   // ---- 0. a returning user lands on the library, not the picker ----------
   await page.reload();
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
   await expect(page.locator('#tab-folders')).toBeVisible();
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
   await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
@@ -72,19 +72,19 @@ test('audio cache hits, offline replay and Clear all', async ({ page, context })
   await expect(page.locator('[data-testid="folder-dir-Jazz"]')).toBeVisible();
 
   // ---- 1. playback after the sync downloads nothing ----------------------
-  await page.locator('[data-testid="track-row"] .row-hit').first().click();
+  await page.locator('[data-testid="track-row"] .track').first().click();
   await expectPlaying(page);
   await page.waitForTimeout(500);
   expect(mock.wholeRequests).toHaveLength(2);
 
   await page.locator('[data-testid="folder-dir-Jazz"]').click();
-  await page.locator('[data-testid="track-row"] .row-hit').first().click();
+  await page.locator('[data-testid="track-row"] .track').first().click();
   await expectPlaying(page);
   await page.waitForTimeout(500);
   expect(mock.wholeRequests).toHaveLength(2);
 
   await page.locator('[data-testid="folder-up"]').click();
-  await page.locator('[data-testid="track-row"] .row-hit').first().click();
+  await page.locator('[data-testid="track-row"] .track').first().click();
   await expectPlaying(page);
   // The cached track is served from Cache Storage: no new whole request.
   await page.waitForTimeout(500);
@@ -93,13 +93,13 @@ test('audio cache hits, offline replay and Clear all', async ({ page, context })
   // ---- 2. cached playback survives an offline reload ---------------------
   await context.setOffline(true);
   await page.reload();
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
   await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
 
   await page.locator('[data-testid="folder-source-onedrive"]').click();
-  await expect(page.locator('[data-testid="track-row"] .row-hit').first()).toBeVisible();
-  await page.locator('[data-testid="track-row"] .row-hit').first().click();
+  await expect(page.locator('[data-testid="track-row"] .track').first()).toBeVisible();
+  await page.locator('[data-testid="track-row"] .track').first().click();
   await expectPlaying(page);
   await context.setOffline(false);
 

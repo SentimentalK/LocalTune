@@ -47,7 +47,7 @@ test('import mode copies files into OPFS and survives a reload', async ({ page }
 
   try {
     await page.goto('/');
-    await expect(page.locator('#app h1')).toBeVisible();
+    await expect(page.locator('.wordmark')).toBeVisible();
     await page.evaluate(
       () =>
         new Promise((resolve, reject) => {
@@ -66,7 +66,7 @@ test('import mode copies files into OPFS and survives a reload', async ({ page }
         }),
     );
     await page.reload();
-    await expect(page.locator('#app h1')).toBeVisible();
+    await expect(page.locator('.wordmark')).toBeVisible();
     await page.locator('[data-testid="settings-open"]').click();
 
     const chooserPromise = page.waitForEvent('filechooser');
@@ -77,19 +77,19 @@ test('import mode copies files into OPFS and survives a reload', async ({ page }
     await expect(page.locator('[data-testid="scan-progress"]')).toBeHidden({
       timeout: 20_000,
     });
-    await page.locator('[data-testid="settings-close"]').click();
+    await page.locator('[data-testid="panel-open"]').click();
     await page.locator('[data-testid="folder-source-local"]').click();
     await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
 
     chooserCount = 0;
     await page.reload();
-    await expect(page.locator('#app h1')).toBeVisible();
+    await expect(page.locator('.wordmark')).toBeVisible();
     await page.locator('[data-testid="folder-source-local"]').click();
     await expect(page.locator('[data-testid="track-row"]')).toHaveCount(2);
     expect(chooserCount).toBe(0);
 
-    await page.locator('[data-testid="track-row"] .row-hit').first().click();
-    await expect(page.locator('.player .meta h2')).not.toHaveText('');
+    await page.locator('[data-testid="track-row"] .track').first().click();
+    await expect(page.locator('.song')).not.toHaveText('');
     await expect
       .poll(() => page.evaluate(() => document.querySelector('audio')?.paused ?? true))
       .toBe(false);
@@ -112,7 +112,7 @@ test('import mode copies files into OPFS and survives a reload', async ({ page }
     });
     expect(opfs.folderExists).toBe(false);
 
-    await page.locator('[data-testid="settings-close"]').click();
+    await page.locator('[data-testid="panel-open"]').click();
     await expect(page.locator('[data-testid="folder-source-local"]')).toHaveCount(0);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -272,8 +272,8 @@ test('manifest ships two any and two maskable icons with matching PNG sizes', as
   expect(response.status()).toBe(200);
   const manifest = await response.json();
 
-  expect(manifest.theme_color).toBe('#f6f5f1');
-  expect(manifest.background_color).toBe('#f6f5f1');
+  expect(manifest.theme_color).toBe('#101921');
+  expect(manifest.background_color).toBe('#101921');
   expect(manifest.icons).toHaveLength(4);
   expect(manifest.icons.filter((icon) => icon.purpose === 'any')).toHaveLength(2);
   expect(manifest.icons.filter((icon) => icon.purpose === 'maskable')).toHaveLength(2);

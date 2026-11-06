@@ -37,7 +37,8 @@ export default {
   'tabs.queue': 'Cola',
   'vip.open': 'VIP',
   'vip.title': 'VIP',
-  'vip.subtitle': 'Descargar música',
+  'vip.subtitle': 'Mejores descargas, en desarrollo',
+  'vip.downtify.temporary': 'Por ahora, usa Downtify.',
   'vip.downtify.title': 'Descarga música con Downtify',
   'vip.downtify.about':
     'LocalTune solo reproduce archivos de audio que ya tienes. Nunca descarga ni captura música.',
@@ -260,6 +261,19 @@ export default {
   'settings.playback.levelingShort': 'Volumen',
   'settings.playback.gaplessShort': 'Sin pausas',
   'settings.playback.gapless': 'Reproducción sin pausas',
+
+  'panel.libraryTitle': 'Tus discos.',
+  'panel.settingsTitle': 'Ajustes.',
+  'panel.vipTitle': 'VIP.',
+  'panel.libraryKicker': 'TU MÚSICA / {count} PISTAS',
+  'panel.settingsKicker': 'PREFERENCIAS / SOLO LOCAL',
+  'panel.vipKicker': 'VIP / EN DESARROLLO',
+  'panel.close': 'Cerrar panel',
+  'theme.switch': 'Cambiar tema de color, actual {name}',
+  'aria.tonearm': 'Brazo: {state}. Toca para {action}, arrastra para buscar',
+  'player.statusPlaying': 'Reproduciendo',
+  'player.statusPaused': 'En pausa',
+  'player.statusStopped': 'Detenido',
 
   'error.db.writeStats': 'Error al escribir las estadísticas de reproducción',
 };

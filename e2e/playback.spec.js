@@ -113,17 +113,17 @@ test('auto-advance plays three tracks gaplessly and logs the run', async ({ page
   });
 
   await page.goto('/');
-  await expect(page.locator('#app h1')).toBeVisible();
+  await expect(page.locator('.wordmark')).toBeVisible();
 
   await seedLibrary(page);
   await page.reload();
 
-  await expect(page.locator('#app h1')).toBeVisible();
+  await expect(page.locator('.wordmark')).toBeVisible();
   await page.locator('[data-testid="folder-source-local"]').click();
   await page.locator('[data-testid="folder-dir-Music"]').click();
-  const rows = page.locator('[data-testid="track-row"] .row-hit');
+  const rows = page.locator('[data-testid="track-row"] .track');
   await expect(rows).toHaveCount(3);
-  const nowTitle = page.locator('.player .meta h2');
+  const nowTitle = page.locator('.song');
   await expect(nowTitle).toHaveText('a');
 
   await rows.first().click();
@@ -161,11 +161,11 @@ test('auto-advance plays three tracks gaplessly and logs the run', async ({ page
 
 test('shuffle and repeat survive an immediate reload', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('#app h1')).toBeVisible();
+  await expect(page.locator('.wordmark')).toBeVisible();
 
   const shuffle = page.locator('[data-testid="control-shuffle"]');
   const repeat = page.locator('[data-testid="control-repeat"]');
-  const repeatD = await repeat.locator('path').getAttribute('d');
+  const repeatHref = await repeat.locator('use').getAttribute('href');
 
   await shuffle.click();
   await repeat.click();
@@ -176,21 +176,23 @@ test('shuffle and repeat survive an immediate reload', async ({ page }) => {
     await expect(repeat).toHaveClass(/is-on/);
     await expect(repeat).toHaveAttribute('aria-pressed', 'true');
     // `all` keeps the plain repeat glyph; only `one` swaps in repeat-one.
-    expect(await repeat.locator('path').getAttribute('d')).toBe(repeatD);
+    expect(await repeat.locator('use').getAttribute('href')).toBe(repeatHref);
     await expect(page.locator('.controls .badge')).toHaveCount(0);
   };
 
   // Reload before the 1s IndexedDB debounce can flush: prefs must be enough.
   await page.reload();
-  await expect(page.locator('#app h1')).toBeVisible();
+  await expect(page.locator('.wordmark')).toBeVisible();
   await selected();
 
   await page.reload();
-  await expect(page.locator('#app h1')).toBeVisible();
+  await expect(page.locator('.wordmark')).toBeVisible();
   await selected();
 
   // Read the theme from the CSS variables instead of pinning a colour: a
   // theme change must not turn this into a false failure.
+  // Let the mode's colour transition settle before sampling computed styles.
+  await page.waitForTimeout(300);
   const style = await page.evaluate(() => {
     const button = document.querySelector('[data-testid="control-shuffle"]');
     const computed = getComputedStyle(button);
@@ -207,13 +209,11 @@ test('shuffle and repeat survive an immediate reload', async ({ page }) => {
       background: computed.backgroundColor,
       color: computed.color,
       accent: rgb(root.getPropertyValue('--accent')),
-      accentFg: rgb(root.getPropertyValue('--accent-fg')),
-      surface: rgb(root.getPropertyValue('--surface')),
+      bg: rgb(root.getPropertyValue('--bg')),
     };
   });
-  expect(style.background).toBe(style.accent);
-  expect(style.background).not.toBe(style.surface);
-  expect(style.color).toBe(style.accentFg);
+  expect(style.color).toBe(style.accent);
+  expect(style.background).toBe('rgba(0, 0, 0, 0)');
 
   const luminance = (rgbText) => {
     const [r, g, b] = rgbText.match(/\d+/g).slice(0, 3).map((value) => {
@@ -227,15 +227,15 @@ test('shuffle and repeat survive an immediate reload', async ({ page }) => {
     const b = luminance(second);
     return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
   };
-  expect(ratio(style.background, style.color)).toBeGreaterThanOrEqual(4.5);
+  expect(ratio(style.color, style.bg)).toBeGreaterThanOrEqual(4.5);
 });
 
 test('repeat cycles off → all → one → off with the icon following the mode', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('#app h1')).toBeVisible();
+  await expect(page.locator('.wordmark')).toBeVisible();
 
   const repeat = page.locator('[data-testid="control-repeat"]');
-  const repeatD = await repeat.locator('path').getAttribute('d');
+  const repeatHref = await repeat.locator('use').getAttribute('href');
 
   await expect(repeat).toHaveAttribute('aria-pressed', 'false');
   await expect(repeat).not.toHaveClass(/is-on/);
@@ -247,30 +247,30 @@ test('repeat cycles off → all → one → off with the icon following the mode
   await expect(repeat).toHaveAttribute('aria-pressed', 'true');
   await expect(repeat).toHaveClass(/is-on/);
   await expect(repeat).toHaveAttribute('aria-label', '循环：列表');
-  expect(await repeat.locator('path').getAttribute('d')).toBe(repeatD);
+  expect(await repeat.locator('use').getAttribute('href')).toBe(repeatHref);
 
   await repeat.click();
   await expect(repeat).toHaveAttribute('aria-pressed', 'true');
   await expect(repeat).toHaveClass(/is-on/);
   await expect(repeat).toHaveAttribute('aria-label', '循环：单曲');
-  const oneD = await repeat.locator('path').getAttribute('d');
-  expect(oneD).not.toBe(repeatD);
+  const oneHref = await repeat.locator('use').getAttribute('href');
+  expect(oneHref).not.toBe(repeatHref);
 
   await repeat.click();
   await expect(repeat).toHaveAttribute('aria-pressed', 'false');
   await expect(repeat).not.toHaveClass(/is-on/);
   await expect(repeat).toHaveAttribute('aria-label', '循环：关闭');
-  expect(await repeat.locator('path').getAttribute('d')).toBe(repeatD);
-  expect(oneD).not.toBe(repeatD);
+  expect(await repeat.locator('use').getAttribute('href')).toBe(repeatHref);
+  expect(oneHref).not.toBe(repeatHref);
 
   await repeat.click();
   await repeat.click();
   await expect(repeat).toHaveAttribute('aria-label', '循环：单曲');
 
   await page.reload();
-  await expect(page.locator('#app h1')).toBeVisible();
+  await expect(page.locator('.wordmark')).toBeVisible();
   await expect(repeat).toHaveAttribute('aria-pressed', 'true');
   await expect(repeat).toHaveClass(/is-on/);
   await expect(repeat).toHaveAttribute('aria-label', '循环：单曲');
-  expect(await repeat.locator('path').getAttribute('d')).not.toBe(repeatD);
+  expect(await repeat.locator('use').getAttribute('href')).not.toBe(repeatHref);
 });

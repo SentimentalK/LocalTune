@@ -37,7 +37,8 @@ export default {
   'tabs.queue': 'Warteschlange',
   'vip.open': 'VIP',
   'vip.title': 'VIP',
-  'vip.subtitle': 'Musik herunterladen',
+  'vip.subtitle': 'Bessere Downloads in Arbeit',
+  'vip.downtify.temporary': 'Nutze vorerst Downtify.',
   'vip.downtify.title': 'Musik mit Downtify herunterladen',
   'vip.downtify.about':
     'LocalTune spielt nur Audiodateien ab, die du bereits hast. Es lädt keine Musik herunter und greift keine ab.',
@@ -259,6 +260,19 @@ export default {
   'settings.playback.levelingShort': 'Lautstärke',
   'settings.playback.gaplessShort': 'Lückenlos',
   'settings.playback.gapless': 'Lückenlose Wiedergabe',
+
+  'panel.libraryTitle': 'Deine Platten.',
+  'panel.settingsTitle': 'Einstellungen.',
+  'panel.vipTitle': 'VIP.',
+  'panel.libraryKicker': 'DEINE MUSIK / {count} TITEL',
+  'panel.settingsKicker': 'EINSTELLUNGEN / NUR LOKAL',
+  'panel.vipKicker': 'VIP / IN ARBEIT',
+  'panel.close': 'Panel schließen',
+  'theme.switch': 'Farbschema ändern, aktuell {name}',
+  'aria.tonearm': 'Tonarm: {state}. Tippen zum {action}, ziehen zum Spulen',
+  'player.statusPlaying': 'Wiedergabe',
+  'player.statusPaused': 'Pausiert',
+  'player.statusStopped': 'Gestoppt',
 
   'error.db.writeStats': 'Schreiben der Wiedergabestatistik fehlgeschlagen',
 };

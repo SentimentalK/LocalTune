@@ -37,7 +37,8 @@ export default {
   'tabs.queue': 'Fila',
   'vip.open': 'VIP',
   'vip.title': 'VIP',
-  'vip.subtitle': 'Baixar música',
+  'vip.subtitle': 'Downloads melhores, em desenvolvimento',
+  'vip.downtify.temporary': 'Por enquanto, use o Downtify.',
   'vip.downtify.title': 'Baixe música com o Downtify',
   'vip.downtify.about':
     'O LocalTune só reproduz arquivos de áudio que você já tem. Ele nunca baixa nem captura música.',
@@ -258,6 +259,19 @@ export default {
   'settings.playback.levelingShort': 'Volume',
   'settings.playback.gaplessShort': 'Sem pausas',
   'settings.playback.gapless': 'Reprodução sem pausas',
+
+  'panel.libraryTitle': 'Seus discos.',
+  'panel.settingsTitle': 'Configurações.',
+  'panel.vipTitle': 'VIP.',
+  'panel.libraryKicker': 'SUA MÚSICA / {count} FAIXAS',
+  'panel.settingsKicker': 'PREFERÊNCIAS / SOMENTE LOCAL',
+  'panel.vipKicker': 'VIP / EM ANDAMENTO',
+  'panel.close': 'Fechar painel',
+  'theme.switch': 'Mudar tema de cor, atual {name}',
+  'aria.tonearm': 'Braço: {state}. Toque para {action}, arraste para buscar',
+  'player.statusPlaying': 'Reproduzindo',
+  'player.statusPaused': 'Pausado',
+  'player.statusStopped': 'Parado',
 
   'error.db.writeStats': 'Falha ao gravar as estatísticas de reprodução',
 };

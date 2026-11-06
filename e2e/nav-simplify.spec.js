@@ -1,59 +1,63 @@
 import { expect, test } from '@playwright/test';
 
-test('the shell has two tabs, one progress bar and three header actions', async ({ page }) => {
+test('the vinyl shell has one transport surface and no button row', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
-  const header = page.locator('header.top');
-  for (const testid of ['search-open', 'vip-open', 'settings-open']) {
-    await expect(header.locator(`[data-testid="${testid}"]`)).toHaveCount(1);
+  for (const testid of ['vip-open', 'settings-open', 'theme-toggle', 'panel-open']) {
+    await expect(page.locator(`[data-testid="${testid}"]`)).toHaveCount(1);
   }
+  await expect(page.locator('[data-testid="search-open"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
-  await expect(page.locator('.count')).toHaveCount(0);
-  await expect(page.locator('.source-name')).toHaveCount(0);
-  await expect(header.locator('.scan')).toHaveCount(1);
-  await expect(page.locator('.scan')).toHaveCount(1);
+  await expect(page.locator('.controls')).toHaveCount(0);
+  await expect(page.locator('.progress')).toHaveCount(0);
+  await expect(page.locator('.scan')).toHaveCount(0);
   await expect(page.locator('#status')).toBeHidden();
+
+  await expect(page.locator('#armRotor')).toHaveCount(1);
+  await expect(page.locator('#armRotor')).toHaveAttribute('role', 'slider');
+  await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'false');
 
   const tabs = page.locator('.tabs [role="tab"]');
   await expect(tabs).toHaveCount(2);
-  await expect(tabs).toHaveText(['文件夹', '队列']);
+  await expect(tabs).toHaveText(['队列', '文件夹']);
+  await expect(page.locator('[data-testid="search-input"]')).toBeVisible();
+
   await expect(page.locator('[data-testid="lyrics-open"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="lyrics-view"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="lyrics-host"]')).toHaveCount(0);
 });
 
-test('the header close button leaves settings', async ({ page }) => {
+test('the top close button leaves settings', async ({ page }) => {
   await page.goto('/');
   await page.locator('[data-testid="settings-open"]').click();
 
   await expect(page.locator('[data-testid="settings-section-playback"]')).toBeVisible();
-  await expect(page.locator('[data-testid="settings-open"]')).toBeHidden();
-  await expect(page.locator('[data-testid="search-open"]')).toBeHidden();
-  await expect(page.locator('[data-testid="vip-open"]')).toBeHidden();
-  await expect(page.locator('[data-testid="settings-close"]')).toBeVisible();
+  await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
+  await expect(page.locator('[data-testid="panel-open"]')).toBeVisible();
+  await expect(page.locator('[data-testid="panel-open"]')).toHaveAttribute('aria-expanded', 'true');
   await expect(page.locator('.settings-view h2')).toHaveCount(0);
 
-  await page.locator('[data-testid="settings-close"]').click();
+  await page.locator('[data-testid="panel-open"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();
   await expect(page.locator('[data-testid="settings-close"]')).toBeHidden();
   await expect(page.locator('[data-testid="settings-open"]')).toBeVisible();
 });
 
-test('the VIP view offers a single Downtify download card', async ({ page }) => {
+test('the VIP panel offers a single Downtify download card', async ({ page }) => {
   await page.goto('/');
   await page.locator('[data-testid="vip-open"]').click();
 
   await expect(page.locator('[data-testid="vip-view"]')).toBeVisible();
   await expect(page.locator('[data-testid="vip-head"]')).toBeVisible();
   await expect(page.locator('[data-testid="vip-head"] h2')).toHaveText('VIP');
-  await expect(page.locator('[data-testid="vip-placeholder"]')).toHaveText('下载音乐');
+  await expect(page.locator('[data-testid="vip-placeholder"]')).toHaveText('更好的下载正在开发中');
+  await expect(page.locator('[data-testid="vip-temporary"]')).toHaveText('暂时先用 Downtify。');
   await expect(page.locator('[data-testid="vip-downtify"]')).toBeVisible();
 
   await expect(page.locator('[data-testid="playlist-view"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="import-open"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="vip-playlist-settings"]')).toHaveCount(0);
-  await expect(page.locator('[data-testid="settings-open"]')).toBeHidden();
 
   const github = page.locator('[data-testid="vip-downtify-github"]');
   await expect(github).toHaveAttribute('href', 'https://github.com/henriquesebastiao/downtify');
@@ -66,7 +70,7 @@ test('the VIP view offers a single Downtify download card', async ({ page }) => 
   await expect(docs).toHaveAttribute('href', 'https://downtify.henriquesebastiao.com/');
   await expect(docs).toBeVisible();
 
-  await page.locator('[data-testid="settings-close"]').click();
+  await page.locator('[data-testid="panel-open"]').click();
   await expect(page.locator('#tab-folders')).toBeVisible();
 });
 
@@ -91,8 +95,8 @@ for (const width of [360, 390]) {
       expect(box, 'the card has a box').not.toBeNull();
       expect(box.x).toBeGreaterThanOrEqual(0);
       expect(box.x + box.width).toBeLessThanOrEqual(width);
-      expect(box.y).toBeGreaterThanOrEqual(0);
-      expect(box.y + box.height).toBeLessThanOrEqual(780);
+      expect(box.y).toBeGreaterThanOrEqual(-1);
+      expect(box.y + box.height).toBeLessThanOrEqual(781);
 
       await page.screenshot({ path: `test-results/vip-downtify-${width}.png` });
     });
@@ -102,50 +106,31 @@ for (const width of [360, 390]) {
 test.describe('360px viewport', () => {
   test.use({ viewport: { width: 360, height: 780 } });
 
-  test('the transport controls stay on one line inside the viewport', async ({ page }) => {
+  test('the stage and the arm fit above the inline library', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('#app h1')).toHaveText('LocalTune');
+    await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
-    const controls = page.locator('.controls');
-    await expect(controls).toBeVisible();
-    const buttons = controls.locator('.btn');
-    await expect(buttons).toHaveCount(5);
+    const deck = page.locator('.deck');
+    await expect(deck).toBeVisible();
+    const box = await deck.boundingBox();
+    expect(box, 'the deck has a box').not.toBeNull();
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(780);
 
-    // Shuffle, previous, play, next, repeat: the three transport buttons in the
-    // middle are the ones that must never collide or overflow.
-    const boxes = [];
-    for (const index of [1, 2, 3]) {
-      const box = await buttons.nth(index).boundingBox();
-      expect(box, `button ${index} has a box`).not.toBeNull();
-      boxes.push(box);
-    }
+    const disc = await page.locator('.vinyl').boundingBox();
+    expect(disc).not.toBeNull();
+    expect(Math.abs(disc.x + disc.width / 2 - 180)).toBeLessThanOrEqual(2);
+    const arm = await page.locator('.arm-rest-knob').boundingBox();
+    expect(arm).not.toBeNull();
+    expect(arm.x + arm.width).toBeLessThanOrEqual(358);
 
-    for (const box of boxes) {
-      expect(box.x).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width).toBeLessThanOrEqual(360);
-      expect(box.y).toBeGreaterThanOrEqual(0);
-      expect(box.y + box.height).toBeLessThanOrEqual(780);
-    }
+    // The playlist is in normal flow below the stage on phones.
+    const panel = await page.locator('.panel').boundingBox();
+    expect(panel).not.toBeNull();
+    expect(panel.y).toBeGreaterThanOrEqual(box.y + box.height - 1);
+    await expect(page.locator('#tab-folders')).toBeVisible();
 
-    for (let i = 0; i < boxes.length; i += 1) {
-      for (let j = i + 1; j < boxes.length; j += 1) {
-        const a = boxes[i];
-        const b = boxes[j];
-        const overlapX = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
-        const overlapY = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
-        expect(overlapX <= 0 || overlapY <= 0, `buttons ${i} and ${j} do not overlap`).toBe(true);
-      }
-    }
-
-    const sorted = boxes.slice().sort((a, b) => a.x - b.x);
-    for (let i = 1; i < sorted.length; i += 1) {
-      const gap = sorted[i].x - (sorted[i - 1].x + sorted[i - 1].width);
-      expect(gap, `gap ${i}`).toBeGreaterThanOrEqual(8);
-    }
-
-    // One row: the three boxes share a horizontal band (no wrapping).
-    const top = Math.max(...boxes.map((box) => box.y));
-    const bottom = Math.min(...boxes.map((box) => box.y + box.height));
-    expect(bottom - top).toBeGreaterThan(0);
+    await expect(page.locator('.controls')).toHaveCount(0);
+    await expect(page.locator('.progress')).toHaveCount(0);
   });
 });

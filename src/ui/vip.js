@@ -16,6 +16,7 @@ export function createVipView() {
     el('div', {}, [
       el('h2', { text: t('vip.title') }),
       el('p', { class: 'muted', 'data-testid': 'vip-placeholder', text: t('vip.subtitle') }),
+      el('p', { class: 'muted', 'data-testid': 'vip-temporary', text: t('vip.downtify.temporary') }),
     ]),
   ]);
   const card = el('section', { class: 'card vip-card', 'data-testid': 'vip-downtify' }, [

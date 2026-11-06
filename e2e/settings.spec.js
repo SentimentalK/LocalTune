@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('settings view covers library, storage, language and about', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('#app h1')).toHaveText('LocalTune');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
   await page.locator('[data-testid="settings-open"]').click();
 
@@ -54,7 +54,7 @@ test('settings view covers library, storage, language and about', async ({ page 
 
   // Language switch rebuilds the shell without leaving the settings view.
   await page.locator('[data-testid="language-en"]').click();
-  await page.locator('[data-testid="settings-close"]').click();
+  await page.locator('[data-testid="panel-open"]').click();
 
   await expect(page.locator('[data-testid="settings-section-library"]')).toBeHidden();
   await expect(page.locator('#tab-folders')).toBeVisible();
@@ -64,7 +64,7 @@ test('settings view covers library, storage, language and about', async ({ page 
   // Switch back to the configured Chinese locale for the remaining suite.
   await page.locator('[data-testid="settings-open"]').click();
   await page.locator('[data-testid="language-zh-CN"]').click();
-  await page.locator('[data-testid="settings-close"]').click();
+  await page.locator('[data-testid="panel-open"]').click();
 
   await expect(page.locator('[data-testid="settings-section-library"]')).toBeHidden();
   await expect(page.locator('#tab-folders')).toBeVisible();

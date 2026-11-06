@@ -92,7 +92,7 @@ test('search filters the library', async ({ page }) => {
   });
 
   await page.goto('/');
-  await expect(page.locator('#app h1')).toBeVisible();
+  await expect(page.locator('.wordmark')).toBeVisible();
 
   await seedLibrary(page);
   await page.reload();
@@ -103,17 +103,16 @@ test('search filters the library', async ({ page }) => {
   await expect(searchRows(page)).toHaveCount(3);
 
   // Search covers the whole library, whatever the folder position.
-  await page.locator('[data-testid="search-open"]').click();
   const input = page.locator('[data-testid="search-input"]');
   await input.fill('周');
   await expect(searchRows(page)).toHaveCount(1);
-  await expect(page.locator('[data-testid="track-row"] b')).toHaveText('晴天');
+  await expect(page.locator('[data-testid="track-row"] strong')).toHaveText('晴天');
   await expect(page.locator('[data-testid="search-count"]')).toContainText('1');
   await expect(page.locator('[data-testid="search-group-artist"]')).toBeVisible();
 
   await page.locator('[data-testid="search-clear"]').click();
-  await expect(searchRows(page)).toHaveCount(0);
   await expect(input).toHaveValue('');
+  await expect(page.locator('[data-testid="search-count"]')).toHaveCount(0);
 });
 
 test('search shows an empty state and Escape clears the query', async ({ page }) => {
@@ -125,12 +124,11 @@ test('search shows an empty state and Escape clears the query', async ({ page })
   });
 
   await page.goto('/');
-  await expect(page.locator('#app h1')).toBeVisible();
+  await expect(page.locator('.wordmark')).toBeVisible();
 
   await seedLibrary(page);
   await page.reload();
 
-  await page.locator('[data-testid="search-open"]').click();
   const input = page.locator('[data-testid="search-input"]');
   await input.fill('不存在');
   await expect(page.locator('[data-testid="search-empty"]')).toBeVisible();
