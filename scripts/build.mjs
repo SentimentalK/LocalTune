@@ -128,6 +128,7 @@ async function main() {
   const version = await sourceVersion();
   const define = {
     __BUILD_VERSION__: JSON.stringify(version),
+    __GOOGLE_CLIENT_ID__: JSON.stringify(process.env.GOOGLE_CLIENT_ID ?? ''),
   };
 
   await rm(distDir, { recursive: true, force: true });
