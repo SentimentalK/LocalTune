@@ -70,6 +70,12 @@ export function loadGis({ src = GIS_SRC, doc = globalThis.document } = {}) {
     }
   });
 
+  // A failed load must stay retryable: clear the cache so the next call
+  // inserts the script again instead of replaying the rejection forever.
+  gisPromise.catch(() => {
+    gisPromise = null;
+  });
+
   return gisPromise;
 }
 

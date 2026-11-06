@@ -343,7 +343,7 @@ test('getFile resolves by name, downloads with Bearer and fills the cache', asyn
     const request = driveRequest(url);
     calls.push({ ...request, headers: init.headers ?? {} });
     if (request.path === '/drive/v3/files') {
-      assert.equal(request.q, "'root' in parents and name = 'song.mp3' and trashed = false");
+      assert.equal(request.q, "'music-id' in parents and name = 'song.mp3' and trashed = false");
       return jsonResponse(200, {
         files: [{ id: 'song-id', name: 'song.mp3', mimeType: 'audio/mpeg' }],
       });
@@ -356,7 +356,7 @@ test('getFile resolves by name, downloads with Bearer and fills the cache', asyn
   const source = makeSource({
     meta: memoryMeta({
       gdriveToken: validToken(),
-      gdriveRoot: { id: 'rootid', path: '', name: 'Music' },
+      gdriveRoot: { id: 'music-id', path: '', name: 'Music' },
     }),
     cache,
     fetchImpl,
@@ -431,4 +431,82 @@ test('tag reads still work when the server answers any Range with the whole 200 
   assert.deepEqual(Array.from(new Uint8Array(buffer)), [0x52, 0x49, 0x46, 0x46]);
   const media = calls.find((call) => call.alt === 'media');
   assert.ok(media.headers.Range.startsWith('bytes=0-'));
+});
+
+test('getFile resolves a nested path from the chosen root', async () => {
+  const audio = new Uint8Array([0x01, 0x02]);
+  const queries = [];
+  const fetchImpl = async (url) => {
+    const request = driveRequest(url);
+    if (request.path === '/drive/v3/files') {
+      queries.push(request.q);
+      if (
+        request.q ===
+        "'music-id' in parents and name = 'Albums' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+      ) {
+        return jsonResponse(200, {
+          files: [{ id: 'albums-id', name: 'Albums', mimeType: FOLDER_MIME }],
+        });
+      }
+      if (request.q === "'albums-id' in parents and name = 'song.mp3' and trashed = false") {
+        return jsonResponse(200, {
+          files: [{ id: 'nested-song', name: 'song.mp3', mimeType: 'audio/mpeg' }],
+        });
+      }
+    }
+    if (request.path === '/drive/v3/files/nested-song' && request.alt === 'media') {
+      return bytesResponse(200, audio);
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const source = makeSource({
+    meta: memoryMeta({
+      gdriveToken: validToken(),
+      gdriveRoot: { id: 'music-id', path: '', name: 'Music' },
+    }),
+    fetchImpl,
+  });
+  await source.restore();
+
+  const blob = await source.getFile('Albums/song.mp3');
+
+  assert.deepEqual(Array.from(new Uint8Array(await blob.arrayBuffer())), [0x01, 0x02]);
+  assert.deepEqual(queries, [
+    "'music-id' in parents and name = 'Albums' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+    "'albums-id' in parents and name = 'song.mp3' and trashed = false",
+  ]);
+});
+
+test('a 401 during a tag read flips the source to prompt', async () => {
+  const fetchImpl = async (url) => {
+    const request = driveRequest(url);
+    if (request.path === '/drive/v3/files') {
+      return jsonResponse(200, {
+        files: [{ id: 'song', name: 'song.mp3', mimeType: 'audio/mpeg', size: '1024' }],
+      });
+    }
+    if (request.alt === 'media') {
+      return jsonResponse(401, { error: { code: 401, message: 'Invalid Credentials' } });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const meta = memoryMeta({
+    gdriveToken: validToken(),
+    gdriveRoot: { id: 'rootid', path: '', name: 'Music' },
+  });
+  const source = makeSource({ meta, fetchImpl });
+  await source.restore();
+
+  const entries = [];
+  for await (const entry of source.scan()) entries.push(entry);
+  assert.equal(entries.length, 1);
+
+  const file = await entries[0].readFile();
+  await assert.rejects(
+    file.slice(0, 4).arrayBuffer(),
+    (error) => error instanceof GdriveError && error.status === 401,
+  );
+
+  assert.equal(source.permission(), 'prompt');
+  assert.equal(meta.map.get('gdriveToken'), null);
 });

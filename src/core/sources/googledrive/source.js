@@ -344,7 +344,7 @@ export class GdriveSource {
       throw new GdriveError(t('error.gdrive.fetchFailed'), { code: 'notFound' });
     }
 
-    let parentId = 'root';
+    let parentId = this._root?.id ?? 'root';
     let accumulated = '';
     for (let index = 0; index < segments.length; index += 1) {
       const segment = segments[index];
@@ -378,7 +378,7 @@ export class GdriveSource {
       size: Number(item.size) || 0,
       maxRangeBytes: Number.POSITIVE_INFINITY,
       fetchRange: (start, end) =>
-        this.client.fetchMedia(item.id, { range: { start, end } }),
+        this._guard(() => this.client.fetchMedia(item.id, { range: { start, end } })),
     });
   }
 

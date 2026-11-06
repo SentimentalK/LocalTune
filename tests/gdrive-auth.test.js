@@ -9,6 +9,7 @@ import {
 import {
   GdriveAuthError,
   isTokenExpired,
+  loadGis,
   normalizeTokenResponse,
   requestToken,
 } from '../src/core/sources/googledrive/auth.js';
@@ -128,4 +129,47 @@ test('requestToken rejects blank configuration without loading GIS', async () =>
     (error) => error instanceof GdriveAuthError && error.code === 'not_configured',
   );
   assert.equal(gisCalls, 0);
+});
+
+function fakeDoc(outcome) {
+  const scripts = [];
+  return {
+    scripts,
+    createElement() {
+      const node = {};
+      scripts.push(node);
+      return node;
+    },
+    head: {
+      appendChild(node) {
+        // The module assigns handlers around appending; defer like a real load.
+        queueMicrotask(() => {
+          if (outcome === 'error') node.onerror?.();
+          else node.onload?.();
+        });
+      },
+    },
+  };
+}
+
+test('loadGis retries after a failed script load', async () => {
+  const previousGoogle = globalThis.google;
+  try {
+    const failed = fakeDoc('error');
+    await assert.rejects(
+      loadGis({ src: 'https://gis.test/client', doc: failed }),
+      (error) => error instanceof GdriveAuthError && error.code === 'script_failed',
+    );
+    assert.equal(failed.scripts.length, 1);
+
+    const oauth2 = { initTokenClient() {} };
+    globalThis.google = { accounts: { oauth2 } };
+
+    const loaded = await loadGis({ src: 'https://gis.test/client', doc: fakeDoc('load') });
+
+    assert.equal(loaded, oauth2);
+  } finally {
+    if (previousGoogle === undefined) delete globalThis.google;
+    else globalThis.google = previousGoogle;
+  }
 });
