@@ -11,9 +11,7 @@ import { runSearch } from '../core/search.js';
 import { libraryVisible, visibleSources } from '../core/library.js';
 import { el, icon, setIcon, coverUrl, syncCoverCache, setText, setHidden } from './dom.js';
 import { createSettingsView } from './settings.js';
-import { createPlaylistSettings } from './playlist-settings.js';
 import { createVipView } from './vip.js';
-import { createImportDialog, createPlaylistView } from './playlist.js';
 import { openTagInfo } from './diagnostics.js';
 import {
   applyDocumentLang,
@@ -51,10 +49,6 @@ const SEARCH_DEBOUNCE_MS = 150;
 
 // Installability is only observable through the event; the app never prompts.
 let installPromptSeen = false;
-
-// The rematch notice is cleared as soon as it is shown, so a re-render with the
-// same count must stay quiet. 0 means no notice is pending.
-let lastRematchAdded = 0;
 
 function isInstalled() {
   if (typeof window === 'undefined') return false;
@@ -447,12 +441,7 @@ function createShell(store, sw) {
   const panel = el('div', { id: 'view-panel', role: 'tabpanel', tabindex: '-1' });
   const library = el('section', { class: 'library', 'aria-label': t('aria.library') }, [tabs, panel]);
 
-  // ---- playlists ----
-  // The import button lives in the playlists view now; the callback reads the
-  // dialog lazily, so creating the dialog right after this is safe.
-  const playlistView = createPlaylistView(store, { onImport: () => importDialog.open() });
-  const importDialog = createImportDialog(store);
-  const playlistSettings = createPlaylistSettings(store);
+  // ---- vip ----
   const vipView = createVipView();
 
   // ---- settings view ----
@@ -484,7 +473,6 @@ function createShell(store, sw) {
     el('main', { class: 'layout' }, [defaultView, settingsHost, vipHost]),
     updateBanner,
     toast,
-    importDialog.node,
   ]);
 
   return {
@@ -516,8 +504,6 @@ function createShell(store, sw) {
     settingsHost,
     vipView,
     vipHost,
-    playlistView,
-    importDialog,
     defaultView,
     tabButtons,
     panel,
@@ -541,8 +527,6 @@ export function mountUi(root, store, sw) {
   let searchToken = 0;
   let searchView = null;
   let folder = { source: null, dir: '' };
-  let vipRendered = false;
-  let vipInputs = { playlists: null, tracks: null, stats: null, settings: null };
   // Green bar position for the running scan. Progress never rewinds inside one
   // scan: an import's percentage flows into the listing that follows it.
   let scanPercent = 0;
@@ -653,12 +637,6 @@ export function mountUi(root, store, sw) {
     ui.vipButton.addEventListener('click', () => store.setView('vip'));
     ui.closeButton.addEventListener('click', () => store.setView('folders'));
     ui.settingsView.node.addEventListener('toast', (event) => {
-      showToast(event.detail?.text ?? '');
-    });
-    ui.vipView.node.addEventListener('toast', (event) => {
-      showToast(event.detail?.text ?? '');
-    });
-    ui.importDialog.node.addEventListener('toast', (event) => {
       showToast(event.detail?.text ?? '');
     });
   }
@@ -1065,7 +1043,7 @@ export function mountUi(root, store, sw) {
           t('common.trackCount', { count: state.tracks.length }),
           rows.length
             ? [el('ul', { class: 'rows' }, rows)]
-            : [el('p', { class: 'muted', 'data-testid': 'folder-empty', text: t('autoList.empty') })],
+            : [el('p', { class: 'muted', 'data-testid': 'folder-empty', text: t('empty.noTracksText') })],
         ),
       );
       return;
@@ -1120,7 +1098,7 @@ export function mountUi(root, store, sw) {
       children.push(el('ul', { class: 'rows' }, trackRows));
     }
     if (!subs.length && !direct.length) {
-      children.push(el('p', { class: 'muted', 'data-testid': 'folder-empty', text: t('autoList.empty') }));
+      children.push(el('p', { class: 'muted', 'data-testid': 'folder-empty', text: t('empty.noTracksText') }));
     }
 
     ui.panel.replaceChildren(
@@ -1264,40 +1242,7 @@ export function mountUi(root, store, sw) {
     setHidden(ui.defaultView, settings || vip);
     setHidden(ui.settingsHost, !settings);
     setHidden(ui.vipHost, !vip);
-    if (vip) {
-      if (
-        !vipRendered ||
-        state.playlists !== vipInputs.playlists ||
-        state.tracks !== vipInputs.tracks ||
-        state.stats !== vipInputs.stats ||
-        state.settings !== vipInputs.settings
-      ) {
-        ui.vipView.render(state);
-        vipRendered = true;
-        vipInputs = {
-          playlists: state.playlists,
-          tracks: state.tracks,
-          stats: state.stats,
-          settings: state.settings,
-        };
-      }
-    } else {
-      vipRendered = false;
-    }
     setHidden(ui.updateBanner, !state.updateReady);
-
-    // rescan() re-matched missing playlist rows: announce the count once and
-    // clear the notice so the next render does not repeat it.
-    const rematchAdded = Number(state.rematch?.added) || 0;
-    if (rematchAdded > 0) {
-      if (rematchAdded !== lastRematchAdded) {
-        lastRematchAdded = rematchAdded;
-        showToast(t('playlists.rematchAdded', { count: rematchAdded }));
-      }
-      store.clearRematchNotice();
-    } else {
-      lastRematchAdded = 0;
-    }
   }
 
   function remount() {

@@ -1,11 +1,11 @@
 /**
- * Library-wide substring search. Reuses the playlist matcher's normalization
+ * Library-wide substring search. Reuses the shared text normalization
  * (NFKC, full-width folding, traditional -> simplified, lowercase) so a query
  * matches titles in either script. The hanzi table stays a lazy `import()`:
  * only `runSearch` awaits it, synchronous callers see hanzi as-is.
  */
 
-import { ensureNormalizer, normalizeText, splitArtists } from './playlist/match.js';
+import { ensureNormalizer, normalizeText, splitArtists } from './text.js';
 
 /** Group order doubles as result priority. */
 const GROUPS = ['title', 'artist', 'album', 'fileName'];

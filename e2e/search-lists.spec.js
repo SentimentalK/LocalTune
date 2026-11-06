@@ -83,7 +83,7 @@ async function seedLibrary(page) {
 
 const searchRows = (page) => page.locator('[data-testid="track-row"]');
 
-test('search filters the library and auto lists sort by stats', async ({ page }) => {
+test('search filters the library', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, 'showDirectoryPicker', {
       configurable: true,
@@ -114,19 +114,6 @@ test('search filters the library and auto lists sort by stats', async ({ page })
   await page.locator('[data-testid="search-clear"]').click();
   await expect(searchRows(page)).toHaveCount(0);
   await expect(input).toHaveValue('');
-
-  // Auto lists live under VIP and open as a detail panel.
-  await page.locator('[data-testid="vip-open"]').click();
-  await page.locator('[data-testid="auto-list-open-most"]').click();
-  const detailRows = page.locator('[data-testid="auto-list-detail"] [data-testid="track-row"]');
-  await expect(detailRows.first().locator('b')).toHaveText('晴天');
-
-  await page.locator('[data-testid="auto-list-open-never"]').click();
-  await expect(detailRows).toHaveCount(1);
-  await expect(detailRows.first().locator('b')).toHaveText('江南');
-
-  await page.locator('[data-testid="auto-list-open-recent"]').click();
-  await expect(detailRows.first().locator('b')).toHaveText('夜に駆ける');
 });
 
 test('search shows an empty state and Escape clears the query', async ({ page }) => {

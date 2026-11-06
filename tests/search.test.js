@@ -6,7 +6,7 @@ import {
   searchTracks,
   runSearch,
 } from '../src/core/search.js';
-import { ensureNormalizer } from '../src/core/playlist/match.js';
+import { ensureNormalizer } from '../src/core/text.js';
 
 // The hanzi table is a lazy chunk; load it once so the synchronous
 // `searchTracks` cases below see traditional characters.

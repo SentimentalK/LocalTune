@@ -5,7 +5,6 @@
 
 import { getMeta, setMeta } from './db.js';
 import { CACHE_LIMIT_OPTIONS, DEFAULT_CACHE_LIMIT } from './cache/audioCache.js';
-import { normalizeProxyUrl } from './playlist/sources/proxy.js';
 import { LOCALES } from '../i18n/index.js';
 
 const PLAYBACK_KEY = 'playback';
@@ -14,7 +13,6 @@ const SAVE_DELAY = 1000;
 const REPEAT_VALUES = new Set(['off', 'all', 'one']);
 const LANGUAGE_VALUES = new Set(['auto', ...LOCALES]);
 const DEFAULT_LANGUAGE = 'auto';
-const MAX_API_KEY = 200;
 
 /** One list of allowed cache limits, owned by the cache module. */
 export const DEFAULT_CACHE_LIMIT_BYTES = DEFAULT_CACHE_LIMIT;
@@ -22,16 +20,6 @@ export const CACHE_LIMIT_VALUES = CACHE_LIMIT_OPTIONS;
 
 function isCacheLimit(bytes) {
   return Number.isFinite(bytes) && CACHE_LIMIT_OPTIONS.includes(bytes);
-}
-
-function cleanApiKey(value) {
-  if (typeof value !== 'string') return '';
-  const text = value.trim();
-  return text.length > MAX_API_KEY ? '' : text;
-}
-
-function cleanProxyUrl(value) {
-  return normalizeProxyUrl(value);
 }
 
 let pending = null;
@@ -98,8 +86,6 @@ export async function loadSettings(db) {
     cacheLimitBytes: isCacheLimit(value?.cacheLimitBytes)
       ? value.cacheLimitBytes
       : DEFAULT_CACHE_LIMIT_BYTES,
-    youtubeApiKey: cleanApiKey(value?.youtubeApiKey),
-    playlistProxyUrl: cleanProxyUrl(value?.playlistProxyUrl),
     leveling: value?.leveling === true,
     gapless: value?.gapless !== false,
   };
@@ -113,8 +99,6 @@ export async function saveSettings(db, settings) {
   const stored = {
     language,
     cacheLimitBytes,
-    youtubeApiKey: cleanApiKey(settings?.youtubeApiKey),
-    playlistProxyUrl: cleanProxyUrl(settings?.playlistProxyUrl),
     leveling: settings?.leveling === true,
     gapless: settings?.gapless !== false,
   };

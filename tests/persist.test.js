@@ -58,8 +58,6 @@ test('loadSettings defaults a missing cache limit to 2 GiB', async () => {
   assert.deepEqual(await loadSettings(db), {
     language: 'auto',
     cacheLimitBytes: DEFAULT_LIMIT,
-    youtubeApiKey: '',
-    playlistProxyUrl: '',
     leveling: false,
     gapless: true,
   });
@@ -73,16 +71,12 @@ test('every allowed cache limit survives a save/load round trip', async () => {
     assert.deepEqual(storedSettings(rows), {
       language: 'ja',
       cacheLimitBytes: bytes,
-      youtubeApiKey: '',
-      playlistProxyUrl: '',
       leveling: false,
       gapless: true,
     });
     assert.deepEqual(await loadSettings(db), {
       language: 'ja',
       cacheLimitBytes: bytes,
-      youtubeApiKey: '',
-      playlistProxyUrl: '',
       leveling: false,
       gapless: true,
     });
@@ -99,8 +93,6 @@ test('an invalid cache limit falls back to 2 GiB on load and on save', async () 
     assert.deepEqual(storedSettings(rows), {
       language: 'zh-CN',
       cacheLimitBytes: DEFAULT_LIMIT,
-      youtubeApiKey: '',
-      playlistProxyUrl: '',
       leveling: false,
       gapless: true,
     });
@@ -112,8 +104,6 @@ test('an invalid cache limit falls back to 2 GiB on load and on save', async () 
     assert.deepEqual(await loadSettings(db), {
       language: 'en',
       cacheLimitBytes: DEFAULT_LIMIT,
-      youtubeApiKey: '',
-      playlistProxyUrl: '',
       leveling: false,
       gapless: true,
     });
@@ -126,8 +116,6 @@ test('the language field keeps its old validation next to the cache limit', asyn
   assert.deepEqual(await loadSettings(db), {
     language: 'auto',
     cacheLimitBytes: 0,
-    youtubeApiKey: '',
-    playlistProxyUrl: '',
     leveling: false,
     gapless: true,
   });
@@ -136,87 +124,7 @@ test('the language field keeps its old validation next to the cache limit', asyn
   assert.deepEqual(await loadSettings(db), {
     language: 'zh-TW',
     cacheLimitBytes: 512 * 1024 ** 2,
-    youtubeApiKey: '',
-    playlistProxyUrl: '',
     leveling: false,
     gapless: true,
   });
-});
-
-test('the playlist settings default to empty strings', async () => {
-  const { db } = createDb();
-
-  const settings = await loadSettings(db);
-  assert.equal(settings.youtubeApiKey, '');
-  assert.equal(settings.playlistProxyUrl, '');
-});
-
-test('the YouTube key and playlist proxy survive a save/load round trip', async () => {
-  const { db, rows } = createDb();
-  const settings = {
-    language: 'en',
-    cacheLimitBytes: DEFAULT_LIMIT,
-    youtubeApiKey: '  AIzaSyExample  ',
-    playlistProxyUrl: '  https://proxy.example.com/playlist  ',
-  };
-
-  const saved = await saveSettings(db, settings);
-  assert.deepEqual(saved, {
-    language: 'en',
-    cacheLimitBytes: DEFAULT_LIMIT,
-    youtubeApiKey: 'AIzaSyExample',
-    playlistProxyUrl: 'https://proxy.example.com/playlist',
-    leveling: false,
-    gapless: true,
-  });
-  assert.deepEqual(storedSettings(rows), saved);
-  assert.deepEqual(await loadSettings(db), saved);
-});
-
-test('the playlist proxy keeps a same-origin path', async () => {
-  const { db } = createDb();
-
-  const saved = await saveSettings(db, { playlistProxyUrl: '  /api/resolve  ' });
-  assert.equal(saved.playlistProxyUrl, '/api/resolve');
-  assert.equal((await loadSettings(db)).playlistProxyUrl, '/api/resolve');
-});
-
-test('the playlist proxy rejects protocol-relative and non-HTTPS values', async () => {
-  const { db } = createDb();
-
-  const saved = await saveSettings(db, { playlistProxyUrl: '//evil.example/x' });
-  assert.equal(saved.playlistProxyUrl, '');
-  assert.equal((await loadSettings(db)).playlistProxyUrl, '');
-});
-
-test('the YouTube key and playlist proxy are cleaned when invalid', async () => {
-  const { db } = createDb();
-  const cleaned = {
-    language: 'auto',
-    cacheLimitBytes: DEFAULT_LIMIT,
-    youtubeApiKey: '',
-    playlistProxyUrl: '',
-    leveling: false,
-    gapless: true,
-  };
-
-  await saveSettings(db, {
-    youtubeApiKey: 42,
-    playlistProxyUrl: 'http://proxy.example.com/playlist',
-  });
-  assert.deepEqual(await loadSettings(db), cleaned);
-
-  await saveSettings(db, {
-    youtubeApiKey: 'k'.repeat(201),
-    playlistProxyUrl: `https://proxy.example.com/${'p'.repeat(300)}`,
-  });
-  assert.deepEqual(await loadSettings(db), cleaned);
-
-  const { db: seeded } = createDb({
-    [SETTINGS_KEY]: {
-      youtubeApiKey: { key: 'not a string' },
-      playlistProxyUrl: 'ftp://proxy.example.com/playlist',
-    },
-  });
-  assert.deepEqual(await loadSettings(seeded), cleaned);
 });

@@ -133,15 +133,9 @@ async function main() {
   await rm(distDir, { recursive: true, force: true });
   await mkdir(path.join(distDir, 'assets'), { recursive: true });
 
-  // `t2s-table` is also declared as an entry (not only reached via the dynamic
-  // import in match.js) so the lazy table always ships as its own file, even
-  // while no UI imports the matcher yet.
-  const js = await bundle(
-    { main: 'main.js', 't2s-table': 'core/playlist/t2s-table.js' },
-    '.js',
-    'js',
-    define,
-  );
+  // `text.js` reaches `t2s-table.js` only through `import('./t2s-table.js')`,
+  // so esbuild emits the table as a lazy chunk, never in the entry bundle.
+  const js = await bundle({ main: 'main.js' }, '.js', 'js', define);
   const css = await bundle({ styles: 'styles.css' }, '.css', 'css', define);
   const jsUrl = js.urls.main;
   const cssUrl = css.urls.styles;
