@@ -308,7 +308,9 @@ test('a large library loads cover URLs only for rendered rows and keeps all cove
   await page.locator('[data-testid="folder-dir-Music"]').click();
 
   const rows = page.locator('#trackList [data-testid="track-row"]');
-  await expect(rows).toHaveCount(60);
+  const rendered = await rows.count();
+  expect(rendered).toBeGreaterThan(0);
+  expect(rendered).toBeLessThanOrEqual(60);
 
   const covers = page.locator('#trackList img.track-cover[src^="blob:"]');
   await expect(covers.first()).toBeVisible();

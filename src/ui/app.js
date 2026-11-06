@@ -12,6 +12,7 @@ import { libraryVisible, visibleSources } from '../core/library.js';
 import { el, icon, symbolIcon, setIcon, setText, setHidden } from './dom.js';
 import { createSettingsView } from './settings.js';
 import { createVipView } from './vip.js';
+import { createVirtualizer } from './virtualList.js';
 import { openTagInfo } from './diagnostics.js';
 import { bindStageSwipe, bindTonearm, ARM_PARK, angleForProgress } from './tonearm.js';
 import {
@@ -90,13 +91,15 @@ function subtitleOf(track) {
 }
 
 // The store that owns cover URLs, plus the ids each rendered list holds. Lists
-// build into `buildingCoverIds`, then swap with `renderedCoverIds` once the new
-// nodes are attached, so old URLs are released only after the new ones exist.
+// that render whole build into `buildingCoverIds`, then swap with
+// `renderedCoverIds` once the new nodes are attached, so old URLs are released
+// only after the new ones exist. Virtualized lists pass their own array so each
+// window owns exactly the covers it rendered.
 let coverStore = null;
 let renderedCoverIds = [];
 let buildingCoverIds = [];
 
-function coverNode(track, className = 'track-cover') {
+function coverNode(track, className = 'track-cover', coverIds = buildingCoverIds) {
   const img = el('img', {
     class: className,
     alt: '',
@@ -110,7 +113,7 @@ function coverNode(track, className = 'track-cover') {
   }
   if (track?.hasCover && track.id) {
     const id = track.id;
-    buildingCoverIds.push(id);
+    coverIds.push(id);
     void coverStore?.coverUrl(track).then((url) => {
       if (url && img.isConnected) img.src = url;
     });
@@ -214,7 +217,7 @@ function moreButton(track, onMore) {
   );
 }
 
-function trackRow(track, { now, onActivate, onMore }) {
+function trackRow(track, { now, onActivate, onMore, coverIds }) {
   const hit = el(
     'button',
     {
@@ -225,7 +228,7 @@ function trackRow(track, { now, onActivate, onMore }) {
       onclick: onActivate,
     },
     [
-      coverNode(track),
+      coverNode(track, 'track-cover', coverIds),
       el('span', { class: 'track-text' }, [
         el('strong', { text: track.title }),
         el('small', { text: subtitleOf(track) }),
@@ -244,7 +247,7 @@ function trackRow(track, { now, onActivate, onMore }) {
   return row;
 }
 
-function queueRow(track, index, { now, onActivate, onRemove }) {
+function queueRow(track, index, { now, onActivate, onRemove, coverIds }) {
   const hit = el(
     'button',
     {
@@ -256,7 +259,7 @@ function queueRow(track, index, { now, onActivate, onRemove }) {
     },
     [
       el('span', { class: 'track-index', text: String(index + 1).padStart(2, '0') }),
-      coverNode(track),
+      coverNode(track, 'track-cover', coverIds),
       el('span', { class: 'track-text' }, [
         el('strong', { text: track.title }),
         el('small', { text: subtitleOf(track) }),
@@ -630,6 +633,7 @@ function createShell(store, sw) {
     searchClear,
     tabButtons,
     trackList,
+    listScroll,
     libraryKicker,
     vipKicker,
     panelTitle,
@@ -710,6 +714,7 @@ export function mountUi(root, store, sw) {
     searchQuery = '';
     searchResult = null;
     folder = { source: null, dir: '' };
+    clearVirtualLists();
     clearRenderedCovers();
     buildingCoverIds = [];
   }
@@ -719,12 +724,104 @@ export function mountUi(root, store, sw) {
     renderedCoverIds = [];
   }
 
+  // ---- virtualized lists ---------------------------------------------------
+  // One controller per mounted `.track-list`. They are torn down whenever the
+  // list's nodes are replaced, because the controller owns the rows it built.
+  let virtualLists = [];
+  let virtualRaf = 0;
+
+  /** Row height in px, gap excluded (the gap comes from the list's CSS). */
+  const estimateStride = () => (isMobile() ? 60 : 64);
+
+  /**
+   * Visible slice in the list's own content coordinates. Desktop scrolls the
+   * panel (`.list-scroll`), mobile scrolls the page, so the origin differs.
+   */
+  function listViewport(container) {
+    const scroller = ui.listScroll;
+    const overflow = getComputedStyle(scroller).overflowY;
+    const box = container.getBoundingClientRect();
+    if (overflow === 'auto' || overflow === 'scroll') {
+      return { top: scroller.getBoundingClientRect().top - box.top, height: scroller.clientHeight };
+    }
+    return { top: -box.top, height: window.innerHeight };
+  }
+
+  function mountVirtualList(container, count, renderRow) {
+    const list = createVirtualizer({
+      container,
+      count,
+      estimateStride: estimateStride(),
+      getViewport: () => listViewport(container),
+      renderRow,
+      releaseCover: (id) => store.releaseCover(id),
+    });
+    virtualLists.push(list);
+    return list;
+  }
+
+  function clearVirtualLists() {
+    const lists = virtualLists;
+    for (const list of lists) list.dispose();
+    virtualLists = [];
+  }
+
+  function scheduleVirtual() {
+    // Nothing to refresh means nothing to schedule: an idle app must stay
+    // completely frame-free (the deck's idle-raf budget counts every request).
+    if (virtualRaf || !virtualLists.length) return;
+    virtualRaf = requestAnimationFrame(() => {
+      virtualRaf = 0;
+      for (const list of virtualLists) list.refresh();
+    });
+  }
+
+  // Window-level sources never change identity, so they are bound once.
+  window.addEventListener('scroll', scheduleVirtual, { passive: true });
+  window.addEventListener('resize', scheduleVirtual);
+  window.addEventListener('orientationchange', scheduleVirtual);
+  window.visualViewport?.addEventListener('resize', scheduleVirtual);
+
+  /** Per-shell scroll sources; rebinding happens when the shell is remounted. */
+  let listObserver = null;
+
+  function bindVirtualSources() {
+    ui.listScroll.addEventListener('scroll', scheduleVirtual, { passive: true });
+    listObserver?.disconnect();
+    listObserver = null;
+    if (typeof ResizeObserver === 'function') {
+      let primed = false;
+      listObserver = new ResizeObserver(() => {
+        // The first callback only reports the box the virtualizer already
+        // measured at mount; acting on it would request a frame on an idle
+        // deck, so swallow it and wait for a real size change.
+        if (!primed) {
+          primed = true;
+          return;
+        }
+        scheduleVirtual();
+      });
+      listObserver.observe(ui.listScroll);
+    }
+  }
+
   /** Attach a freshly built list and hand the previous list's covers back. */
   function replaceTrackList(children) {
+    // The new list only regains its full height once the virtualizer paints,
+    // so the scrollable content collapses in between and the browser clamps
+    // `scrollTop` to 0. Remember the offset and put it back as soon as this
+    // turn's mount has restored the height (same as a plain replaceChildren).
+    const scrollTop = ui.listScroll.scrollTop;
+    clearVirtualLists();
     clearRenderedCovers();
     ui.trackList.replaceChildren(...children);
     renderedCoverIds = buildingCoverIds;
     buildingCoverIds = [];
+    if (scrollTop > 0) {
+      queueMicrotask(() => {
+        if (ui.listScroll.scrollTop !== scrollTop) ui.listScroll.scrollTop = scrollTop;
+      });
+    }
   }
 
   function showToast(text) {
@@ -883,6 +980,7 @@ export function mountUi(root, store, sw) {
   }
 
   function bindShellEvents() {
+    bindVirtualSources();
     ui.shuffleButton.addEventListener('click', () => store.toggleShuffle());
     ui.repeatButton.addEventListener('click', () => store.cycleRepeat());
     ui.settingsButton.addEventListener('click', () => openPanel('settings'));
@@ -1192,11 +1290,12 @@ export function mountUi(root, store, sw) {
     }
 
     const currentId = state.current.track?.id ?? null;
-    const rowFor = (track) =>
+    const rowFor = (track, coverIds) =>
       trackRow(track, {
         now: track.id === currentId,
         onActivate: () => activateTrack(state.tracks, track.id),
         onMore: openTrackMenu,
+        coverIds,
       });
 
     const nodes = [
@@ -1212,17 +1311,23 @@ export function mountUi(root, store, sw) {
       return;
     }
 
+    const groups = [];
     for (const group of SEARCH_GROUPS) {
       const hits = result.items.filter((item) => item.group === group.id);
       if (!hits.length) continue;
+      const list = el('div', { class: 'track-list' });
       nodes.push(
         el('section', { class: 'search-group' }, [
           el('h3', { 'data-testid': `search-group-${group.id}`, text: t(group.labelKey) }),
-          el('div', { class: 'track-list' }, hits.map((item) => rowFor(item.track))),
+          list,
         ]),
       );
+      groups.push({ list, hits });
     }
     replaceTrackList(nodes);
+    for (const { list, hits } of groups) {
+      mountVirtualList(list, hits.length, (index, coverIds) => rowFor(hits[index].track, coverIds));
+    }
   }
 
   function trackKind(track) {
@@ -1340,33 +1445,41 @@ export function mountUi(root, store, sw) {
     const currentId = state.current.track?.id ?? null;
 
     const children = [folderHeader(state, kind, dir, all)];
+    let subsBox = null;
+    let tracksBox = null;
     if (subs.length) {
       children.push(el('h3', { class: 'group-head', text: t('folders.subfolders') }));
-      children.push(
-        el('div', { class: 'track-list' }, subs.map((entry) =>
-          dirRow(entry, () => {
-            folder = { source: kind, dir: entry.dir };
-            render(store.state);
-          }),
-        )),
-      );
+      subsBox = el('div', { class: 'track-list' });
+      children.push(subsBox);
     }
     if (direct.length) {
       children.push(el('h3', { class: 'group-head', text: t('folders.tracks') }));
-      children.push(
-        el('div', { class: 'track-list' }, direct.map((track) =>
-          trackRow(track, {
-            now: track.id === currentId,
-            onActivate: () => activateTrack(all, track.id),
-            onMore: openTrackMenu,
-          }),
-        )),
-      );
+      tracksBox = el('div', { class: 'track-list' });
+      children.push(tracksBox);
     }
     if (!subs.length && !direct.length) {
       children.push(el('p', { class: 'muted', 'data-testid': 'folder-empty', text: t('empty.noTracksText') }));
     }
     replaceTrackList(children);
+
+    if (subsBox) {
+      mountVirtualList(subsBox, subs.length, (index) =>
+        dirRow(subs[index], () => {
+          folder = { source: kind, dir: subs[index].dir };
+          render(store.state);
+        }),
+      );
+    }
+    if (tracksBox) {
+      mountVirtualList(tracksBox, direct.length, (index, coverIds) =>
+        trackRow(direct[index], {
+          now: direct[index].id === currentId,
+          onActivate: () => activateTrack(all, direct[index].id),
+          onMore: openTrackMenu,
+          coverIds,
+        }),
+      );
+    }
   }
 
   function renderQueue(state) {
@@ -1405,18 +1518,19 @@ export function mountUi(root, store, sw) {
       ]),
     ]);
 
-    const rows = tracks.map((track, index) =>
-      queueRow(track, index, {
+    const list = el('div', { class: 'track-list' });
+    replaceTrackList([head, list]);
+    mountVirtualList(list, tracks.length, (index, coverIds) =>
+      queueRow(tracks[index], index, {
         now: index === state.queue.index,
         onActivate: () => {
           pulseSwap();
           run(store.jumpTo(index));
         },
         onRemove: () => store.removeQueueAt(index),
+        coverIds,
       }),
     );
-
-    replaceTrackList([head, el('div', { class: 'track-list' }, rows)]);
   }
 
   function renderLibrary(state) {
