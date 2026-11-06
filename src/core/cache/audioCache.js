@@ -327,6 +327,65 @@ export class AudioCache {
     return list.length;
   }
 
+  /**
+   * Drop responses and index rows for one source whose key is not in
+   * `keepKeys`. Never reads audio: the index rows plus a Cache Storage key
+   * scan decide, so a sync can reconcile deletions without touching a blob.
+   */
+  async pruneSource(source, keepKeys = []) {
+    const keep = new Set(keepKeys);
+    const prefix = `${source}:`;
+    const keys = new Set();
+
+    let rows = [];
+    try {
+      rows = await this.index.all();
+    } catch {
+      rows = [];
+    }
+    for (const row of rows) {
+      if (row?.source === source && typeof row.key === 'string' && !keep.has(row.key)) {
+        keys.add(row.key);
+      }
+    }
+
+    let cache = null;
+    try {
+      cache = await this._openCache();
+    } catch {
+      cache = null;
+    }
+    if (cache) {
+      let requests = [];
+      try {
+        requests = await cache.keys();
+      } catch {
+        requests = [];
+      }
+      for (const request of requests) {
+        const key = keyFromRequest(request);
+        if (key !== null && key.startsWith(prefix) && !keep.has(key)) keys.add(key);
+      }
+    }
+
+    const list = [...keys];
+    if (cache) {
+      for (const key of list) {
+        try {
+          await cache.delete(cacheRequest(key));
+        } catch {
+          // Another tab may have removed it already.
+        }
+      }
+    }
+    try {
+      await this.index.deleteByKeys(list);
+    } catch {
+      // Nothing else to try.
+    }
+    return list.length;
+  }
+
   async clear() {
     let rows = [];
     try {

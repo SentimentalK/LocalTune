@@ -215,9 +215,10 @@ export function carryCover(track, previous) {
 }
 
 export class Store extends EventTarget {
-  constructor(db) {
+  constructor(db, { readMetadata: readTags = readMetadata } = {}) {
     super();
     this.db = db;
+    this._readTags = readTags;
     this.covers = createCoverCache({ load: (id) => getCover(this.db, id) });
     this.reference = createSource(db);
     this.opfs = new OpfsSource({ db });
@@ -948,7 +949,19 @@ export class Store extends EventTarget {
       // Pull every listed file into the shared audio cache. Only sources whose
       // files are not already on the device opt in; local files are never copied.
       let warm = null;
-      if (adapter.cacheWholeFiles) warm = await this._warmCache(kind, entries);
+      if (adapter.cacheWholeFiles) {
+        warm = await this._warmCache(kind, entries);
+        // Deleted tracks and leftovers from older builds: keep only the paths
+        // in this listing. Index + key scan only, no audio is read.
+        try {
+          await this.cache.pruneSource(
+            trackSource,
+            entries.map((entry) => cacheKey(trackSource, entry.path)),
+          );
+        } catch {
+          // Cache cleanup is best effort; the listing itself already landed.
+        }
+      }
 
       const summary = {
         at: Date.now(),
@@ -1052,7 +1065,7 @@ export class Store extends EventTarget {
         queue.pending.clear();
         await enrichTracks({
           items: batch,
-          readMetadata,
+          readMetadata: (blob) => this._readTags(blob),
           makeTrack: (entry, meta) =>
             buildTrack(entry, meta, { trackSource, externalIds: entry.externalIds ?? {} }),
           onTrack: async (track) => {
@@ -1115,7 +1128,7 @@ export class Store extends EventTarget {
     if (previous?.duration > 0 && previous?.hasCover) return;
     let meta = {};
     try {
-      meta = await readMetadata(blob, entry.path);
+      meta = await this._readTags(blob, entry.path);
     } catch {
       return;
     }
@@ -1165,6 +1178,7 @@ export class Store extends EventTarget {
       this._emit();
     });
     if (total > 0) report({ done: 0, total, phase: 'cache' });
+    const byId = new Map(this._state.tracks.map((track) => [track.id, track]));
     for (const entry of entries) {
       const key = cacheKey(trackSource, entry.path);
       let present = false;
@@ -1192,16 +1206,22 @@ export class Store extends EventTarget {
       }
       if (present) {
         cached += 1;
-        if (!blob && this.cache?.read) {
-          try {
-            blob = await this.cache.read(key);
-          } catch {
-            blob = null;
+        // Metadata that is already complete needs no blob: the old row is
+        // authoritative and a resync must not re-read the whole library.
+        const known = byId.get(`${trackSource}:${entry.path}`);
+        const complete = known?.duration > 0 && known?.hasCover;
+        if (!complete) {
+          if (!blob && this.cache?.read) {
+            try {
+              blob = await this.cache.read(key);
+            } catch {
+              blob = null;
+            }
           }
+          // Duration and cover come from the file itself. Write them as soon
+          // as this one file is on device, before the rest of the library lands.
+          if (blob) await this._applyFileMetadata(kind, entry, blob);
         }
-        // Duration and cover come from the file itself. Write them as soon
-        // as this one file is on device, before the rest of the library lands.
-        if (blob) await this._applyFileMetadata(kind, entry, blob);
       } else {
         uncached.push(entry.path);
       }

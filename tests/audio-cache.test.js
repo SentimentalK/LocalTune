@@ -281,6 +281,31 @@ test('removeBySource deletes only that source from index and Cache Storage', asy
   assert.equal(await none.removeBySource('onedrive'), 0);
 });
 
+test('pruneSource drops only the keys of one source that are not kept', async () => {
+  const caches = memoryCaches();
+  const index = memoryIndex();
+  const cache = new AudioCache({ caches, index });
+
+  await cache.write({ key: 'a:keep', source: 'a', path: 'keep.mp3', blob: blob(10) });
+  await cache.write({ key: 'a:gone', source: 'a', path: 'gone.mp3', blob: blob(20) });
+  await cache.write({ key: 'b:keep', source: 'b', path: 'keep.mp3', blob: blob(30) });
+
+  // A response with no index row must still go: the key scan owns that case.
+  const orphan = cacheRequest('a:orphan');
+  await caches.open(AUDIO_CACHE_NAME).then((opened) => opened.put(orphan, new Response(blob(5))));
+
+  assert.equal(await cache.pruneSource('a', ['a:keep']), 2);
+
+  assert.equal(await cache.has('a:keep'), true);
+  assert.equal(await cache.has('b:keep'), true);
+  assert.equal(await cache.has('a:gone'), false);
+  assert.equal(await cache.has('a:orphan'), false);
+  assert.deepEqual(
+    (await index.all()).map((row) => row.key).sort(),
+    ['a:keep', 'b:keep'],
+  );
+});
+
 test('clear accounts for cache entries missing from the index', async () => {
   const caches = memoryCaches();
   const index = memoryIndex();
