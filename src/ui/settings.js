@@ -7,6 +7,7 @@
 
 import { BUILD_VERSION } from '../core/version.js';
 import { formatBytes } from '../core/storage.js';
+import { resetAllData } from '../core/reset.js';
 import { formatTime } from '../core/selectors.js';
 import { CACHE_LIMIT_VALUES } from '../core/persist.js';
 import { createBatteryGuide } from './batteryGuide.js';
@@ -140,6 +141,8 @@ export function createSettingsView(store, sw) {
         class: 'icon-action',
         type: 'button',
         'data-testid': kind === 'local' ? 'settings-source-change' : 'settings-source-onedrive',
+        'aria-label': t('settings.source.changeFolder'),
+        title: t('settings.source.changeFolder'),
         onclick: () => changeSource(kind),
       },
       [icon('pencil')],
@@ -675,13 +678,24 @@ export function createSettingsView(store, sw) {
     }
   });
 
-  const reloadButton = el('button', {
+  const clearDataButton = el('button', {
     class: 'btn-pill ghost',
     type: 'button',
-    'data-testid': 'settings-reload',
-    text: t('settings.about.reload'),
-    onclick: () => {
-      if (typeof location !== 'undefined') location.reload();
+    'data-testid': 'settings-clear-data',
+    text: t('settings.about.clearData'),
+    onclick: async () => {
+      if (clearDataButton.disabled) return;
+      clearDataButton.disabled = true;
+      await resetAllData({
+        store,
+        indexedDB: globalThis.indexedDB,
+        caches: globalThis.caches,
+        serviceWorker: globalThis.navigator?.serviceWorker,
+        storage: globalThis.localStorage,
+        sessionStorage: globalThis.sessionStorage,
+        opfs: globalThis.navigator?.storage,
+        reload: () => location.reload(),
+      });
     },
   });
 
@@ -785,7 +799,7 @@ export function createSettingsView(store, sw) {
         el('span', { text: t('settings.about.updateState') }),
         updateState,
       ]),
-      el('div', { class: 'settings-actions' }, [checkButton, applyButton, reloadButton, playLogButton]),
+      el('div', { class: 'settings-actions' }, [checkButton, applyButton, clearDataButton, playLogButton]),
     ],
   );
 

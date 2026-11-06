@@ -171,7 +171,7 @@ export default {
   'settings.about.upToDate': '최신 버전',
   'settings.about.updateReady': '새 버전이 있습니다',
   'settings.about.updateNow': '지금 업데이트',
-  'settings.about.reload': '새로 고침',
+  'settings.about.clearData': '모든 데이터 삭제',
   'settings.about.playLog': '재생 로그',
   'settings.about.playLogCopied': '재생 로그를 복사했습니다',
   'settings.about.playLogClear': '지우기',

@@ -174,7 +174,7 @@ export default {
   'settings.about.upToDate': 'Aktuell',
   'settings.about.updateReady': 'Eine neue Version ist verfügbar',
   'settings.about.updateNow': 'Jetzt aktualisieren',
-  'settings.about.reload': 'Neu laden',
+  'settings.about.clearData': 'Alle Daten löschen',
   'settings.about.playLog': 'Wiedergabeprotokoll',
   'settings.about.playLogCopied': 'Wiedergabeprotokoll kopiert',
   'settings.about.playLogClear': 'Löschen',

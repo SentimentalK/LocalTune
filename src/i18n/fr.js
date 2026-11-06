@@ -175,7 +175,7 @@ export default {
   'settings.about.upToDate': 'À jour',
   'settings.about.updateReady': 'Une nouvelle version est disponible',
   'settings.about.updateNow': 'Mettre à jour',
-  'settings.about.reload': 'Recharger',
+  'settings.about.clearData': 'Effacer toutes les données',
   'settings.about.playLog': 'Journal de lecture',
   'settings.about.playLogCopied': 'Journal de lecture copié',
   'settings.about.playLogClear': 'Effacer',

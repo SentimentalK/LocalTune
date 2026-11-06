@@ -182,7 +182,7 @@ export default {
   'settings.about.upToDate': '最新です',
   'settings.about.updateReady': '新しいバージョンがあります',
   'settings.about.updateNow': '今すぐ更新',
-  'settings.about.reload': '再読み込み',
+  'settings.about.clearData': 'すべてのデータを削除',
   'settings.about.playLog': '再生ログ',
   'settings.about.playLogCopied': '再生ログをコピーしました',
   'settings.about.playLogClear': '消去',

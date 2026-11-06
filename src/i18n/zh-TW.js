@@ -168,7 +168,7 @@ export default {
   'settings.about.upToDate': '最新',
   'settings.about.updateReady': '有新版本可用',
   'settings.about.updateNow': '立即更新',
-  'settings.about.reload': '重新載入',
+  'settings.about.clearData': '清除所有資料',
   'settings.about.playLog': '播放記錄',
   'settings.about.playLogCopied': '已複製播放記錄',
   'settings.about.playLogClear': '清除',

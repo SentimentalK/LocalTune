@@ -177,7 +177,7 @@ export default {
   'settings.about.upToDate': 'Up to date',
   'settings.about.updateReady': 'A new version is available',
   'settings.about.updateNow': 'Update now',
-  'settings.about.reload': 'Reload',
+  'settings.about.clearData': 'Clear all data',
   'settings.about.playLog': 'Playback log',
   'settings.about.playLogCopied': 'Playback log copied',
   'settings.about.playLogClear': 'Clear',

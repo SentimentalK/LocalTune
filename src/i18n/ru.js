@@ -171,7 +171,7 @@ export default {
   'settings.about.upToDate': 'Актуальная версия',
   'settings.about.updateReady': 'Доступна новая версия',
   'settings.about.updateNow': 'Обновить сейчас',
-  'settings.about.reload': 'Перезагрузить',
+  'settings.about.clearData': 'Удалить все данные',
   'settings.about.playLog': 'Журнал воспроизведения',
   'settings.about.playLogCopied': 'Журнал воспроизведения скопирован',
   'settings.about.playLogClear': 'Очистить',
