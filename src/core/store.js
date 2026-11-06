@@ -1070,6 +1070,9 @@ export class Store extends EventTarget {
             buildTrack(entry, meta, { trackSource, externalIds: entry.externalIds ?? {} }),
           onTrack: async (track) => {
             const previous = this._state.tracks.find((item) => item.id === track.id);
+            // A successful tag read also completes the row: the next sync
+            // must not re-read this file's cached audio.
+            track.metaScanned = true;
             carryCover(track, previous);
             // The cover Blob only survives in the pending write; state gets
             // the cover-free row immediately (see spec APP-001-AA).
@@ -1125,25 +1128,32 @@ export class Store extends EventTarget {
     const trackSource = adapter?.trackSource ?? trackSourceOf(kind);
     const id = `${trackSource}:${entry.path}`;
     const previous = this._state.tracks.find((track) => track.id === id);
-    if (previous?.duration > 0 && previous?.hasCover) return;
+    if (previous?.metaScanned === true) return;
     let meta = {};
     try {
       meta = await this._readTags(blob, entry.path);
     } catch {
+      // Unreadable: leave the row unmarked so the next sync retries it.
       return;
     }
-    const useful =
-      meta?.duration > 0 || meta?.cover || meta?.title || meta?.artist || meta?.album;
-    if (!useful) return;
     // The row may have been dropped while metadata was being read; writing it
     // now would resurrect a deleted track.
     if (!this._state.tracks.some((track) => track.id === id)) return;
-    const track = buildTrack(entry, meta, {
-      trackSource,
-      externalIds: entry.externalIds ?? previous?.externalIds ?? {},
-    });
-    carryCover(track, previous);
+    const useful =
+      meta?.duration > 0 || meta?.cover || meta?.title || meta?.artist || meta?.album;
+    const track = useful
+      ? buildTrack(entry, meta, {
+          trackSource,
+          externalIds: entry.externalIds ?? previous?.externalIds ?? {},
+        })
+      : previous
+        ? { ...previous }
+        : buildTrack(entry, {}, { trackSource, externalIds: entry.externalIds ?? {} });
+    if (useful) carryCover(track, previous);
     if (!(track.duration > 0) && previous?.duration > 0) track.duration = previous.duration;
+    // A successful read completes the row even when the file carries no cover
+    // or tags, so later syncs can skip the cached blob entirely.
+    track.metaScanned = true;
     try {
       await putTracks(this.db, [track]);
     } catch {
@@ -1209,7 +1219,7 @@ export class Store extends EventTarget {
         // Metadata that is already complete needs no blob: the old row is
         // authoritative and a resync must not re-read the whole library.
         const known = byId.get(`${trackSource}:${entry.path}`);
-        const complete = known?.duration > 0 && known?.hasCover;
+        const complete = known?.metaScanned === true;
         if (!complete) {
           if (!blob && this.cache?.read) {
             try {

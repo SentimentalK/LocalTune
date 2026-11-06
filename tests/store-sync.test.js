@@ -95,13 +95,16 @@ const TRACKS = 100;
 const CACHED_BYTES = 10;
 
 /** Store + counting AudioCache + counting metadata reader, wired for rescan. */
-function harness() {
+function harness({ readMetadata: reader } = {}) {
   const db = fakeDb();
-  const meta = { reads: 0 };
+  const meta = {
+    reads: 0,
+    reader: reader ?? (async () => ({ duration: 1000, cover: new Blob([new Uint8Array(4)]) })),
+  };
   const store = new Store(db, {
-    readMetadata: async () => {
+    readMetadata: async (blob, path) => {
       meta.reads += 1;
-      return { duration: 1000, cover: new Blob([new Uint8Array(4)]) };
+      return meta.reader(blob, path);
     },
   });
   const storage = memoryCaches();
@@ -157,6 +160,12 @@ async function settle(store) {
   for (let i = 0; i < 500 && store._enrichQueues.size; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 1));
   }
+}
+
+/** Simulate rows written by an older build, before `metaScanned` existed. */
+function unmark(db, store) {
+  for (const row of db.dataFor('tracks').values()) delete row.metaScanned;
+  for (const row of store.state.tracks) delete row.metaScanned;
 }
 
 test('a second rescan of complete cached tracks reads no audio and no tags', async () => {
@@ -226,6 +235,84 @@ test('removing 20 tracks and adding 10 deletes their cache entries and writes on
   for (const key of listedKeys) {
     assert.ok(storage.entries.has(cacheRequest(key).url), `${key} missing from Cache Storage`);
   }
+
+  await settle(store);
+});
+
+test('coverless tracks are read once and then never again', async () => {
+  const { db, store, counts, meta, listed, reset } = harness({
+    readMetadata: async () => ({ duration: 1000 }),
+  });
+  listed.splice(0, listed.length, ...entries(TRACKS));
+
+  await store.rescan('onedrive');
+  await settle(store);
+
+  for (const track of store.state.tracks) {
+    assert.equal(track.hasCover, false);
+    assert.equal(track.metaScanned, true);
+  }
+
+  reset();
+  await store.rescan('onedrive');
+
+  assert.equal(counts.read, 0);
+  assert.equal(counts.write, 0);
+  assert.equal(meta.reads, 0);
+  assert.equal(db.ops.tracks.put, 0);
+
+  await settle(store);
+});
+
+test('rows from an older build are read once and marked, then skipped', async () => {
+  const { db, store, counts, meta, listed, reset } = harness();
+  listed.splice(0, listed.length, ...entries(TRACKS));
+  await store.rescan('onedrive');
+  await settle(store);
+
+  unmark(db, store);
+  reset();
+  await store.rescan('onedrive');
+
+  assert.equal(counts.read, 100);
+  assert.equal(meta.reads, 100);
+  for (const track of store.state.tracks) assert.equal(track.metaScanned, true);
+
+  reset();
+  await store.rescan('onedrive');
+
+  assert.equal(counts.read, 0);
+  assert.equal(meta.reads, 0);
+
+  await settle(store);
+});
+
+test('a failed tag read leaves the row unmarked and is retried', async () => {
+  const { db, store, counts, meta, listed, reset } = harness();
+  listed.splice(0, listed.length, ...entries(TRACKS));
+  await store.rescan('onedrive');
+  await settle(store);
+
+  unmark(db, store);
+  meta.reader = async () => {
+    throw new Error('unreadable');
+  };
+  reset();
+  await store.rescan('onedrive');
+
+  assert.equal(counts.read, 100);
+  for (const track of store.state.tracks) assert.notEqual(track.metaScanned, true);
+
+  meta.reader = async () => ({ duration: 1000, cover: new Blob([new Uint8Array(4)]) });
+  reset();
+  await store.rescan('onedrive');
+
+  assert.equal(counts.read, 100);
+  for (const track of store.state.tracks) assert.equal(track.metaScanned, true);
+
+  reset();
+  await store.rescan('onedrive');
+  assert.equal(counts.read, 0);
 
   await settle(store);
 });
