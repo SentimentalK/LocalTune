@@ -397,10 +397,7 @@ export function createSettingsView(store, sw) {
     'data-testid': 'background-body',
     text: t('settings.background.cardBody'),
   });
-  const backgroundCopy = el('div', { class: 'background-copy' }, [
-    el('h4', { class: 'background-title', text: t('settings.background.title') }),
-    backgroundBody,
-  ]);
+  const backgroundCopy = el('div', { class: 'background-copy' }, [backgroundBody]);
   const backgroundCard = el(
     'section',
     { class: 'settings-card', 'data-testid': 'settings-section-background' },

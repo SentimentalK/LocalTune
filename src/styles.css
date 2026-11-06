@@ -991,7 +991,6 @@ a { color: inherit; }
 .settings-hint a { color: var(--accent); }
 .settings-view .muted { color: var(--muted); }
 .background-copy { display: flex; flex-direction: column; gap: 4px; }
-.background-title { font-size: 12.5px; font-weight: 600; }
 .background-copy p { color: var(--muted); font-size: 11px; line-height: 1.5; }
 .background-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
 .background-status { margin-top: 9px; font-size: 10.5px; }

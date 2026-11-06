@@ -55,3 +55,27 @@ test('a connected source shows its folder name and its track count', async ({ pa
   await expect(row.locator('.source-count')).toBeVisible();
   await expect(row.locator('.source-count')).toContainText('2 首');
 });
+
+test('the background playback heading is stated once', async ({ page }) => {
+  await openSettings(page);
+
+  const counts = await page.evaluate(() => {
+    const section = document.querySelector('[data-testid="settings-section-background"]');
+    const block = section?.closest('.settings-block');
+    // Count standalone title lines: the body copy also starts with the phrase,
+    // but only the heading occupies a line of its own.
+    const titleLines = (node) =>
+      (node?.innerText.split('\n') ?? []).filter((line) => line.trim() === '后台播放').length;
+    return {
+      block: titleLines(block),
+      view: titleLines(document.querySelector('.settings-view')),
+      removed: document.querySelectorAll('.settings-view .background-title').length,
+    };
+  });
+
+  // The heading is the block's h3 sibling of the section, so the block is the
+  // narrowest element that holds both the heading and the section body.
+  expect(counts.block).toBe(1);
+  expect(counts.view).toBe(1);
+  expect(counts.removed).toBe(0);
+});
