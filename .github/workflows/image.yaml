@@ -66,6 +66,9 @@ jobs:
           check /manifest.webmanifest
           check /sw.js
 
+          status=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/api/resolve?url=https://example.com/x")
+          test "$status" = "404" || { echo "retired /api/resolve must 404, got $status"; exit 1; }
+
           header() {
             curl -sI "http://localhost:8080$1" | tr -d '\r' | grep -qi "$2"
           }
