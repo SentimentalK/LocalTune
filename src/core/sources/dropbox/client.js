@@ -100,6 +100,16 @@ function errorTag(payload) {
 }
 
 /**
+ * Serialize `value` as JSON with every non-ASCII UTF-16 code unit escaped as
+ * `\uXXXX`, so the result is a valid HTTP header value (ISO-8859-1 /
+ * ByteString). `JSON.parse` restores the original text exactly.
+ */
+export function asciiJson(value) {
+  return JSON.stringify(value).replace(/[\u007f-\uffff]/g, (char) =>
+    '\\u' + char.charCodeAt(0).toString(16).padStart(4, '0'));
+}
+
+/**
  * Create a Dropbox client bound to a token getter.
  * @param {{ fetchImpl?: typeof fetch, getToken?: () => string|Promise<string> }} [options]
  */
@@ -134,7 +144,7 @@ export function createDropboxClient({
       method: 'POST',
       headers: {
         ...(await authHeaders()),
-        'Dropbox-API-Arg': JSON.stringify({ path }),
+        'Dropbox-API-Arg': asciiJson({ path }),
       },
     });
     if (response.status < 200 || response.status >= 300) {

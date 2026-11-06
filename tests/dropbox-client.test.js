@@ -8,6 +8,7 @@ import {
   DROPBOX_AUDIO_EXTENSIONS,
   DropboxError,
   apiPath,
+  asciiJson,
   audioEntries,
   cleanPath,
   createDropboxClient,
@@ -163,6 +164,55 @@ test('download sends the API arg header and parses the result metadata', async (
     path_display: '/Music/a.mp3',
     size: 1234,
   });
+});
+
+test('asciiJson escapes non-ASCII so the header stays ISO-8859-1', () => {
+  const path = 'Joker Xue - 像风一样.mp3';
+  const json = asciiJson({ path });
+
+  assert.ok([...json].every((char) => char.charCodeAt(0) <= 0xff));
+  assert.ok(json.includes('\\u50cf\\u98ce'));
+  assert.deepEqual(JSON.parse(json), { path });
+  assert.equal(asciiJson({ path: '/Music/a.mp3' }), '{"path":"/Music/a.mp3"}');
+
+  const emoji = asciiJson({ path: 'a 🎵 b.mp3' });
+  assert.ok([...emoji].every((char) => char.charCodeAt(0) <= 0xff));
+  assert.deepEqual(JSON.parse(emoji), { path: 'a 🎵 b.mp3' });
+  assert.ok(emoji.includes('\\ud83c\\udfb5'));
+
+  // The browser rejects a non-ByteString header before any request is sent.
+  const request = new Request(`${DROPBOX_CONTENT_URL}/files/download`, {
+    method: 'POST',
+    headers: { 'Dropbox-API-Arg': json },
+  });
+  assert.equal(request.headers.get('Dropbox-API-Arg'), json);
+});
+
+test('download sends a non-ASCII path as an ASCII API arg header', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    return {
+      status: 200,
+      ok: true,
+      async blob() {
+        return { type: 'audio/mpeg' };
+      },
+      headers: { get: () => null },
+    };
+  };
+  const client = createDropboxClient({ fetchImpl, getToken: () => 'the-token' });
+  const path = '/Music/Joker Xue - 像风一样.mp3';
+
+  await client.download(path);
+
+  const header = calls[0].init.headers['Dropbox-API-Arg'];
+  assert.ok([...header].every((char) => char.charCodeAt(0) <= 0xff));
+  assert.deepEqual(JSON.parse(header), { path });
+  assert.equal(new Headers(calls[0].init.headers).get('Dropbox-API-Arg'), header);
+  assert.doesNotThrow(() =>
+    new Request(calls[0].url, { method: 'POST', headers: calls[0].init.headers }),
+  );
 });
 
 test('audioEntries keeps supported audio files and drops the rest', () => {

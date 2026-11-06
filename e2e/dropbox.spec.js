@@ -188,3 +188,38 @@ test('an unconfigured Dropbox build never touches the network', async ({ page })
     await page.screenshot({ path: path.join(dir, name), fullPage: true });
   }
 });
+
+test('a non-ASCII Dropbox path downloads and caches without a header error', async ({ page }) => {
+  test.setTimeout(120_000);
+  const remote = '/Music/Joker Xue - 像风一样.mp3';
+  const mock = await installDropboxMock(page, {
+    files: [{ id: 'id-cn', name: 'Joker Xue - 像风一样.mp3', path: remote }],
+    pageSize: 10,
+  });
+
+  await page.goto('/');
+  await expect(page.locator('.wordmark')).toHaveText('localtune.');
+  await page.locator('[data-testid="settings-open"]').click();
+  await page.locator('[data-testid="source-connect-dropbox"]').click();
+  await expect(page.locator('[data-testid="dropbox-picker"]')).toBeVisible();
+  await expect(page.locator('[data-testid="dropbox-folder"]').first()).toHaveText('Music');
+  await page.locator('[data-testid="dropbox-folder"]').first().click();
+  await expect(page.locator('[data-testid="dropbox-picker-choose"]')).toBeEnabled();
+  await page.locator('[data-testid="dropbox-picker-choose"]').click();
+  await expect(page.locator('[data-testid="dropbox-picker"]')).toBeHidden();
+
+  // The warm pass reads the only file. Before the fix the fetch threw on the
+  // non-ISO-8859-1 header, so this request never reached the mock.
+  await expect.poll(() => mock.mediaRequests.length, { timeout: 15_000 }).toBe(1);
+  expect(mock.mediaRequests[0].path).toBe(remote);
+  await expect(page.locator('[data-testid="source-row-dropbox"] .settings-error')).toBeHidden();
+  await expect(page.locator('[data-testid="source-row-dropbox"] .settings-progress')).toBeHidden();
+
+  await backToFolders(page);
+  await page.locator('[data-testid="folder-source-dropbox"]').click();
+  await expect(page.locator('[data-testid="track-row"]')).toHaveCount(1);
+  await page.locator('[data-testid="track-row"] .track').first().click();
+  await expectPlaying(page);
+  await page.waitForTimeout(300);
+  expect(mock.mediaRequests).toHaveLength(1); // played from the cache, no second download
+});
