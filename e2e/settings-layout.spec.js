@@ -11,7 +11,7 @@ test('settings cards fill the width and controls hug the trailing edge', async (
 
   const cards = await page.evaluate(() => {
     const visible = (node) => node.getClientRects().length > 0;
-    return [...document.querySelectorAll('.settings-view .card.settings-card')]
+    return [...document.querySelectorAll('.settings-view .settings-card')]
       .filter(visible)
       .map((card) => {
         const rect = card.getBoundingClientRect();
@@ -165,5 +165,40 @@ test('settings cards fill the width and controls hug the trailing edge', async (
   expect(rows.length).toBe(4);
   for (const row of rows) {
     expect(row.overflow, `${row.id} horizontal overflow`).toBeLessThanOrEqual(0);
+  }
+});
+
+// The settings sections and source rows are flat: no card surface, border or
+// corners. Only the remote folder picker keeps the card chrome.
+test('settings sections carry no card surface', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('[data-testid="settings-open"]').click();
+  await expect(page.locator('[data-testid="settings-section-playback"]')).toBeVisible();
+
+  const nodes = await page.evaluate(() => {
+    const visible = (node) => node.getClientRects().length > 0;
+    return [
+      ...document.querySelectorAll('.settings-view [data-testid^="settings-section-"]'),
+      ...document.querySelectorAll('.settings-view .source-card'),
+    ]
+      .filter(visible)
+      .map((node) => {
+        const style = getComputedStyle(node);
+        return {
+          testid: node.dataset.testid ?? '',
+          background: style.backgroundColor,
+          border: style.borderTopWidth,
+          radius: style.borderTopLeftRadius,
+        };
+      });
+  });
+
+  expect(nodes.length).toBeGreaterThanOrEqual(6);
+  for (const node of nodes) {
+    expect(node.background, `${node.testid || 'source card'} background`).toBe(
+      'rgba(0, 0, 0, 0)',
+    );
+    expect(node.border, `${node.testid || 'source card'} border`).toBe('0px');
+    expect(node.radius, `${node.testid || 'source card'} radius`).toBe('0px');
   }
 });

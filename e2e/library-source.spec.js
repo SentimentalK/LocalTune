@@ -19,7 +19,9 @@ async function signInAndPickMusic(page, { count = '2' } = {}) {
   await page.locator('[data-testid="onedrive-picker-choose"]').click();
 
   await expect(page.locator('[data-testid="onedrive-picker"]')).toBeHidden();
-  await expect(page.locator('[data-testid="source-row-onedrive"]')).toContainText(count);
+  if (count !== null) {
+    await expect(page.locator('[data-testid="source-row-onedrive"]')).toContainText(count);
+  }
 }
 
 async function backToFolders(page) {
@@ -285,7 +287,10 @@ test('a granted source with zero tracks still gets a row', async ({ page }) => {
   test.setTimeout(90_000);
   await installGraphMock(page, { files: [] });
 
-  await signInAndPickMusic(page, { count: '0' });
+  await signInAndPickMusic(page, { count: null });
+  await expect(
+    page.locator('[data-testid="source-row-onedrive"] .source-count'),
+  ).toBeHidden();
   await expect(page.locator('[data-testid="source-row-onedrive"]')).toBeVisible();
 
   await backToFolders(page);
@@ -356,7 +361,7 @@ test('clearing everything also clears the play log', async ({ page }) => {
   // tracks it produced are gone.
   const cloudRow = page.locator('[data-testid="source-row-onedrive"]');
   await expect(cloudRow.locator('button')).toHaveCount(3);
-  await expect(cloudRow).toContainText('0');
+  await expect(cloudRow.locator('.source-count')).toBeHidden();
   const tracks = await readStore(page, 'tracks');
   expect(tracks.filter((track) => track.source === 'onedrive')).toHaveLength(0);
 });

@@ -92,9 +92,10 @@ test('Dropbox connect, browse, scan, cached playback and disconnect', async ({ p
   await page.locator('[data-testid="settings-open"]').click();
   page.once('dialog', (dialog) => dialog.accept());
   await page.locator('[data-testid="settings-dropbox-remove"]').click();
-  await expect(page.locator('[data-testid="source-row-dropbox"] .source-body span')).toContainText(
-    '0',
-  );
+  await expect(
+    page.locator('[data-testid="source-row-dropbox"] .source-subtitle'),
+  ).toHaveText('连接 Dropbox 音乐目录');
+  await expect(page.locator('[data-testid="source-row-dropbox"] .source-count')).toBeHidden();
 
   await backToFolders(page);
   await expect(page.locator('[data-testid="folder-source-dropbox"]')).toHaveCount(0);

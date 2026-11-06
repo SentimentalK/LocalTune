@@ -188,7 +188,7 @@ test('Clear all drops derived data but keeps sources, playlists and settings', a
 
   const cloudRow = page.locator('[data-testid="source-row-onedrive"]');
   await expect(cloudRow.locator('button')).toHaveCount(3);
-  await expect(cloudRow).toContainText('0');
+  await expect(cloudRow.locator('.source-count')).toBeHidden();
 
   // The playlists store is kept for old profiles, but the app no longer reads
   // or writes it; Clear all must leave it untouched.

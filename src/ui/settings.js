@@ -90,12 +90,29 @@ export function createSettingsView(store, sw) {
     gdrive: 'gdrive',
     dropbox: 'dropbox',
   };
+  const SOURCE_TITLES = {
+    local: 'settings.source.titleLocal',
+    onedrive: 'settings.source.onedrive',
+    gdrive: 'settings.source.gdrive',
+    dropbox: 'settings.source.dropbox',
+  };
+  const SOURCE_HINTS = {
+    local: 'settings.source.hintLocal',
+    onedrive: 'settings.source.hintOneDrive',
+    gdrive: 'settings.source.hintGdrive',
+    dropbox: 'settings.source.hintDropbox',
+  };
   /** Providers whose brief token loss keeps the root and asks for a reconnect. */
   const RECONNECT_KINDS = new Set(['gdrive', 'dropbox']);
 
   function createSourceRow(kind) {
-    const name = el('b', { text: t('settings.source.permissionNone') });
-    const count = el('span', { text: t('settings.source.trackCount', { count: 0 }) });
+    const name = el('b', { class: 'source-title', text: t(SOURCE_TITLES[kind]) });
+    const count = el('span', { class: 'source-count' });
+    setHidden(count, true);
+    const subtitle = el('span', {
+      class: 'source-subtitle',
+      text: t(SOURCE_HINTS[kind]),
+    });
     const rowError = el('p', { class: 'settings-error muted', role: 'alert' });
     setHidden(rowError, true);
     // Distinct from `.settings-error`: existing specs target that class to
@@ -111,6 +128,7 @@ export function createSettingsView(store, sw) {
     const view = {
       name,
       count,
+      subtitle,
       error: rowError,
       progress,
       progressLabel,
@@ -236,7 +254,10 @@ export function createSettingsView(store, sw) {
           class: `source-icon source-icon-${kind}`,
           'aria-hidden': 'true',
         }, [icon(SOURCE_ICONS[kind])]),
-        el('span', { class: 'source-body' }, [name, count]),
+        el('span', { class: 'source-body' }, [
+          name,
+          el('span', { class: 'source-meta' }, [subtitle, count]),
+        ]),
         view.actions,
       ]),
       progress,
@@ -287,12 +308,11 @@ export function createSettingsView(store, sw) {
   const migrationError = el('p', { class: 'settings-error muted', role: 'alert' });
   setHidden(migrationError, true);
 
-  function sourceCard(kind, title) {
+  function sourceCard(kind) {
     const group =
       kind === 'local' ? 'local' : kind === 'onedrive' ? 'cloud' : kind;
     return el('div', { 'data-testid': `settings-library-${group}` }, [
-      el('h4', { class: 'settings-card-title', text: title }),
-      el('section', { class: 'card settings-card source-card' }, [createSourceRow(kind)]),
+      el('section', { class: 'settings-card source-card' }, [createSourceRow(kind)]),
     ]);
   }
 
@@ -302,10 +322,10 @@ export function createSettingsView(store, sw) {
     [
       el('h3', { class: 'settings-block-title', text: t('settings.library.title') }),
       el('div', { class: 'settings-sources' }, [
-        sourceCard('local', t('settings.library.localGroup')),
-        sourceCard('onedrive', t('settings.library.cloudGroup')),
-        sourceCard('gdrive', t('settings.library.gdriveGroup')),
-        sourceCard('dropbox', t('settings.library.dropboxGroup')),
+        sourceCard('local'),
+        sourceCard('onedrive'),
+        sourceCard('gdrive'),
+        sourceCard('dropbox'),
       ]),
       migrationError,
     ],
@@ -383,7 +403,7 @@ export function createSettingsView(store, sw) {
   ]);
   const backgroundCard = el(
     'section',
-    { class: 'card settings-card', 'data-testid': 'settings-section-background' },
+    { class: 'settings-card', 'data-testid': 'settings-section-background' },
     [backgroundCopy, backgroundActions, installStatus, backgroundDesktop],
   );
   // Desktop has no install or battery switch to act on: one sentence instead of
@@ -561,7 +581,7 @@ export function createSettingsView(store, sw) {
 
   const storageCard = el(
     'section',
-    { class: 'card settings-card', 'data-testid': 'settings-section-storage' },
+    { class: 'settings-card', 'data-testid': 'settings-section-storage' },
     [
       limitRow,
       el('div', { class: 'storage-rows' }, [indexRow.row, coverRow.row, audioRow.row]),
@@ -613,7 +633,7 @@ export function createSettingsView(store, sw) {
 
   const playbackCard = el(
     'section',
-    { class: 'card settings-card', 'data-testid': 'settings-section-playback' },
+    { class: 'settings-card', 'data-testid': 'settings-section-playback' },
     [
       el('div', { class: 'playback-line', 'data-testid': 'playback-line' }, [
         el('div', { class: 'inline-setting' }, [
@@ -714,7 +734,7 @@ export function createSettingsView(store, sw) {
 
   const languageCard = el(
     'section',
-    { class: 'card settings-card', 'data-testid': 'settings-section-language' },
+    { class: 'settings-card', 'data-testid': 'settings-section-language' },
     [languageList],
   );
 
@@ -865,7 +885,7 @@ export function createSettingsView(store, sw) {
 
   const aboutCard = el(
     'section',
-    { class: 'card settings-card', 'data-testid': 'settings-section-about' },
+    { class: 'settings-card', 'data-testid': 'settings-section-about' },
     [
       el('div', { class: 'about-row' }, [
         el('span', { text: t('settings.about.version') }),
@@ -974,13 +994,17 @@ export function createSettingsView(store, sw) {
         configured: true,
         needsReconnect: false,
       };
-      setText(view.name, row.name || t('settings.source.permissionNone'));
-      setText(view.count, t('settings.source.trackCount', { count: row.trackCount ?? 0 }));
-
       const permission = row.permission;
       const scanning = Boolean(row.scanning);
       const trackCount = row.trackCount ?? 0;
       const connected = permission === 'granted' || trackCount > 0;
+      const hint = t(SOURCE_HINTS[kind]);
+      setText(view.subtitle, connected && row.name ? row.name : hint);
+      setText(
+        view.count,
+        trackCount > 0 ? `· ${t('settings.source.trackCount', { count: trackCount })}` : '',
+      );
+      setHidden(view.count, trackCount === 0);
       syncActions(view, connected);
 
       const configured = row.configured !== false;

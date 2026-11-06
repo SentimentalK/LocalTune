@@ -8,8 +8,8 @@ test('library shows a local group before the cloud group', async ({ page }) => {
   const cloud = page.locator('[data-testid="settings-library-cloud"]');
   await expect(local).toBeVisible();
   await expect(cloud).toBeVisible();
-  await expect(local.locator('h4')).toHaveText('本地');
-  await expect(cloud.locator('h4')).toHaveText('OneDrive');
+  await expect(local.locator('.source-title')).toHaveText('本地文件夹');
+  await expect(cloud.locator('.source-title')).toHaveText('OneDrive');
   await expect(local.locator('[data-testid="source-row-local"]')).toBeVisible();
   await expect(cloud.locator('[data-testid="source-row-onedrive"]')).toBeVisible();
 
