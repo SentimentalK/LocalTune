@@ -92,11 +92,14 @@ export default {
   'settings.library.localGroup': 'Lokal',
   'settings.library.cloudGroup': 'OneDrive',
   'settings.library.gdriveGroup': 'Google Drive',
+  'settings.library.dropboxGroup': 'Dropbox',
   'settings.source.remove': 'Entfernen',
   'settings.source.removeConfirm': 'Diese Quelle entfernen? Ihr Titelindex und Cache werden gelöscht.',
   'settings.source.permissionNone': 'Nicht verbunden',
   'settings.source.onedrive': 'OneDrive',
   'settings.source.gdrive': 'Google Drive',
+  'settings.source.dropbox': 'Dropbox',
+  'settings.source.connectDropbox': 'Dropbox verbinden',
   'settings.source.connectLocal': 'Lokalen Ordner auswählen',
   'settings.source.connectOneDrive': 'OneDrive verbinden',
   'settings.source.connectGdrive': 'Google Drive verbinden',
@@ -128,6 +131,17 @@ export default {
     'OneDrive konnte den Anmeldeaustausch nicht abschließen. Bitte erneut versuchen.',
   'settings.onedrive.authFailedPending':
     'Die OneDrive-Anmeldung läuft noch. Bitte gleich erneut versuchen.',
+  'settings.dropbox.title': 'Dropbox-Ordner auswählen',
+  'settings.dropbox.root': 'Dropbox',
+  'settings.dropbox.unconfigured': 'Dropbox benötigt einen App-Schlüssel, um sich zu verbinden.',
+  'settings.dropbox.setupLink': 'Einrichtungsanleitung',
+  'settings.dropbox.authFailed': 'Die Dropbox-Anmeldung ist abgelaufen. Bitte erneut verbinden.',
+  'settings.dropbox.authFailedRedirect':
+    'Die Dropbox-Anmeldung hat ihren Status verloren. Bitte erneut versuchen.',
+  'settings.dropbox.authFailedToken':
+    'Dropbox konnte den Anmeldeaustausch nicht abschließen. Bitte erneut versuchen.',
+  'settings.dropbox.authFailedPending':
+    'Die Dropbox-Anmeldung läuft noch. Bitte gleich erneut versuchen.',
   'settings.background.title': 'Wiedergabe im Hintergrund',
   'settings.background.cardBody': 'Handys pausieren Seiten im Hintergrund, um Strom zu sparen.',
   'settings.background.desktop': 'Hintergrundwiedergabe betrifft nur Handys.',
@@ -242,6 +256,9 @@ export default {
   'error.gdrive.authRequired': 'Melde dich zuerst bei Google Drive an',
   'error.gdrive.fetchFailed': 'Die Datei konnte nicht von Google Drive gelesen werden',
   'error.gdrive.notConfigured': 'Google Drive ist in diesem Build nicht konfiguriert',
+  'error.dropbox.authRequired': 'Melde dich zuerst bei Dropbox an',
+  'error.dropbox.fetchFailed': 'Die Datei konnte nicht von Dropbox gelesen werden',
+  'error.dropbox.notConfigured': 'Dropbox ist in diesem Build nicht konfiguriert',
 
   'fatal.message': 'LocalTune konnte nicht starten: {message}',
   'fatal.hint': 'Autorisiere den Musikordner erneut oder lade die Seite neu.',

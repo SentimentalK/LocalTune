@@ -339,6 +339,7 @@ const SPRITE = `
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
   <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol>
   <symbol id="i-hard-drive" viewBox="0 0 24 24"><path d="M22 12H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11zM6 16h.01M10 16h.01"/></symbol>
+  <symbol id="i-dropbox" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></symbol>
 </svg>`;
 
 const TONEARM = `
@@ -1337,18 +1338,21 @@ export function mountUi(root, store, sw) {
 
   function trackKind(track) {
     if (track.source === 'gdrive') return 'gdrive';
+    if (track.source === 'dropbox') return 'dropbox';
     if (track.source === 'onedrive') return 'onedrive';
     return 'local';
   }
 
   function sourceDisplayName(state, kind) {
     if (kind === 'gdrive') return t('settings.source.gdrive');
+    if (kind === 'dropbox') return t('settings.source.dropbox');
     if (kind === 'onedrive') return t('settings.source.onedrive');
     return t('settings.library.localGroup');
   }
 
   function sourceIconId(kind) {
     if (kind === 'gdrive') return 'i-hard-drive';
+    if (kind === 'dropbox') return 'i-dropbox';
     if (kind === 'onedrive') return 'i-cloud';
     return 'i-folder';
   }

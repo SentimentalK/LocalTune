@@ -63,25 +63,35 @@ export function createSettingsView(store, sw) {
   // ---- library ----
   const sourceViews = new Map();
 
-  const GDRIVE_SETUP_URL =
+  const OAUTH_SETUP_URL =
     'https://github.com/SentimentalK/LocalTune/blob/main/docs/oauth-setup.md';
 
   const CONNECT_LABELS = {
     local: 'settings.source.connectLocal',
     onedrive: 'settings.source.connectOneDrive',
     gdrive: 'settings.source.connectGdrive',
+    dropbox: 'settings.source.connectDropbox',
   };
   const CHANGE_TESTIDS = {
     local: 'settings-source-change',
     onedrive: 'settings-source-onedrive',
     gdrive: 'settings-source-gdrive',
+    dropbox: 'settings-source-dropbox',
   };
   const REMOVE_TESTIDS = {
     local: 'settings-source-remove',
     onedrive: 'settings-onedrive-remove',
     gdrive: 'settings-gdrive-remove',
+    dropbox: 'settings-dropbox-remove',
   };
-  const SOURCE_ICONS = { local: 'folder', onedrive: 'onedrive', gdrive: 'gdrive' };
+  const SOURCE_ICONS = {
+    local: 'folder',
+    onedrive: 'onedrive',
+    gdrive: 'gdrive',
+    dropbox: 'dropbox',
+  };
+  /** Providers whose brief token loss keeps the root and asks for a reconnect. */
+  const RECONNECT_KINDS = new Set(['gdrive', 'dropbox']);
 
   function createSourceRow(kind) {
     const name = el('b', { text: t('settings.source.permissionNone') });
@@ -165,8 +175,8 @@ export function createSettingsView(store, sw) {
         title: t('settings.source.changeFolder'),
         onclick: () => {
           const row = (store.state.sources ?? []).find((item) => item.id === kind);
-          if (kind === 'gdrive' && row?.needsReconnect) {
-            run(store.reconnectGdrive());
+          if (RECONNECT_KINDS.has(kind) && row?.needsReconnect) {
+            run(kind === 'gdrive' ? store.reconnectGdrive() : store.reconnectDropbox());
             return;
           }
           changeSource(kind);
@@ -200,19 +210,23 @@ export function createSettingsView(store, sw) {
 
     view.actions = el('div', { class: 'source-actions' }, [view.connectButton]);
 
-    if (kind === 'gdrive') {
-      // No client ID in this build: say so and link the setup guide instead of
-      // offering a button that would go nowhere.
-      view.hint = el('p', { class: 'settings-hint muted', 'data-testid': 'gdrive-unconfigured' }, [
-        t('settings.gdrive.unconfigured'),
-        ' ',
-        el('a', {
-          href: GDRIVE_SETUP_URL,
-          target: '_blank',
-          rel: 'noopener',
-          text: t('settings.gdrive.setupLink'),
-        }),
-      ]);
+    if (kind === 'gdrive' || kind === 'dropbox') {
+      // No app credential in this build: say so and link the setup guide
+      // instead of offering a button that would go nowhere.
+      view.hint = el(
+        'p',
+        { class: 'settings-hint muted', 'data-testid': `${kind}-unconfigured` },
+        [
+          t(`settings.${kind}.unconfigured`),
+          ' ',
+          el('a', {
+            href: OAUTH_SETUP_URL,
+            target: '_blank',
+            rel: 'noopener',
+            text: t(`settings.${kind}.setupLink`),
+          }),
+        ],
+      );
       setHidden(view.hint, true);
     }
 
@@ -259,6 +273,12 @@ export function createSettingsView(store, sw) {
       else run(store.browseSource('gdrive', ''));
       return;
     }
+    if (kind === 'dropbox') {
+      if (row.permission === 'prompt') run(store.reconnectDropbox());
+      else if (row.permission === 'none') run(store.connectDropbox());
+      else run(store.browseSource('dropbox', ''));
+      return;
+    }
     if (row.permission === 'prompt') run(store.reconnectOneDrive());
     else if (row.permission === 'none') run(store.connectOneDrive());
     else run(store.browseSource('onedrive', ''));
@@ -268,7 +288,8 @@ export function createSettingsView(store, sw) {
   setHidden(migrationError, true);
 
   function sourceCard(kind, title) {
-    const group = kind === 'local' ? 'local' : kind === 'gdrive' ? 'gdrive' : 'cloud';
+    const group =
+      kind === 'local' ? 'local' : kind === 'onedrive' ? 'cloud' : kind;
     return el('div', { 'data-testid': `settings-library-${group}` }, [
       el('h4', { class: 'settings-card-title', text: title }),
       el('section', { class: 'card settings-card source-card' }, [createSourceRow(kind)]),
@@ -284,6 +305,7 @@ export function createSettingsView(store, sw) {
         sourceCard('local', t('settings.library.localGroup')),
         sourceCard('onedrive', t('settings.library.cloudGroup')),
         sourceCard('gdrive', t('settings.library.gdriveGroup')),
+        sourceCard('dropbox', t('settings.library.dropboxGroup')),
       ]),
       migrationError,
     ],
@@ -963,20 +985,23 @@ export function createSettingsView(store, sw) {
 
       const configured = row.configured !== false;
       const needsReconnect = Boolean(row.needsReconnect);
-      const reconnect = kind === 'gdrive' && needsReconnect;
+      const reconnect = RECONNECT_KINDS.has(kind) && needsReconnect;
       const connectLabel = reconnect
         ? t('settings.source.reconnect')
         : t(CONNECT_LABELS[kind]);
       setText(view.connectButton, connectLabel);
       view.connectButton.setAttribute('aria-label', connectLabel);
       view.connectButton.setAttribute('title', connectLabel);
-      // An unconfigured Google build cannot start GIS at all: no network, no
+      // An unconfigured OAuth build cannot start a flow at all: no network, no
       // enabled connect button.
-      view.connectButton.disabled = kind === 'gdrive' && !configured;
+      view.connectButton.disabled = RECONNECT_KINDS.has(kind) && !configured;
       if (view.hint) setHidden(view.hint, configured);
 
       view.syncButton.disabled =
-        view.syncing || scanning || permission === 'none' || (kind === 'gdrive' && !configured);
+        view.syncing ||
+        scanning ||
+        permission === 'none' ||
+        (RECONNECT_KINDS.has(kind) && !configured);
       view.changeButton.disabled = scanning;
       const changeLabel = reconnect
         ? t('settings.source.reconnect')
@@ -1012,7 +1037,7 @@ export function createSettingsView(store, sw) {
           : '';
       // A dead token is the actionable fact; the provider's raw 401 text adds
       // nothing on top of it.
-      const reconnectMessage = needsReconnect ? t('settings.gdrive.authFailed') : '';
+      const reconnectMessage = needsReconnect ? t(`settings.${kind}.authFailed`) : '';
       const message = reconnectMessage || row.error || warning;
       setHidden(view.error, !message);
       if (message) setText(view.error, message);

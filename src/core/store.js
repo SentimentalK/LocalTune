@@ -3,9 +3,9 @@
  * Owns the library, the queue, the audio element and persistence, and emits
  * a 'change' event whenever the read-only state snapshot is updated.
  *
- * Three library sources are supported: a local folder (File System Access or
- * `<input webkitdirectory>`), OneDrive and Google Drive. Each has its own row
- * in `state.sources`; tracks remember which adapter produced them.
+ * Four library sources are supported: a local folder (File System Access or
+ * `<input webkitdirectory>`), OneDrive, Google Drive and Dropbox. Each has its
+ * own row in `state.sources`; tracks remember which adapter produced them.
  */
 
 import {
@@ -31,6 +31,8 @@ import { OpfsSource } from './sources/opfs/source.js';
 import { defaultLocalMode } from './sources/opfs/mode.js';
 import { OneDriveSource } from './sources/onedrive/source.js';
 import { GdriveSource } from './sources/googledrive/source.js';
+import { DropboxSource } from './sources/dropbox/source.js';
+import { parseAuthResponse } from './sources/pkce.js';
 import { AudioCache, cacheKey } from './cache/audioCache.js';
 import { createCacheIndex } from './cache/index.js';
 import { readMetadata, describeTags } from './metadata/index.js';
@@ -75,8 +77,15 @@ import { yieldToMain } from './timing.js';
 const VIEWS = new Set(['folders', 'queue', 'search', 'settings', 'vip']);
 const MEDIA_SYNC_INTERVAL = 1000;
 const REPLAYGAIN_HEAD_BYTES = 1 << 19;
-const SOURCE_KINDS = ['local', 'onedrive', 'gdrive'];
-const TRACK_SOURCE = { local: 'fsa', onedrive: 'onedrive', gdrive: 'gdrive' };
+const SOURCE_KINDS = ['local', 'onedrive', 'gdrive', 'dropbox'];
+const TRACK_SOURCE = {
+  local: 'fsa',
+  onedrive: 'onedrive',
+  gdrive: 'gdrive',
+  dropbox: 'dropbox',
+};
+const REMOTE_KINDS = ['onedrive', 'gdrive', 'dropbox'];
+const RECONNECT_KINDS = new Set(['gdrive', 'dropbox']);
 const LOCAL_MODE_KEY = 'localMode';
 const SOURCE_SYNC_INTERVAL = 60 * 60 * 1000;
 const ENRICH_FLUSH_EVERY = 25;
@@ -126,13 +135,14 @@ function trackSourceOf(kind) {
 
 function kindOfTrack(track) {
   if (track?.source === 'gdrive') return 'gdrive';
+  if (track?.source === 'dropbox') return 'dropbox';
   if (track?.source === 'onedrive') return 'onedrive';
   return 'local';
 }
 
 /** Tracks whose adapter reads over the network instead of the device. */
 function isRemoteTrack(track) {
-  return track?.source === 'onedrive' || track?.source === 'gdrive';
+  return track?.source === 'onedrive' || track?.source === 'gdrive' || track?.source === 'dropbox';
 }
 
 function sortTracks(tracks) {
@@ -178,7 +188,7 @@ function emptyRow(kind, adapter) {
     cacheFailures: [],
     root: adapter.root?.()?.path ?? null,
     configured: typeof adapter.configured === 'function' ? adapter.configured() : true,
-    needsReconnect: kind === 'gdrive' && permission === 'prompt',
+    needsReconnect: RECONNECT_KINDS.has(kind) && permission === 'prompt',
   };
 }
 
@@ -244,7 +254,13 @@ export class Store extends EventTarget {
     };
     this.onedrive = new OneDriveSource({ meta, cache: this.cache });
     this.gdrive = new GdriveSource({ meta, cache: this.cache });
-    this.sources = { local: this.local, onedrive: this.onedrive, gdrive: this.gdrive };
+    this.dropbox = new DropboxSource({ meta, cache: this.cache });
+    this.sources = {
+      local: this.local,
+      onedrive: this.onedrive,
+      gdrive: this.gdrive,
+      dropbox: this.dropbox,
+    };
 
     this.audio = typeof Audio === 'function' ? new Audio() : null;
     if (this.audio && typeof document !== 'undefined' && document?.body) {
@@ -412,37 +428,92 @@ export class Store extends EventTarget {
   }
 
   async init() {
-    let redirect = false;
-    try {
-      redirect = await this.onedrive.handleRedirect();
-    } catch {
-      // A failed exchange leaves the source signed out; restore() decides.
-      redirect = false;
+    // Both providers redirect to `/` with `?code=&state=`: the PKCE record the
+    // state belongs to decides which handler may consume it. Handlers get the
+    // captured search because they clear `location.search` as they run.
+    const search = globalThis.location?.search ?? '';
+    const params = parseAuthResponse(search);
+    let authKind = null;
+    if (params.code || params.error) {
+      const [dropboxPkce, onedrivePkce] = await Promise.all([
+        getMeta(this.db, 'dropboxPkce').catch(() => null),
+        getMeta(this.db, 'onedrivePkce').catch(() => null),
+      ]);
+      if (params.state && dropboxPkce?.state === params.state) authKind = 'dropbox';
+      else if (params.state && onedrivePkce?.state === params.state) authKind = 'onedrive';
+      else authKind = 'onedrive';
     }
-    const authError = this.onedrive.authError;
-    const authStage = this.onedrive.authStage ?? 'redirect';
-    let authFailure = null;
 
-    if (redirect === true) {
-      this._state.pendingView = { view: 'settings', section: 'library', picker: 'onedrive' };
-      this._state.view = 'settings';
-      this.log('onedrive:auth', { stage: 'redirect', ok: true, error: null });
-    } else if (redirect === false && authError) {
-      this._state.pendingView = { view: 'settings', section: 'library', picker: null };
-      this._state.view = 'settings';
-      this.log('onedrive:auth', {
-        stage: authStage,
-        ok: false,
-        error: authError,
-      });
-      authFailure =
-        authStage === 'redirect'
-          ? t('settings.onedrive.authFailedRedirect')
-          : authStage === 'token'
-            ? t('settings.onedrive.authFailedToken')
-            : authStage === 'pending'
-              ? t('settings.onedrive.authFailedPending')
-              : t('settings.onedrive.authFailed');
+    let redirect = false;
+    if (authKind === 'onedrive') {
+      try {
+        redirect = await this.onedrive.handleRedirect(search);
+      } catch {
+        // A failed exchange leaves the source signed out; restore() decides.
+        redirect = false;
+      }
+    } else if (authKind === 'dropbox') {
+      try {
+        redirect = await this.dropbox.handleRedirect(search);
+      } catch {
+        // Same for Dropbox: the token refresh path reports the failure.
+        redirect = false;
+      }
+    }
+
+    let authFailure = null;
+    let authFailureKind = 'onedrive';
+    let authStage = 'redirect';
+
+    if (authKind === 'onedrive') {
+      const authError = this.onedrive.authError;
+      authStage = this.onedrive.authStage ?? 'redirect';
+      if (redirect === true) {
+        this._state.pendingView = { view: 'settings', section: 'library', picker: 'onedrive' };
+        this._state.view = 'settings';
+        this.log('onedrive:auth', { stage: 'redirect', ok: true, error: null });
+      } else if (redirect === false && authError) {
+        this._state.pendingView = { view: 'settings', section: 'library', picker: null };
+        this._state.view = 'settings';
+        this.log('onedrive:auth', {
+          stage: authStage,
+          ok: false,
+          error: authError,
+        });
+        authFailure =
+          authStage === 'redirect'
+            ? t('settings.onedrive.authFailedRedirect')
+            : authStage === 'token'
+              ? t('settings.onedrive.authFailedToken')
+              : authStage === 'pending'
+                ? t('settings.onedrive.authFailedPending')
+                : t('settings.onedrive.authFailed');
+      }
+    } else if (authKind === 'dropbox') {
+      const authError = this.dropbox.authError;
+      authStage = this.dropbox.authStage ?? 'redirect';
+      authFailureKind = 'dropbox';
+      if (redirect === true) {
+        this._state.pendingView = { view: 'settings', section: 'library', picker: 'dropbox' };
+        this._state.view = 'settings';
+        this.log('dropbox:auth', { stage: 'redirect', ok: true, error: null });
+      } else if (redirect === false && authError) {
+        this._state.pendingView = { view: 'settings', section: 'library', picker: null };
+        this._state.view = 'settings';
+        this.log('dropbox:auth', {
+          stage: authStage,
+          ok: false,
+          error: authError,
+        });
+        authFailure =
+          authStage === 'redirect'
+            ? t('settings.dropbox.authFailedRedirect')
+            : authStage === 'token'
+              ? t('settings.dropbox.authFailedToken')
+              : authStage === 'pending'
+                ? t('settings.dropbox.authFailedPending')
+                : t('settings.dropbox.authFailed');
+      }
     }
 
     const savedMode = await getMeta(this.db, LOCAL_MODE_KEY).catch(() => null);
@@ -471,12 +542,17 @@ export class Store extends EventTarget {
     } catch {
       // A malformed Google token/root entry is treated as signed out.
     }
+    try {
+      await this.dropbox.restore();
+    } catch {
+      // A malformed Dropbox token/root entry is treated as signed out.
+    }
 
     // The picker only helps while no library root exists: a returning user
     // keeps their last view, and a re-auth redirect that lands with a root
     // must not detour through it again. Only the first source that still needs
     // a root opens it; the other keeps its row in settings.
-    const pickerKind = ['onedrive', 'gdrive'].find(
+    const pickerKind = REMOTE_KINDS.find(
       (kind) => this.sources[kind].permission() !== 'none' && !this.sources[kind].hasRoot(),
     );
     if (pickerKind) {
@@ -494,6 +570,16 @@ export class Store extends EventTarget {
     if (this.onedrive.hasRoot() && this.onedrive.permission() === 'prompt') {
       // Top-level `prompt=none` redirect; guarded so a broken grant cannot loop.
       await this.onedrive.silentReauth().catch(() => false);
+    }
+
+    if (
+      this.dropbox.hasRoot() &&
+      this.dropbox.permission() !== 'granted' &&
+      this.dropbox.configured()
+    ) {
+      // Dropbox refreshes silently instead of redirecting; a dead refresh token
+      // just leaves the row at `prompt`.
+      await this.dropbox.ensurePermission().catch(() => false);
     }
 
     const tracks = sortTracks(await getAllTracks(this.db).catch(() => []));
@@ -546,7 +632,7 @@ export class Store extends EventTarget {
       trackCount: this._countTracks(kind),
     }));
     if (authFailure) {
-      this._refreshSource('onedrive', {
+      this._refreshSource(authFailureKind, {
         error: authFailure,
         errorStage: authStage,
       });
@@ -629,7 +715,7 @@ export class Store extends EventTarget {
     }
 
     const lastScan = await getMeta(this.db, 'lastScanBySource').catch(() => null);
-    for (const kind of ['onedrive', 'gdrive']) {
+    for (const kind of REMOTE_KINDS) {
       const adapter = this.sources[kind];
       if (!adapter.hasRoot() || adapter.permission() !== 'granted') continue;
       const at = lastScan?.[kind]?.at ?? 0;
@@ -665,7 +751,7 @@ export class Store extends EventTarget {
       trackCount: this._countTracks(kind),
       root: adapter.root?.()?.path ?? null,
       configured: typeof adapter.configured === 'function' ? adapter.configured() : true,
-      needsReconnect: kind === 'gdrive' && permission === 'prompt',
+      needsReconnect: RECONNECT_KINDS.has(kind) && permission === 'prompt',
       ...(kind === 'local' ? { mode: this.localMode } : {}),
       ...patch,
     });
@@ -673,6 +759,7 @@ export class Store extends EventTarget {
 
   _adapterForTrack(track) {
     if (track?.source === 'gdrive') return this.gdrive;
+    if (track?.source === 'dropbox') return this.dropbox;
     if (track?.source === 'onedrive') return this.onedrive;
     if (track?.source === 'opfs') return this.opfs;
     return this.reference;
@@ -857,6 +944,41 @@ export class Store extends EventTarget {
       this._emit();
       return false;
     }
+  }
+
+  /**
+   * Start the Dropbox authorization redirect. An unconfigured build lands on
+   * the source row instead of throwing into the UI.
+   */
+  async connectDropbox() {
+    try {
+      return await this.dropbox.startLogin();
+    } catch (error) {
+      const message =
+        error?.code === 'not_configured'
+          ? t('error.dropbox.notConfigured')
+          : errorMessage(error);
+      this._refreshSource('dropbox', { error: message });
+      this._emit();
+      return false;
+    }
+  }
+
+  /**
+   * Drop the stale Dropbox grant and restart the redirect. The index and the
+   * cached audio survive; the user is asked for a folder again.
+   */
+  async reconnectDropbox() {
+    await this.dropbox.forget();
+    this._refreshSource('dropbox', {
+      error: null,
+      errorStage: null,
+      sync: null,
+      cacheFailed: 0,
+      cacheFailures: [],
+    });
+    this._emit();
+    return this.connectDropbox();
   }
 
   async browseSource(kind, path = '') {

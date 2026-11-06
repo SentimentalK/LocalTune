@@ -14,7 +14,7 @@ test('settings view covers library, storage, language and about', async ({ page 
   // sync / change / remove icons appear only for a connected source.
   await expect(page.locator('[data-testid="settings-rescan-tags"]')).toHaveCount(0);
   const sourceRows = page.locator('[data-testid^="source-row-"]');
-  await expect(sourceRows).toHaveCount(3);
+  await expect(sourceRows).toHaveCount(4);
   for (const row of await sourceRows.all()) {
     await expect(row.locator('button')).toHaveCount(1);
   }

@@ -92,11 +92,14 @@ export default {
   'settings.library.localGroup': 'Local',
   'settings.library.cloudGroup': 'OneDrive',
   'settings.library.gdriveGroup': 'Google Drive',
+  'settings.library.dropboxGroup': 'Dropbox',
   'settings.source.remove': 'Retirer',
   'settings.source.removeConfirm': 'Retirer cette source ? Son index de pistes et son cache seront supprimés.',
   'settings.source.permissionNone': 'Non connecté',
   'settings.source.onedrive': 'OneDrive',
   'settings.source.gdrive': 'Google Drive',
+  'settings.source.dropbox': 'Dropbox',
+  'settings.source.connectDropbox': 'Connecter Dropbox',
   'settings.source.connectLocal': 'Choisir un dossier local',
   'settings.source.connectOneDrive': 'Connecter OneDrive',
   'settings.source.connectGdrive': 'Connecter Google Drive',
@@ -127,6 +130,18 @@ export default {
     'OneDrive n’a pas pu terminer l’échange de connexion. Réessayez.',
   'settings.onedrive.authFailedPending':
     'La connexion à OneDrive se termine encore. Réessayez dans un instant.',
+  'settings.dropbox.title': 'Choisir un dossier Dropbox',
+  'settings.dropbox.root': 'Dropbox',
+  'settings.dropbox.unconfigured': 'Dropbox a besoin d’une clé d’application pour se connecter.',
+  'settings.dropbox.setupLink': 'Guide de configuration',
+  'settings.dropbox.authFailed':
+    'La session Dropbox a expiré. Reconnectez-vous pour synchroniser.',
+  'settings.dropbox.authFailedRedirect':
+    'La connexion à Dropbox a perdu son état. Réessayez.',
+  'settings.dropbox.authFailedToken':
+    'Dropbox n’a pas pu terminer l’échange de connexion. Réessayez.',
+  'settings.dropbox.authFailedPending':
+    'La connexion à Dropbox se termine encore. Réessayez dans un instant.',
   'settings.background.title': 'Lecture en arrière-plan',
   'settings.background.cardBody':
     'Les téléphones mettent en pause les pages en arrière-plan pour économiser la batterie.',
@@ -243,6 +258,9 @@ export default {
   'error.gdrive.authRequired': 'Connectez-vous d’abord à Google Drive',
   'error.gdrive.fetchFailed': 'Impossible de lire le fichier depuis Google Drive',
   'error.gdrive.notConfigured': 'Google Drive n’est pas configuré dans cette version',
+  'error.dropbox.authRequired': 'Connectez-vous d’abord à Dropbox',
+  'error.dropbox.fetchFailed': 'Impossible de lire le fichier depuis Dropbox',
+  'error.dropbox.notConfigured': 'Dropbox n’est pas configuré dans cette version',
 
   'fatal.message': 'LocalTune n’a pas pu démarrer : {message}',
   'fatal.hint': 'Réautorisez le dossier de musique ou rechargez la page pour réessayer.',

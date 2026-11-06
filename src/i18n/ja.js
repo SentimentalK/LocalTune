@@ -94,11 +94,14 @@ export default {
   'settings.library.localGroup': 'ローカル',
   'settings.library.cloudGroup': 'OneDrive',
   'settings.library.gdriveGroup': 'Google Drive',
+  'settings.library.dropboxGroup': 'Dropbox',
   'settings.source.remove': '削除',
   'settings.source.removeConfirm': 'このソースを削除しますか？曲の索引とキャッシュも削除されます。',
   'settings.source.permissionNone': '未接続',
   'settings.source.onedrive': 'OneDrive',
   'settings.source.gdrive': 'Google Drive',
+  'settings.source.dropbox': 'Dropbox',
+  'settings.source.connectDropbox': 'Dropbox に接続',
   'settings.source.connectLocal': 'ローカルフォルダを選択',
   'settings.source.connectOneDrive': 'OneDrive に接続',
   'settings.source.connectGdrive': 'Google Drive に接続',
@@ -132,6 +135,18 @@ export default {
     'OneDrive のサインイン交換に失敗しました。もう一度お試しください。',
   'settings.onedrive.authFailedPending':
     'OneDrive のサインインを処理中です。しばらくしてから再試行してください。',
+  'settings.dropbox.title': 'Dropbox フォルダーを選択',
+  'settings.dropbox.root': 'Dropbox',
+  'settings.dropbox.unconfigured': 'Dropbox はアプリキーが未設定のため接続できません。',
+  'settings.dropbox.setupLink': '設定ガイド',
+  'settings.dropbox.authFailed':
+    'Dropbox のサインインが切れました。再接続して同期してください。',
+  'settings.dropbox.authFailedRedirect':
+    'Dropbox のサインイン状態が失われました。もう一度お試しください。',
+  'settings.dropbox.authFailedToken':
+    'Dropbox のサインイン交換を完了できませんでした。もう一度お試しください。',
+  'settings.dropbox.authFailedPending':
+    'Dropbox のサインインはまだ処理中です。少し待ってから再試行してください。',
   'settings.background.title': 'バックグラウンド再生',
   'settings.background.cardBody':
     'スマートフォンは省電力のためバックグラウンドのページを停止します。',
@@ -250,6 +265,9 @@ export default {
   'error.gdrive.authRequired': '先に Google Drive にサインインしてください',
   'error.gdrive.fetchFailed': 'Google Drive からファイルを読み取れませんでした',
   'error.gdrive.notConfigured': 'このビルドでは Google Drive が設定されていません',
+  'error.dropbox.authRequired': '先に Dropbox にサインインしてください',
+  'error.dropbox.fetchFailed': 'Dropbox からファイルを読み取れませんでした',
+  'error.dropbox.notConfigured': 'このビルドでは Dropbox が設定されていません',
 
   'fatal.message': 'アプリを起動できません：{message}',
   'fatal.hint': '音楽フォルダーを再認証するか、ページを再読み込みしてもう一度お試しください。',

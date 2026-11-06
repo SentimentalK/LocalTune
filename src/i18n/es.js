@@ -92,11 +92,14 @@ export default {
   'settings.library.localGroup': 'Local',
   'settings.library.cloudGroup': 'OneDrive',
   'settings.library.gdriveGroup': 'Google Drive',
+  'settings.library.dropboxGroup': 'Dropbox',
   'settings.source.remove': 'Quitar',
   'settings.source.removeConfirm': '¿Quitar este origen? Se borrarán su índice de pistas y su caché.',
   'settings.source.permissionNone': 'Sin conexión',
   'settings.source.onedrive': 'OneDrive',
   'settings.source.gdrive': 'Google Drive',
+  'settings.source.dropbox': 'Dropbox',
+  'settings.source.connectDropbox': 'Conectar Dropbox',
   'settings.source.connectLocal': 'Seleccionar carpeta local',
   'settings.source.connectOneDrive': 'Conectar OneDrive',
   'settings.source.connectGdrive': 'Conectar Google Drive',
@@ -128,6 +131,17 @@ export default {
     'OneDrive no pudo completar el intercambio de inicio de sesión. Inténtalo de nuevo.',
   'settings.onedrive.authFailedPending':
     'El inicio de sesión de OneDrive aún está terminando. Reinténtalo en un momento.',
+  'settings.dropbox.title': 'Elige una carpeta de Dropbox',
+  'settings.dropbox.root': 'Dropbox',
+  'settings.dropbox.unconfigured': 'Dropbox necesita una clave de aplicación para conectarse.',
+  'settings.dropbox.setupLink': 'Guía de configuración',
+  'settings.dropbox.authFailed': 'La sesión de Dropbox caducó. Vuelve a conectar para sincronizar.',
+  'settings.dropbox.authFailedRedirect':
+    'El inicio de sesión de Dropbox perdió su estado. Inténtalo de nuevo.',
+  'settings.dropbox.authFailedToken':
+    'Dropbox no pudo completar el intercambio de inicio de sesión. Inténtalo de nuevo.',
+  'settings.dropbox.authFailedPending':
+    'El inicio de sesión de Dropbox aún se está completando. Reinténtalo en un momento.',
   'settings.background.title': 'Reproducción en segundo plano',
   'settings.background.cardBody': 'Los móviles pausan las páginas en segundo plano para ahorrar batería.',
   'settings.background.desktop': 'La reproducción en segundo plano solo aplica a móviles.',
@@ -243,6 +257,9 @@ export default {
   'error.gdrive.authRequired': 'Inicia sesión en Google Drive primero',
   'error.gdrive.fetchFailed': 'No se pudo leer el archivo de Google Drive',
   'error.gdrive.notConfigured': 'Google Drive no está configurado en esta compilación',
+  'error.dropbox.authRequired': 'Inicia sesión en Dropbox primero',
+  'error.dropbox.fetchFailed': 'No se pudo leer el archivo de Dropbox',
+  'error.dropbox.notConfigured': 'Dropbox no está configurado en esta compilación',
 
   'fatal.message': 'LocalTune no pudo iniciarse: {message}',
   'fatal.hint': 'Vuelve a autorizar la carpeta de música o recarga la página para intentarlo de nuevo.',
