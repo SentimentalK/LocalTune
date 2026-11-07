@@ -19,8 +19,7 @@ I started on November 4. At 2:11 a.m. on November 6, I sent the live LocalTune t
 <http://tune.mainstayx.com>
 
 <p align="center">
-  <img src="docs/screenshots/mobile.webp" width="340" alt="LocalTune on mobile" />
-  <img src="docs/screenshots/desktop.webp" width="640" alt="LocalTune on desktop" />
+  <img src="docs/screenshots/desktop.webp" width="100%" alt="LocalTune on desktop" />
 </p>
 
 LocalTune is a local-first music player that runs entirely in the browser. It reads a local folder, parses music tags and cover art, builds its own library, and supports a play queue, shuffle, and offline use.

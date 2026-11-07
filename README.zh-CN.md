@@ -19,8 +19,7 @@
 <http://tune.mainstayx.com>
 
 <p align="center">
-  <img src="docs/screenshots/mobile.webp" width="340" alt="LocalTune 手机界面" />
-  <img src="docs/screenshots/desktop.webp" width="640" alt="LocalTune 桌面界面" />
+  <img src="docs/screenshots/desktop.webp" width="100%" alt="LocalTune 桌面界面" />
 </p>
 
 LocalTune 是一个完全在浏览器里运行的本地优先音乐播放器。可以读取本地文件夹，解析音乐标签、封面，建立自己的曲库，支持播放队列、随机播放和离线使用。
