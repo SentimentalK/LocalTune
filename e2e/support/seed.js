@@ -1,8 +1,8 @@
 import { expect } from '@playwright/test';
 
 /** Two 8-second silent WAVs and their local library rows. */
-export async function seedLocalLibrary(page) {
-  await page.evaluate(async () => {
+export async function seedLocalLibrary(page, { files = null } = {}) {
+  await page.evaluate(async (customFiles) => {
     const wav = (name) => {
       const sampleRate = 8000;
       const samples = sampleRate * 60;
@@ -28,10 +28,20 @@ export async function seedLocalLibrary(page) {
       return new File([buffer], name, { type: 'audio/wav', lastModified: Date.now() });
     };
 
-    const rows = ['Music/a.wav', 'Music/b.wav'].map((path) => ({
-      path,
-      file: wav(path.split('/').pop()),
-    }));
+    const fromBytes = (entry) => {
+      const bytes = Uint8Array.from(atob(entry.bytesBase64), (char) => char.charCodeAt(0));
+      return new File([bytes], entry.path.split('/').pop(), {
+        type: entry.type ?? 'audio/mpeg',
+        lastModified: Date.now(),
+      });
+    };
+
+    const rows = customFiles
+      ? customFiles.map((entry) => ({ path: entry.path, file: fromBytes(entry) }))
+      : ['Music/a.wav', 'Music/b.wav'].map((path) => ({
+          path,
+          file: wav(path.split('/').pop()),
+        }));
 
     await new Promise((resolve, reject) => {
       const open = indexedDB.open('localtune');
@@ -49,7 +59,7 @@ export async function seedLocalLibrary(page) {
           store.put({
             id: `fsa:${path}`,
             path,
-            title: path.split('/').pop().replace('.wav', ''),
+            title: path.split('/').pop().replace(/\.[^.]+$/, ''),
             artist: '',
             album: '',
             year: null,
@@ -69,7 +79,7 @@ export async function seedLocalLibrary(page) {
         tx.onerror = () => reject(tx.error);
       };
     });
-  });
+  }, files);
 }
 
 export async function openSeededLibrary(page) {

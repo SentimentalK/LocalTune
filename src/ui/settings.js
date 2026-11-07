@@ -603,6 +603,12 @@ export function createSettingsView(store, sw) {
   }, SLEEP_OPTIONS.map(({ value, labelKey }) => el('option', { value, text: t(labelKey) })));
   sleepSelect.addEventListener('change', () => store.setSleepMode(sleepSelect.value));
 
+  const levelingModeHint = el('p', {
+    class: 'hint',
+    'data-testid': 'leveling-mode',
+    hidden: true,
+  });
+
   const sleepRemaining = el('p', {
     class: 'hint',
     'data-testid': 'sleep-remaining',
@@ -646,6 +652,7 @@ export function createSettingsView(store, sw) {
           gaplessButton,
         ]),
       ]),
+      levelingModeHint,
       sleepRemaining,
     ],
   );
@@ -1133,6 +1140,19 @@ export function createSettingsView(store, sw) {
       button.setAttribute('aria-checked', String(on));
       button.classList.toggle('is-on', on);
     }
+
+    const levelingOn = state.settings.leveling === true;
+    const mode = state.levelingMode ?? 'off';
+    const note = state.levelingNote ?? null;
+    let levelingKey = null;
+    if (levelingOn) {
+      if (note === 'streaming') levelingKey = 'settings.playback.levelingUnsupported';
+      else if (mode === 'full') levelingKey = 'settings.playback.levelingFull';
+      else if (mode === 'gain-only') levelingKey = 'settings.playback.levelingGainOnly';
+      else levelingKey = 'settings.playback.levelingPending';
+    }
+    setHidden(levelingModeHint, !levelingKey);
+    if (levelingKey) setText(levelingModeHint, t(levelingKey));
 
     for (const { value, button } of cacheLimitButtons) {
       const active = settings.cacheLimitBytes === value;

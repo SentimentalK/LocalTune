@@ -879,6 +879,10 @@ a { color: inherit; }
 }
 .muted { color: var(--muted); }
 .hint { color: var(--muted); font-size: 11px; }
+/* The playback card stacks two 11px hints under the toggle line; without a
+   lead-in they fuse into one line of text. */
+[data-testid="leveling-mode"]:not([hidden]),
+[data-testid="sleep-remaining"]:not([hidden]) { margin-top: 6px; }
 .menu {
   position: fixed;
   z-index: 80;

@@ -14,23 +14,40 @@ async function closeContext(ctx) {
   }
 }
 
+/**
+ * Master-scanned compressor settings for in-track levelling. Q is fixed by the
+ * node defaults; every other parameter is set explicitly so a future browser
+ * default cannot change the sound.
+ */
+export const LEVELING_COMPRESSOR = {
+  threshold: -24,
+  knee: 6,
+  ratio: 5,
+  attack: 0.003,
+  release: 0.25,
+};
+
 export class AudioPlayer extends EventTarget {
   #audio;
   #url = null;
   #handlers = [];
   #destroyed = false;
   #createAudioContext;
+  #createElement;
   #ctx = null;
   #sourceNode = null;
   #gainNode = null;
+  #compressorNode = null;
   #pendingGainDb = null;
+  #wired = null;
 
-  constructor(audio, { createAudioContext } = {}) {
+  constructor(audio, { createAudioContext, createElement } = {}) {
     super();
     if (!audio) throw new Error(t('error.player.noElement'));
     this.#audio = audio;
     this.#createAudioContext =
       typeof createAudioContext === 'function' ? createAudioContext : null;
+    this.#createElement = typeof createElement === 'function' ? createElement : null;
     this.#audio.preload = 'auto';
     this.#listen('timeupdate', () => {
       this.dispatchEvent(
@@ -179,6 +196,37 @@ export class AudioPlayer extends EventTarget {
   }
 
   /**
+   * Route gain → [compressor] → destination. A compressor that was bypassed
+   * must be unlinked first: an untouched node keeps its old edges.
+   */
+  #wire(compressed) {
+    const gain = this.#gainNode;
+    const ctx = this.#ctx;
+    if (!gain || !ctx) {
+      this.#wired = null;
+      return;
+    }
+    try {
+      gain.disconnect();
+    } catch {
+      // a node that was never connected has nothing to break
+    }
+    if (compressed && this.#compressorNode) {
+      try {
+        this.#compressorNode.disconnect();
+      } catch {
+        // same: nothing wired yet
+      }
+      gain.connect(this.#compressorNode);
+      this.#compressorNode.connect(ctx.destination);
+      this.#wired = 'full';
+    } else {
+      gain.connect(ctx.destination);
+      this.#wired = compressed ? 'gain-only' : 'bypass';
+    }
+  }
+
+  /**
    * Build the Web Audio graph that applies ReplayGain. Must only build it
    * once the context is running: an element routed into a suspended context
    * goes silent.
@@ -192,6 +240,8 @@ export class AudioPlayer extends EventTarget {
       } catch {
         return false;
       }
+      if (this.#ctx.state !== 'running') return false;
+      this.#wire(true);
       return true;
     }
 
@@ -209,11 +259,21 @@ export class AudioPlayer extends EventTarget {
       }
       const sourceNode = ctx.createMediaElementSource(this.#audio);
       const gainNode = ctx.createGain();
+      let compressorNode = null;
+      try {
+        compressorNode = ctx.createDynamicsCompressor();
+        for (const [key, value] of Object.entries(LEVELING_COMPRESSOR)) {
+          compressorNode[key].value = value;
+        }
+      } catch {
+        compressorNode = null;
+      }
       sourceNode.connect(gainNode);
-      gainNode.connect(ctx.destination);
       this.#ctx = ctx;
       this.#sourceNode = sourceNode;
       this.#gainNode = gainNode;
+      this.#compressorNode = compressorNode;
+      this.#wire(true);
       if (this.#pendingGainDb !== null) {
         gainNode.gain.value = gainFactor(this.#pendingGainDb);
         this.#pendingGainDb = null;
@@ -221,6 +281,7 @@ export class AudioPlayer extends EventTarget {
       return true;
     } catch {
       if (ctx) await closeContext(ctx);
+      this.#compressorNode = null;
       return false;
     }
   }
@@ -234,17 +295,89 @@ export class AudioPlayer extends EventTarget {
     this.#pendingGainDb = Number.isFinite(db) ? db : null;
   }
 
-  /** Unity gain. Web Audio cannot unwire the route, so it stays connected. */
+  /** Unity gain with the compressor out of the path; the context stays alive. */
   disableLeveling() {
     try {
       if (this.#gainNode) this.#gainNode.gain.value = 1;
     } catch {
       // a node that refuses the write is already neutral
     }
+    this.#wire(false);
   }
 
   get levelingReady() {
     return this.#gainNode !== null;
+  }
+
+  /** @returns {'full'|'gain-only'|'off'} */
+  get levelingMode() {
+    if (this.#wired === 'full') return 'full';
+    if (this.#wired === 'gain-only') return 'gain-only';
+    return 'off';
+  }
+
+  /**
+   * Drop the graph and replace the media element. A MediaElementSource can
+   * never be un-wired, and a cross-origin element routed into a graph goes
+   * silent, so streaming playback needs a brand-new element.
+   * @returns {Promise<boolean>} whether the element was swapped
+   */
+  async detachGraph() {
+    if (!this.#gainNode && !this.#ctx) return false;
+    if (!this.#createElement) return false;
+    const ctx = this.#ctx;
+    this.#ctx = null;
+    this.#gainNode = null;
+    this.#compressorNode = null;
+    this.#sourceNode = null;
+    this.#wired = null;
+    this.#pendingGainDb = null;
+    const swapped = this.#swapElement();
+    if (ctx && typeof ctx.close === 'function') {
+      try {
+        void ctx.close();
+      } catch {
+        // a context that refuses to close cannot be cleaned up further
+      }
+    }
+    return swapped;
+  }
+
+  #swapElement() {
+    const previous = this.#audio;
+    let next;
+    try {
+      next = this.#createElement();
+    } catch {
+      return false;
+    }
+    if (!next) return false;
+    next.setAttribute('aria-hidden', 'true');
+    next.preload = 'auto';
+    try {
+      next.volume = previous.volume;
+    } catch {
+      // a fake element may refuse the property
+    }
+    try {
+      next.muted = previous.muted;
+    } catch {
+      // same
+    }
+    for (const [type, handler] of this.#handlers) next.addEventListener(type, handler);
+    try {
+      previous.pause();
+    } catch {
+      // already paused
+    }
+    try {
+      if (previous !== next && typeof previous.remove === 'function') previous.remove();
+    } catch {
+      // the old element may already be detached
+    }
+    this.#audio = next;
+    this.dispatchEvent(new CustomEvent('elementchange', { detail: { audio: next } }));
+    return true;
   }
 
   /** True when `playNow()` cannot throw for a missing source. */
@@ -258,7 +391,9 @@ export class AudioPlayer extends EventTarget {
     const ctx = this.#ctx;
     this.#ctx = null;
     this.#gainNode = null;
+    this.#compressorNode = null;
     this.#sourceNode = null;
+    this.#wired = null;
     if (ctx && typeof ctx.close === 'function') {
       try {
         void ctx.close()?.catch(() => {});

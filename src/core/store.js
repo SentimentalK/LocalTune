@@ -290,14 +290,10 @@ export class Store extends EventTarget {
       dropbox: this.dropbox,
     };
 
-    this.audio = typeof Audio === 'function' ? new Audio() : null;
-    if (this.audio && typeof document !== 'undefined' && document?.body) {
-      // One media element for the whole app, attached so it is the only
-      // `audio` in the document (no per-track elements are created).
-      this.audio.setAttribute('aria-hidden', 'true');
-      document.body.append(this.audio);
-    }
-    this.player = this.audio ? new AudioPlayer(this.audio) : null;
+    this.audio = typeof Audio === 'function' ? this._createAudioElement() : null;
+    this.player = this.audio
+      ? new AudioPlayer(this.audio, { createElement: () => this._createAudioElement() })
+      : null;
     this.queue = createQueue([]);
     this.playlog = new PlayLog(db);
     this.prefetcher = new Prefetcher({
@@ -322,6 +318,8 @@ export class Store extends EventTarget {
     this._mediaUrl = undefined;
     this._mediaPromise = null;
     this._mediaToken = 0;
+    this._levelingStreaming = false;
+    this._levelingTags = null;
 
     this._state = {
       ready: false,
@@ -343,10 +341,23 @@ export class Store extends EventTarget {
       updateReady: false,
       migration: { running: false, done: 0, total: 0, error: null },
       permissionIssue: null,
+      levelingMode: 'off',
+      levelingNote: null,
     };
 
     this.#bindPlayer();
     this.#bindDiagnostics();
+  }
+
+  /**
+   * Every media element is created here: a fresh, body-attached element is
+   * what makes leaving the Web Audio graph possible at all.
+   */
+  _createAudioElement() {
+    const audio = new Audio();
+    audio.setAttribute('aria-hidden', 'true');
+    if (typeof document !== 'undefined' && document?.body) document.body.append(audio);
+    return audio;
   }
 
   get state() {
@@ -371,6 +382,12 @@ export class Store extends EventTarget {
   #bindPlayer() {
     const player = this.player;
     if (!player) return;
+
+    // Leaving the Web Audio graph swaps the element; the store must follow so
+    // volume, media session and later loads address the live one.
+    player.addEventListener('elementchange', (event) => {
+      this.audio = event.detail?.audio ?? this.audio;
+    });
 
     const note = (type, detail = {}) =>
       this.log(`audio:${type}`, { position: player.position ?? 0, ...detail });
@@ -1723,7 +1740,7 @@ export class Store extends EventTarget {
   async playTrack(trackId, source = 'user') {
     const tracks = this._state.tracks;
     if (!tracks.some((track) => track.id === trackId)) return;
-    if (this._state.settings.leveling) this._promoteLeveling();
+    this._applyLevelingPolicy();
     await this.playQueue(tracks, trackId, source);
   }
 
@@ -1738,7 +1755,7 @@ export class Store extends EventTarget {
     this.queue = setQueue(this.queue, list, startIndex);
     this._reflectQueue();
     this._emit();
-    if (this._state.settings.leveling) this._promoteLeveling();
+    this._applyLevelingPolicy();
     await this._loadTrack(currentTrack(this.queue), { play: true, source });
     this._savePlayback();
     this._syncMediaSession(true);
@@ -1778,7 +1795,7 @@ export class Store extends EventTarget {
       void this._loadTrack(track, { play: true, position: this._state.current.position || 0 });
       return;
     }
-    if (this._state.settings.leveling) this._promoteLeveling();
+    this._applyLevelingPolicy();
     this.player.play().catch((error) => {
       this._state.current.playing = false;
       this.log('playblocked', { error: String(error?.name ?? error) });
@@ -1797,7 +1814,7 @@ export class Store extends EventTarget {
       this._emit();
     };
     try {
-      if (this._state.settings.leveling) this._promoteLeveling();
+      this._applyLevelingPolicy();
       this.player
         .playNow()
         .then(() => {
@@ -1902,8 +1919,17 @@ export class Store extends EventTarget {
       this._state.settings = { ...this._state.settings, [key]: value };
       void saveSettings(this.db, this._state.settings).catch(() => {});
       if (key === 'leveling') {
-        if (value) this._promoteLeveling();
-        else this.player?.disableLeveling();
+        if (value === false) {
+          this.player?.disableLeveling();
+        } else {
+          this._applyLevelingPolicy();
+          const tags = this._levelingTags;
+          if (tags?.trackId === this._state.current.track?.id && tags.db != null) {
+            this.player?.setGain(tags.db);
+          } else {
+            this.player?.setGain(null);
+          }
+        }
       }
       this._emit();
       return;
@@ -1977,6 +2003,7 @@ export class Store extends EventTarget {
   }
 
   _emit() {
+    this._syncLevelingState();
     this._state.install = this.install ? this.install.state() : null;
     this.dispatchEvent(new Event('change'));
   }
@@ -2101,34 +2128,67 @@ export class Store extends EventTarget {
     }
   }
 
-  _promoteLeveling() {
+  /** Mirror the player's graph state into the read-only snapshot. */
+  _syncLevelingState() {
+    const enabled = this._state.settings.leveling === true;
+    const player = this.player;
+    let mode = 'off';
+    let note = null;
+    if (enabled) {
+      if (this._levelingStreaming) note = 'streaming';
+      else if (player?.levelingReady) mode = player.levelingMode ?? 'off';
+    }
+    this._state.levelingMode = mode;
+    this._state.levelingNote = note;
+  }
+
+  async _promoteLeveling() {
+    if (this._levelingStreaming) return false;
     try {
-      void this.player?.enableLeveling()?.catch(() => {});
+      return (await this.player?.enableLeveling?.()) ?? false;
     } catch {
-      // No gesture or no Web Audio: unity gain stays, playback continues.
+      return false;
     }
   }
 
-  /** ReplayGain for one track; every failure falls back to unity gain. */
-  async _applyGainForTrack(track) {
-    if (
-      !this._state.settings.leveling ||
-      !this.player ||
-      isRemoteTrack(track) ||
-      track?.demoUrl
-    ) {
+  /**
+   * One decision point for the graph: streaming sources stay out of Web Audio
+   * entirely, everything else may build it.
+   */
+  _applyLevelingPolicy() {
+    if (!this._state.settings.leveling) {
+      this.player?.disableLeveling();
+      return;
+    }
+    if (this._levelingStreaming) return;
+    void this._promoteLeveling();
+  }
+
+  /**
+   * ReplayGain for one track. The blob comes from `_loadTrack` so a track is
+   * read once; no blob means no gain (unity) rather than a second read.
+   */
+  async _applyGainForTrack(track, blob) {
+    if (!this._state.settings.leveling || !this.player) {
       this.player?.setGain(null);
+      this._levelingTags = null;
+      return;
+    }
+    this._levelingTags = { trackId: track?.id ?? null, db: null };
+    if (!blob) {
+      this.player.setGain(null);
       return;
     }
     try {
-      const file = await this._adapterForTrack(track).getFile(track.path);
-      const size = Math.min(Number(file?.size) || 0, REPLAYGAIN_HEAD_BYTES);
-      const head = new Uint8Array(await file.slice(0, size).arrayBuffer());
+      const size = Math.min(Number(blob.size) || 0, REPLAYGAIN_HEAD_BYTES);
+      const head = new Uint8Array(await blob.slice(0, size).arrayBuffer());
       const tags = parseReplayGain(head);
       const { db } = decideGain(tags, { enabled: true });
       this.player.setGain(db);
+      this._levelingTags = { trackId: track?.id ?? null, db: db ?? null };
     } catch {
       this.player?.setGain(null);
+      this._levelingTags = { trackId: track?.id ?? null, db: null };
     }
   }
 
@@ -2301,6 +2361,19 @@ export class Store extends EventTarget {
               : { file: await adapter.getFile(track.path) };
           })();
       if (currentTrack(this.queue)?.id !== track.id) return false;
+      // A blob (or a same-origin demo URL) can enter the Web Audio graph; a
+      // cross-origin stream cannot, so that branch runs on a clean element.
+      const blob = opened.file ?? null;
+      const graphSafe = Boolean(blob) || Boolean(track.demoUrl);
+      this._levelingStreaming = !graphSafe;
+      if (!graphSafe) {
+        if (this.player.levelingReady) await this.player.detachGraph();
+      } else if (this._state.settings.leveling) {
+        // Never await `resume()` here: without user activation that promise can
+        // stay pending, and playback must not wait for it.
+        void this._promoteLeveling();
+      }
+      this._syncLevelingState();
       if (opened.file) {
         await this.player.load(opened.file);
         this._loadedId = track.id;
@@ -2346,7 +2419,7 @@ export class Store extends EventTarget {
       }
       this.log('trackchange', { source });
       this._startPlaySession(track, this._state.current.position);
-      void this._applyGainForTrack(track);
+      void this._applyGainForTrack(track, blob);
       void this._primeNext();
       if (this._state.permissionIssue) this._state.permissionIssue = null;
       return true;

@@ -16,6 +16,9 @@ const DEFAULT_FILES = [
   { id: 'track-2', name: 'two.mp3' },
 ];
 
+/** Origin the page never is, so a CORS-mode fetch cannot read the body. */
+const BLOCKED_ORIGIN = 'https://blocked.invalid';
+
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
@@ -30,11 +33,11 @@ function json(route, status, body) {
   });
 }
 
-function driveItem(file) {
+function driveItem(file, audio) {
   return {
     id: file.id,
     name: file.name,
-    size: AUDIO.length,
+    size: audio.length,
     lastModifiedDateTime: '2024-01-02T03:04:05Z',
     file: { mimeType: 'audio/mpeg' },
     '@microsoft.graph.downloadUrl': `https://download.test/${encodeURIComponent(file.id)}`,
@@ -67,6 +70,8 @@ function rootItem(root) {
  *   holdRanges?: boolean,
  *   failRangeIds?: string[],
  *   failWholeIds?: string[],
+ *   audio?: Buffer,
+ *   noDownloadCors?: boolean,
  * }} [options]
  */
 export async function installGraphMock(
@@ -79,6 +84,8 @@ export async function installGraphMock(
     failWholeIds = [],
     failDownloadUrlTimes = 0,
     failTokenRefresh = false,
+    audio = AUDIO,
+    noDownloadCors = false,
   } = {},
 ) {
   // A spec that names several roots drives the folder picker; the default is
@@ -169,7 +176,7 @@ export async function installGraphMock(
     const childrenMatch = /^\/v1\.0\/drives\/drive-1\/items\/([^/]+)\/children$/.exec(pathname);
     if (childrenMatch) {
       const root = rootList.find((entry) => entry.id === childrenMatch[1]);
-      if (root) return json(route, 200, { value: root.files.map(driveItem) });
+      if (root) return json(route, 200, { value: root.files.map((entry) => driveItem(entry, audio)) });
     }
 
     const itemMatch = /^\/v1\.0\/drives\/drive-1\/items\/([^/]+)$/.exec(pathname);
@@ -180,23 +187,29 @@ export async function installGraphMock(
           state.failDownloadUrlTimes -= 1;
           return json(route, 401, { error: { code: 'InvalidAuthenticationToken' } });
         }
-        return json(route, 200, driveItem(file));
+        return json(route, 200, driveItem(file, audio));
       }
     }
 
     return json(route, 404, { error: { code: 'itemNotFound', message: 'not found' } });
   });
 
+  // Playwright's fulfill() injects a permissive CORS header whenever the
+  // request carries an Origin and the response has none, so the only way to
+  // make the page's fetch() unreadable is to echo a *wrong* origin. The media
+  // element itself is a no-cors request and still plays the bytes.
+  const downloadCors = noDownloadCors ? { 'access-control-allow-origin': BLOCKED_ORIGIN } : CORS;
+
   await page.route('https://download.test/**', async (route) => {
     const request = route.request();
     if (request.method() === 'OPTIONS') {
-      return route.fulfill({ status: 204, headers: CORS });
+      return route.fulfill({ status: 204, headers: downloadCors });
     }
 
     const id = downloadId(request.url());
     const range = request.headers().range;
     const headers = {
-      ...CORS,
+      ...downloadCors,
       'content-type': 'audio/mpeg',
       'accept-ranges': 'bytes',
     };
@@ -216,16 +229,16 @@ export async function installGraphMock(
       if (failWholeIds.includes(id)) {
         return route.fulfill({ status: 500, headers, body: '' });
       }
-      return route.fulfill({ status: 200, headers, body: AUDIO });
+      return route.fulfill({ status: 200, headers, body: audio });
     }
 
     const match = /bytes=(\d+)-(\d*)/.exec(range);
     const start = Number(match?.[1] ?? 0);
-    const end = Math.min(Number(match?.[2] || AUDIO.length - 1), AUDIO.length - 1);
-    const body = AUDIO.subarray(start, end + 1);
+    const end = Math.min(Number(match?.[2] || audio.length - 1), audio.length - 1);
+    const body = audio.subarray(start, end + 1);
     return route.fulfill({
       status: 206,
-      headers: { ...headers, 'content-range': `bytes ${start}-${end}/${AUDIO.length}` },
+      headers: { ...headers, 'content-range': `bytes ${start}-${end}/${audio.length}` },
       body,
     });
   });

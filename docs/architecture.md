@@ -707,3 +707,10 @@ AD
 - `resolveLocale` 按语言列表顺序逐项匹配：`zh-hant*`/`zh-tw`/`zh-hk`→`zh-TW`，其余 `zh*`→`zh-CN`，`en*`→`en`，`ja`/`ko`/`es`/`fr`/`de`/`ru` 前缀直取，任意 `pt*`→`pt-BR`，全不中→`en`；`en` 显式命中，避免 `['en-US','zh-CN']` 落到中文。`systemLocale()` 返回 `{ locale, label }`，默认读 `browserLanguages()`。
 - `render` 只在目标表已加载（`hasLocale`）时切换并 `remount`；`languagechange` 仅在 setting 为 `auto` 时跟随浏览器，`mountUi` 里注册一次、`languageChangeBusy` 防重入。
 - 设置页语言卡是单列 `role="radiogroup"` 的 `.language-row` 按钮（`data-testid="language-<value>"`，`value` 为 `auto` 或 `LOCALES` 值），`aria-checked` 表示选中，roving tabindex + 方向键/Home/End 移动并即时选中。`auto` 行下方有一行 `data-testid="browser-language-hint"` 的 11px muted 文本（`settings.language.browser`，`{list}` = `browserLanguages().join(' · ')`），说明解析来源。
+
+## Volume levelling
+
+- 链顺序：`MediaElementSource → GainNode（整轨 ReplayGain）→ DynamicsCompressor（轨内压缩）→ destination`。压缩器参数集中在 `src/core/player.js` 的 `LEVELING_COMPRESSOR`（threshold −24 dB、knee 6 dB、ratio 5、attack 3 ms、release 250 ms），由 Master 用 Chromium `OfflineAudioContext` 扫描选定，不要单独改动。
+- 建图时机：只有 Blob（本地文件、远程命中缓存、`demoUrl` 同源）才建图；流式远程（`open()` 返回 `{ url }`）一律不建图，走原生 `<audio>` 播放。`_applyGainForTrack(track, blob)` 只读 `_loadTrack` 传进来的头部，不再重复取文件。
+- 状态：`state.levelingMode` 为 `'full' | 'gain-only' | 'off'`（设备没有 `createDynamicsCompressor` 时降级为 `gain-only`），`state.levelingNote` 为 `null | 'streaming'`；设置页 `data-testid="leveling-mode"` 一行按两者选文案。
+- 换元素的理由：`createMediaElementSource` 一旦建立无法撤除，受污染的跨域媒体在已建图的元素上会静音。因此切到流式远程前 `AudioPlayer.detachGraph()` 会 close 旧 `AudioContext` 并换一个全新 `<audio>`（同一批事件 handler 重新挂载，store 通过 `elementchange` 跟随 `store.audio`）。
