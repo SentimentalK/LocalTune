@@ -26,6 +26,11 @@ const TIP_R = 0.5;
 const INK = '#F2F5F3';
 const TITLE_INK = '#F2D9A0';
 const BODY_INK = '#EDF2EF';
+// Must match `.chalk-layer text` in styles.css. It is repeated as a
+// presentation attribute because the title's chalk shadow is a `<use>` clone,
+// and document CSS rules do not reach into that shadow tree.
+const CHALK_FONT =
+  "'Bradley Hand','Segoe Script','Snell Roundhand','Snell Roundhand Script','Comic Sans MS',cursive";
 
 const VARIANTS = ['A', 'B', 'C'];
 
@@ -191,7 +196,14 @@ export function mountChalkLayer(deck) {
 
   function createTitle({ size, words, rotations = [] }) {
     const groupId = nextId('title');
-    const main = make('g', { class: 'chalk-title', id: groupId, 'font-size': size });
+    const main = make('g', {
+      class: 'chalk-title',
+      id: groupId,
+      'font-size': size,
+      'font-family': CHALK_FONT,
+      'font-weight': 600,
+      'letter-spacing': '0.02em',
+    });
     const texts = words.map((word) => {
       const node = make('text', { x: 0, y: 0, fill: TITLE_INK });
       node.textContent = word;
@@ -261,7 +273,10 @@ export function mountChalkLayer(deck) {
   const playAnno = make('g', { class: 'chalk-anno', 'data-anno': 'play', 'data-phase': '0' });
   const playTitle = createTitle({
     size: variant === 'B' ? 34 : 32,
-    words: variant === 'A' ? label('chalk.playTitle').split(/\s+/) : [label('chalk.playTitle')],
+    words:
+      variant === 'A'
+        ? label('chalk.playTitle').split(/\s+/)
+        : [label(variant === 'B' ? 'chalk.play' : 'chalk.playTitle')],
     rotations: variant === 'A' ? [2, -2, 2] : [variant === 'C' ? -1.5 : 0],
   });
   const playBody =
