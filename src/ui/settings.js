@@ -1,8 +1,8 @@
 /**
- * Full-screen settings view: library source, storage, playback, language and
- * about. The node is built once per shell; `render(state)` only patches text,
- * values and disabled states so a 4 Hz playback update never rebuilds the
- * cards.
+ * Full-screen settings view: library source, appearance, storage, playback,
+ * language and about. The node is built once per shell; `render(state)` only
+ * patches text, values and disabled states so a 4 Hz playback update never
+ * rebuilds the cards.
  */
 
 import { BUILD_VERSION } from '../core/version.js';
@@ -22,6 +22,7 @@ import {
 } from '../i18n/index.js';
 import { el, icon, setHidden, setText } from './dom.js';
 import { loadGdriveBetaAck, saveGdriveBetaAck } from './uiPrefs.js';
+import { THEMES, THEME_NAMES, currentTheme } from './uiPrefs.js';
 
 function run(result) {
   if (result && typeof result.catch === 'function') result.catch(() => {});
@@ -894,6 +895,113 @@ export function createSettingsView(store, sw) {
     [languageList],
   );
 
+  // ---- appearance ----
+  // Each swatch previews its theme as a tiny record: the disc is the theme
+  // background, the label its accent. Colours come from the stylesheet, so a
+  // palette edit never leaves a stale preview behind.
+  function readThemePreviews() {
+    const values = new Map();
+    const root = document.documentElement;
+    const previous = root.dataset.theme ?? '';
+    try {
+      for (const theme of THEMES) {
+        root.dataset.theme = theme;
+        const style = getComputedStyle(root);
+        values.set(theme, {
+          bg: style.getPropertyValue('--bg').trim(),
+          accent: style.getPropertyValue('--accent').trim(),
+        });
+      }
+    } catch {
+      // No document: the swatches still render, just without a preview.
+    }
+    if (previous) root.dataset.theme = previous;
+    else delete root.dataset.theme;
+    return values;
+  }
+
+  const themePreviews = readThemePreviews();
+
+  function syncActiveTheme(theme) {
+    for (const row of themeRows) {
+      const active = row.value === theme;
+      row.button.setAttribute('aria-checked', String(active));
+      row.button.classList.toggle('is-active', active);
+      row.button.tabIndex = active ? 0 : -1;
+    }
+  }
+
+  function chooseTheme(value) {
+    // The shell applies and persists the theme, then calls syncTheme back so
+    // the swatch, the header button and the browser chrome agree.
+    node.dispatchEvent(
+      new CustomEvent('theme', { bubbles: true, detail: { theme: value } }),
+    );
+    syncActiveTheme(value);
+  }
+
+  const themeRows = THEMES.map((value) => {
+    const name = THEME_NAMES[value] ?? value;
+    const preview = themePreviews.get(value);
+    const disc = el('span', { class: 'theme-swatch-disc' });
+    if (preview) {
+      disc.style.setProperty('--swatch-bg', preview.bg);
+      disc.style.setProperty('--swatch-accent', preview.accent);
+    }
+    const button = el(
+      'button',
+      {
+        type: 'button',
+        class: 'theme-swatch',
+        role: 'radio',
+        'aria-checked': 'false',
+        'data-testid': `theme-${value}`,
+        title: name,
+        tabindex: '-1',
+        onclick: () => chooseTheme(value),
+      },
+      [disc, el('span', { class: 'theme-swatch-name', text: name })],
+    );
+    return { value, button };
+  });
+
+  const themeGrid = el(
+    'div',
+    {
+      class: 'theme-grid',
+      role: 'radiogroup',
+      'aria-label': t('settings.appearance.title'),
+    },
+    themeRows.map(({ button }) => button),
+  );
+
+  // One tab stop, arrows select in one step, ends hold focus.
+  themeGrid.addEventListener('keydown', (event) => {
+    const buttons = themeRows.map(({ button }) => button);
+    let index = buttons.indexOf(event.target.closest?.('.theme-swatch'));
+    if (index < 0) index = buttons.findIndex((button) => button.getAttribute('aria-checked') === 'true');
+    if (index < 0) index = 0;
+    let next = index;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = index + 1;
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = index - 1;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = buttons.length - 1;
+    else return;
+    event.preventDefault();
+    next = Math.min(Math.max(next, 0), buttons.length - 1);
+    const row = themeRows[next];
+    row.button.focus();
+    chooseTheme(row.value);
+  });
+
+  const themeCard = el(
+    'section',
+    { class: 'settings-card', 'data-testid': 'settings-section-theme' },
+    [themeGrid],
+  );
+
+  syncActiveTheme(currentTheme());
+
   // ---- about ----
   const version = el('b', { 'data-testid': 'about-version', text: BUILD_VERSION });
   const checkButton = el('button', {
@@ -1077,6 +1185,7 @@ export function createSettingsView(store, sw) {
 
   node.append(
     libraryCard,
+    settingsBlock(t('settings.appearance.title'), themeCard),
     settingsBlock(t('settings.background.title'), backgroundCard),
     settingsBlock(t('settings.storage.title'), storageCard),
     settingsBlock(t('settings.playback.title'), playbackCard),
@@ -1363,5 +1472,5 @@ export function createSettingsView(store, sw) {
     if (state.view === 'settings') scheduleStorage();
   }
 
-  return { node, render };
+  return { node, render, syncTheme: syncActiveTheme };
 }

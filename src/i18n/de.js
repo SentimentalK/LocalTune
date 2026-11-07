@@ -200,6 +200,7 @@ export default {
   'settings.storage.clearAllConfirm':
     'Alle Titel und Musik im Cache löschen? Dateien auf dem Datenträger und in OneDrive werden nicht gelöscht. Die nächste Synchronisierung baut den Index neu auf.',
   'settings.storage.clearedAll': 'Alles gelöscht',
+  'settings.appearance.title': 'Darstellung',
   'settings.language.title': 'Sprache',
   'settings.language.auto': 'Systemeinstellung folgen',
   'settings.language.browser': 'Browser: {list}',

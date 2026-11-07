@@ -1,4 +1,7 @@
-/* LocalTune · Vinyl UI. Three dark palettes, one listening-room shell. */
+/* LocalTune · Vinyl UI. Ten dark palettes, one listening-room shell.
+   Adding a palette: a `:root[data-theme="…"]` block here, the name in
+   src/ui/uiPrefs.js, and any contrast fix the audit asks for
+   (`npm run theme:check`). */
 
 :root {
   color-scheme: dark;
@@ -49,6 +52,111 @@
   --stroke: rgba(206, 237, 211, 0.13);
   --overlay: #1c3028;
   --vinyl-shadow: rgba(0, 0, 0, 0.66);
+}
+
+/* Near-black with a brass accent: the listening room lights off. */
+:root[data-theme="obsidian"] {
+  --bg: #0a0a0b;
+  --bg2: #141416;
+  --glow: rgba(126, 116, 98, 0.18);
+  --text: #edeae3;
+  --dim: #a5a29a;
+  --muted: #75736c;
+  --accent: #c6a469;
+  --accent-soft: rgba(198, 164, 105, 0.14);
+  --stroke: rgba(226, 220, 208, 0.11);
+  --overlay: #17171a;
+  --vinyl-shadow: rgba(0, 0, 0, 0.74);
+}
+
+/* Deep violet-black with a pale lilac accent. */
+:root[data-theme="aubergine"] {
+  --bg: #100e14;
+  --bg2: #1a1521;
+  --glow: rgba(128, 88, 152, 0.2);
+  --text: #ede6f2;
+  --dim: #b0a3bd;
+  --muted: #7b6e88;
+  --accent: #c9a7e8;
+  --accent-soft: rgba(201, 167, 232, 0.14);
+  --stroke: rgba(226, 208, 240, 0.12);
+  --overlay: #1d1626;
+  --vinyl-shadow: rgba(0, 0, 0, 0.7);
+}
+
+/* Neutral charcoal, warm copper accent: the most restrained theme. */
+:root[data-theme="graphite"] {
+  --bg: #0e1011;
+  --bg2: #17191b;
+  --glow: rgba(104, 116, 121, 0.16);
+  --text: #e9e7e2;
+  --dim: #a2a3a1;
+  --muted: #75797a;
+  --accent: #c9a98f;
+  --accent-soft: rgba(201, 169, 143, 0.14);
+  --stroke: rgba(226, 227, 225, 0.11);
+  --overlay: #191b1d;
+  --vinyl-shadow: rgba(0, 0, 0, 0.72);
+}
+
+/* Cold teal-black with a verdigris accent. */
+:root[data-theme="petrol"] {
+  --bg: #081518;
+  --bg2: #102428;
+  --glow: rgba(72, 138, 130, 0.2);
+  --text: #e7ece9;
+  --dim: #9fb4b3;
+  --muted: #6e8887;
+  --accent: #8fd3c9;
+  --accent-soft: rgba(143, 211, 201, 0.13);
+  --stroke: rgba(200, 233, 228, 0.12);
+  --overlay: #10242a;
+  --vinyl-shadow: rgba(0, 0, 0, 0.7);
+}
+
+/* Coffee-black with a crema accent. */
+:root[data-theme="espresso"] {
+  --bg: #140f0c;
+  --bg2: #211812;
+  --glow: rgba(146, 106, 74, 0.2);
+  --text: #f0e7dc;
+  --dim: #b3a398;
+  --muted: #82736a;
+  --accent: #e0bc94;
+  --accent-soft: rgba(224, 188, 148, 0.13);
+  --stroke: rgba(238, 219, 199, 0.12);
+  --overlay: #241b15;
+  --vinyl-shadow: rgba(0, 0, 0, 0.72);
+}
+
+/* Inkiest navy, one shade colder and deeper than the default blue. */
+:root[data-theme="ink"] {
+  --bg: #0a1020;
+  --bg2: #121a2e;
+  --glow: rgba(78, 104, 158, 0.22);
+  --text: #e9edf6;
+  --dim: #a3adbf;
+  --muted: #6f7c92;
+  --accent: #a9c4ee;
+  --accent-soft: rgba(169, 196, 238, 0.14);
+  --stroke: rgba(205, 218, 242, 0.13);
+  --overlay: #111a2b;
+  --vinyl-shadow: rgba(0, 0, 0, 0.7);
+}
+
+/* Muted Morandi green-grey: the quietest theme of the set. */
+:root[data-theme="sage"] {
+  --bg: #121513;
+  --bg2: #1b211d;
+  --glow: rgba(104, 130, 108, 0.17);
+  --text: #e9ebe5;
+  --dim: #a6b0a6;
+  --muted: #78857b;
+  --accent: #a9c0a2;
+  --accent-soft: rgba(169, 192, 162, 0.13);
+  --stroke: rgba(214, 226, 213, 0.12);
+  --overlay: #1a201c;
+  --vinyl-shadow: rgba(0, 0, 0, 0.7);
 }
 
 * { box-sizing: border-box; }
@@ -1355,6 +1463,66 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
   color: var(--muted);
   font-size: 9.5px;
   line-height: 1.5;
+}
+/* Theme picker: one miniature record per palette — theme canvas, accent label,
+   and a static groove or two. The ring only appears on the chosen swatch. */
+.theme-grid {
+  display: grid;
+  /* Five across keeps ten palettes in two even rows on a phone and gives
+     every name room to wrap instead of being cut off. */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px 2px;
+}
+.theme-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px 1px;
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.25;
+}
+.theme-swatch:hover { background: var(--surface); color: var(--dim); }
+.theme-swatch-disc {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, var(--swatch-accent) 0 5px, transparent 5.5px),
+    repeating-radial-gradient(
+      circle,
+      transparent 0 2.5px,
+      rgba(255, 255, 255, 0.045) 2.5px 3.5px
+    ),
+    var(--swatch-bg);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--swatch-accent) 24%, transparent),
+    0 5px 12px rgba(0, 0, 0, 0.42);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+.theme-swatch:hover .theme-swatch-disc { transform: translateY(-1px); }
+.theme-swatch-name {
+  display: -webkit-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.theme-swatch.is-active { color: var(--accent); }
+.theme-swatch.is-active .theme-swatch-disc {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--swatch-accent) 32%, transparent),
+    0 0 0 2px var(--bg),
+    0 0 0 3px currentColor,
+    0 6px 14px rgba(0, 0, 0, 0.46);
 }
 .about-row {
   display: flex;

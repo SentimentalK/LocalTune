@@ -190,6 +190,7 @@ export default {
   'settings.storage.clearAllConfirm':
     '清空所有曲目與快取的音樂？不會刪除磁碟或 OneDrive 上的檔案；下次同步會重建索引。',
   'settings.storage.clearedAll': '已清空',
+  'settings.appearance.title': '外觀',
   'settings.language.title': '語言',
   'settings.language.auto': '跟隨系統',
   'settings.language.browser': '瀏覽器：{list}',

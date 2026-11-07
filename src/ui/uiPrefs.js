@@ -9,11 +9,32 @@ const GDRIVE_BETA_ACK_KEY = 'localtune:gdriveBetaAck';
 /** Bumping this re-asks every browser once after the beta copy changes. */
 export const GDRIVE_BETA_ACK_VALUE = 'v1';
 
-export const THEMES = ['blue', 'burgundy', 'forest'];
+/** The theme whose tokens live in plain `:root`; also the storage fallback. */
+export const DEFAULT_THEME = 'blue';
+
+export const THEMES = [
+  'blue',
+  'burgundy',
+  'forest',
+  'obsidian',
+  'aubergine',
+  'graphite',
+  'petrol',
+  'espresso',
+  'ink',
+  'sage',
+];
 export const THEME_NAMES = {
   blue: 'Midnight Blue',
   burgundy: 'Oxblood Burgundy',
   forest: 'Forest Noir',
+  obsidian: 'Obsidian',
+  aubergine: 'Aubergine',
+  graphite: 'Graphite',
+  petrol: 'Petrol',
+  espresso: 'Espresso',
+  ink: 'Ink Blue',
+  sage: 'Morandi Sage',
 };
 
 function read(key, fallback) {
@@ -34,12 +55,12 @@ function write(key, value) {
 }
 
 export function currentTheme() {
-  const value = read(THEME_KEY, 'blue');
-  return THEMES.includes(value) ? value : 'blue';
+  const value = read(THEME_KEY, DEFAULT_THEME);
+  return THEMES.includes(value) ? value : DEFAULT_THEME;
 }
 
 export function saveTheme(theme) {
-  write(THEME_KEY, THEMES.includes(theme) ? theme : 'blue');
+  write(THEME_KEY, THEMES.includes(theme) ? theme : DEFAULT_THEME);
 }
 
 export function loadPanel() {

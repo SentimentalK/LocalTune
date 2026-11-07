@@ -201,6 +201,7 @@ export default {
   'settings.storage.clearAllConfirm':
     '¿Borrar todas las pistas y la música en caché? No se eliminan los archivos del disco ni de OneDrive. La próxima sincronización reconstruye el índice.',
   'settings.storage.clearedAll': 'Todo borrado',
+  'settings.appearance.title': 'Apariencia',
   'settings.language.title': 'Idioma',
   'settings.language.auto': 'Seguir el sistema',
   'settings.language.browser': 'Navegador: {list}',

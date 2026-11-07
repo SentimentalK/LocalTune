@@ -202,6 +202,7 @@ export default {
   'settings.storage.clearAllConfirm':
     'Clear all tracks and cached music? Files on your disk and in OneDrive are not deleted. The next sync rebuilds the index.',
   'settings.storage.clearedAll': 'Everything cleared',
+  'settings.appearance.title': 'Appearance',
   'settings.language.title': 'Language',
   'settings.language.auto': 'Follow system',
   'settings.language.browser': 'Browser: {list}',

@@ -1298,6 +1298,10 @@ export function mountUi(root, store, sw) {
     ui.settingsView.node.addEventListener('toast', (event) => {
       showToast(event.detail?.text ?? '');
     });
+    ui.settingsView.node.addEventListener('theme', (event) => {
+      const theme = event.detail?.theme;
+      if (THEMES.includes(theme)) setTheme(theme);
+    });
 
     ui.searchInput.addEventListener('input', () => {
       const value = ui.searchInput.value;
@@ -1345,6 +1349,7 @@ export function mountUi(root, store, sw) {
     const name = THEME_NAMES[active] ?? active;
     ui.themeButton.setAttribute('aria-label', t('theme.switch', { name }));
     ui.themeButton.title = `${name} · ${t('theme.switch', { name })}`;
+    ui.settingsView.syncTheme?.(active);
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
       const value = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();

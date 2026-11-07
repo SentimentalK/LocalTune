@@ -197,6 +197,7 @@ export default {
   'settings.storage.clearAllConfirm':
     'Limpar todas as faixas e músicas em cache? Os arquivos no disco e no OneDrive não são apagados. A próxima sincronização refaz o índice.',
   'settings.storage.clearedAll': 'Tudo limpo',
+  'settings.appearance.title': 'Aparência',
   'settings.language.title': 'Idioma',
   'settings.language.auto': 'Seguir o sistema',
   'settings.language.browser': 'Navegador: {list}',
