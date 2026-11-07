@@ -126,7 +126,6 @@ export default {
   'settings.gdrive.root': 'Google Drive',
   'settings.gdrive.unconfigured': 'Google Drive はクライアント ID が未設定のため接続できません。',
   'settings.gdrive.setupLink': '設定ガイド',
-  'settings.gdrive.betaNote': '接続するには作者に連絡してください',
   'settings.gdrive.betaWarning':
     'Beta：テストユーザーリストのアカウントのみ接続できます（{contact} までご連絡ください）',
   'settings.gdrive.betaConfirmTitle': 'Google Drive Beta',

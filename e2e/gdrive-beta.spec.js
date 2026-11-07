@@ -21,17 +21,33 @@ async function screenshot(page, width, height, name) {
   await page.screenshot({ path: path.join(SHOTS, name), fullPage: true });
 }
 
-test('the disconnected Drive row carries the amber beta notice at both widths', async ({ page }) => {
+test('the disconnected Drive row carries the amber beta notice as its subtitle', async ({ page }) => {
   await installGdriveMock(page, { betaAck: true });
   await openSettings(page);
 
-  const warning = page.locator('[data-testid="gdrive-beta-warning"]');
-  await expect(warning).toBeVisible();
-  await expect(warning).toHaveText(WARNING);
-  await expect(warning).toHaveAccessibleName(WARNING);
-  await expect(warning).toHaveAttribute('href', `mailto:${CONTACT}`);
+  const row = page.locator('[data-testid="source-row-gdrive"]');
+  const subtitle = row.locator('.source-subtitle');
+  await expect(subtitle).toBeVisible();
+  await expect(subtitle).toHaveText(WARNING);
+  await expect(subtitle).toHaveAccessibleName(WARNING);
+  // The subtitle slot itself is the link, not a plain span with a second line
+  // underneath.
+  expect(await subtitle.evaluate((node) => node.tagName)).toBe('A');
+  await expect(subtitle).toHaveAttribute('href', `mailto:${CONTACT}`);
   // Amber (--warn), not the red used for failures.
-  await expect(warning).toHaveCSS('color', 'rgb(214, 180, 122)');
+  await expect(subtitle).toHaveCSS('color', 'rgb(214, 180, 122)');
+  await expect(row.locator('[data-testid="gdrive-beta"]')).toHaveText('Beta');
+
+  // Exactly one line carries the notice: no betaNote duplicate anywhere.
+  expect(
+    await page.evaluate(
+      (text) =>
+        [...document.querySelectorAll('.settings-view *')].filter(
+          (node) => node.children.length === 0 && node.textContent === text,
+        ).length,
+      WARNING,
+    ),
+  ).toBe(1);
 
   await screenshot(page, 390, 844, 'warning-390.png');
   await screenshot(page, 1280, 900, 'warning-1280.png');
@@ -63,6 +79,19 @@ test('the first connect shows the confirmation once and remembers it', async ({ 
     await page.evaluate(() => localStorage.getItem('localtune:gdriveBetaAck')),
   ).toBe('v1');
 
+  // Connected: the subtitle is the folder name and nothing else.
+  await page.locator('[data-testid="gdrive-folder"]').first().click();
+  await page.locator('[data-testid="gdrive-picker-choose"]').click();
+  await expect(page.locator('[data-testid="gdrive-picker"]')).toBeHidden();
+  const row = page.locator('[data-testid="source-row-gdrive"]');
+  await expect(row.locator('.source-subtitle')).toHaveText('Music');
+  await expect(row.locator('.source-subtitle')).not.toHaveAttribute('href', /mailto/);
+  await expect(row.locator('.source-subtitle')).not.toHaveClass(/is-beta/);
+  await expect(row.locator('.source-subtitle')).not.toHaveText(WARNING);
+
+  await screenshot(page, 390, 844, 'connected-390.png');
+  await screenshot(page, 1280, 900, 'connected-1280.png');
+
   // A reload plus a fresh (forgotten) source must go straight to the popup.
   await page.reload();
   await expect(page.locator('.wordmark')).toHaveText('localtune.');
@@ -91,7 +120,7 @@ test('access_denied becomes an actionable red block with the contact copy', asyn
   await expect(row.locator('.settings-error')).toContainText(CONTACT);
   await expect(row.locator('.settings-error')).toHaveCSS('color', 'rgb(217, 139, 132)');
   // Still disconnected: the amber notice keeps showing above the failure.
-  await expect(row.locator('[data-testid="gdrive-beta-warning"]')).toBeVisible();
+  await expect(row.locator('.source-subtitle')).toHaveText(WARNING);
 
   const copy = page.locator('[data-testid="gdrive-copy-account"]');
   await expect(copy).toBeVisible();

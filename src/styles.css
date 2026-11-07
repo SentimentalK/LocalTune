@@ -1163,18 +1163,25 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
 .settings-error.is-danger { color: var(--danger); }
 .settings-hint { padding: 0 0 10px; margin: 0; color: var(--muted); font-size: 10.5px; }
 .settings-hint a { color: var(--accent); }
-/* Google Drive beta: one amber line, indented to the row's text column. The
-   whole line is the mailto link, so the contact stays clickable. */
-.source-beta-warning {
-  display: block;
-  margin: -2px 0 10px 52px;
-  color: var(--warn);
-  font-size: 10.5px;
-  line-height: 1.5;
+/* Google Drive beta: the amber notice sits in the subtitle slot itself. Same
+   size/line-height as every other subtitle, and the whole line is the link. */
+a.source-subtitle {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: inherit;
   text-decoration: none;
 }
-.source-beta-warning:hover,
-.source-beta-warning:focus-visible { text-decoration: underline; }
+a.source-subtitle.is-beta {
+  color: var(--warn);
+  /* The sentence is longer than the worst-case row width; wrapping keeps the
+     contact address readable instead of ellipsing it away. */
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+a.source-subtitle.is-beta:hover,
+a.source-subtitle.is-beta:focus-visible { text-decoration: underline; }
 /* Inline one-time confirmation: amber like the notice, never a modal. */
 .gdrive-beta-confirm {
   margin: 0 0 10px 52px;

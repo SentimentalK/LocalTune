@@ -124,7 +124,6 @@ export default {
   'settings.gdrive.root': 'Google Drive',
   'settings.gdrive.unconfigured': 'Google Drive necesita un ID de cliente para conectarse.',
   'settings.gdrive.setupLink': 'Guía de configuración',
-  'settings.gdrive.betaNote': 'Contacta al autor para conectar',
   'settings.gdrive.betaWarning':
     'Beta: solo las cuentas de la lista de prueba pueden conectar (escribe a {contact} para unirte)',
   'settings.gdrive.betaConfirmTitle': 'Google Drive beta',

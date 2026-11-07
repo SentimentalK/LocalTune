@@ -5,7 +5,8 @@ import { installGdriveMock } from './support/gdrive-mock.js';
 
 const GITHUB_URL = 'https://github.com/SentimentalK/LocalTune';
 const SHOTS = path.resolve('.scratch', 'conductor', 'au');
-const CONTACT_NOTE = '想连接请联系作者';
+const CONTACT_NOTE =
+  'Beta：只有测试名单里的账号能连接（联系 kevinxu.senti@gmail.com 加入）';
 
 async function openSettings(page) {
   await page.goto('/');
@@ -14,9 +15,9 @@ async function openSettings(page) {
   await expect(page.locator('[data-testid="settings-section-library"]')).toBeVisible();
 }
 
-test('Google Drive is marked Beta and uses the contact note as its subtitle', async ({ page }) => {
+test('Google Drive is marked Beta and carries the notice in its subtitle slot', async ({ page }) => {
   // Force the unconfigured build so the client-ID hint is present too: the
-  // subtitle carries the note while the configuration hint keeps its own line.
+  // subtitle carries the notice while the configuration hint keeps its own line.
   await installGdriveMock(page, { clientId: '' });
   await openSettings(page);
 
@@ -24,6 +25,10 @@ test('Google Drive is marked Beta and uses the contact note as its subtitle', as
   await expect(row.locator('[data-testid="gdrive-beta"]')).toHaveText('Beta');
   await expect(row.locator('[data-testid="gdrive-beta-note"]')).toHaveCount(0);
   await expect(row.locator('.source-subtitle')).toHaveText(CONTACT_NOTE);
+  await expect(row.locator('.source-subtitle')).toHaveAttribute(
+    'href',
+    'mailto:kevinxu.senti@gmail.com',
+  );
   await expect(row.locator('[data-testid="gdrive-unconfigured"]')).toBeVisible();
 
   // Only Google Drive carries the badge and the contact copy.

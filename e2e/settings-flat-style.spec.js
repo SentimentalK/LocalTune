@@ -25,7 +25,7 @@ test('disconnected sources show a title and a hint, never a zero count', async (
   await expect(page.locator('.settings-view .source-subtitle')).toHaveText([
     '选择这台设备上的音乐目录',
     '连接 OneDrive 音乐目录',
-    '想连接请联系作者',
+    'Beta：只有测试名单里的账号能连接（联系 kevinxu.senti@gmail.com 加入）',
     '连接 Dropbox 音乐目录',
   ]);
 
