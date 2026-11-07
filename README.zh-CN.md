@@ -16,7 +16,7 @@
 
 11 月 4 日开始，11 月 6 日凌晨 2:11，我已经把上线的 LocalTune 发给朋友试用了。
 
-<http://tune.mainstayx.com>
+<https://tune.mainstayx.com>
 
 <p align="center">
   <img src="docs/screenshots/desktop.webp" width="100%" alt="LocalTune 桌面界面" />
