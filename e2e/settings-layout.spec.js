@@ -169,7 +169,8 @@ test('settings cards fill the width and controls hug the trailing edge', async (
 });
 
 // The settings sections and source rows are flat: no card surface, border or
-// corners. Only the remote folder picker keeps the card chrome.
+// corners. The remote folder picker is flat too and is covered by
+// settings-polish.spec.js.
 test('settings sections carry no card surface', async ({ page }) => {
   await page.goto('/');
   await page.locator('[data-testid="settings-open"]').click();

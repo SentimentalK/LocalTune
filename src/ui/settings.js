@@ -427,11 +427,12 @@ export function createSettingsView(store, sw) {
   setHidden(backgroundDesktop, !desktopOnly);
 
   // ---- remote folder picker (OneDrive / Google Drive) ----
+  // A single flat panel, mounted inside the source row that opened it and
+  // detached again on close so it never leaves a gap or a stale copy behind.
   const pickerCard = el('section', {
-    class: 'card settings-card remote-picker',
+    class: 'settings-card remote-picker',
     tabindex: '-1',
   });
-  setHidden(pickerCard, true);
   let pickerSignature = null;
 
   function parentPath(path) {
@@ -440,11 +441,26 @@ export function createSettingsView(store, sw) {
     return segments.join('/');
   }
 
+  /** Move the picker into `kind`'s row, directly below its summary line. */
+  function mountPicker(kind) {
+    const view = sourceViews.get(kind);
+    if (!view) return false;
+    if (pickerCard.parentNode !== view.node) {
+      const summary = view.node.querySelector(':scope > .source-summary');
+      view.node.insertBefore(pickerCard, summary ? summary.nextSibling : view.node.firstChild);
+    }
+    return true;
+  }
+
   function renderPicker(state) {
     const picker = state.picker ?? { open: false };
     const kind = picker.kind ?? null;
-    setHidden(pickerCard, !picker.open || !kind);
     if (!picker.open || !kind) {
+      pickerCard.remove();
+      pickerSignature = null;
+      return;
+    }
+    if (!mountPicker(kind)) {
       pickerSignature = null;
       return;
     }
@@ -940,7 +956,6 @@ export function createSettingsView(store, sw) {
 
   node.append(
     libraryCard,
-    pickerCard,
     settingsBlock(t('settings.background.title'), backgroundCard),
     settingsBlock(t('settings.storage.title'), storageCard),
     settingsBlock(t('settings.playback.title'), playbackCard),

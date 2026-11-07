@@ -553,11 +553,33 @@ a { color: inherit; }
 }
 .panel-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .library-view { display: flex; flex-direction: column; }
-.settings-pane, .vip-pane { overflow-y: auto; padding-bottom: 20px; }
-.settings-pane::-webkit-scrollbar, .vip-pane::-webkit-scrollbar, .list-scroll::-webkit-scrollbar {
+.settings-pane, .vip-pane {
+  overflow-y: auto;
+  padding-bottom: 20px;
+  /* Reserve the bar's width so switching panes never shifts the content. */
+  scrollbar-gutter: stable;
+}
+.settings-pane::-webkit-scrollbar,
+.vip-pane::-webkit-scrollbar {
+  width: 10px;
+}
+.settings-pane::-webkit-scrollbar-track,
+.vip-pane::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* The transparent border plus content-box clipping leaves a 3px gap between
+   the painted thumb and the panel's right edge. */
+.settings-pane::-webkit-scrollbar-thumb,
+.vip-pane::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background-clip: content-box;
+}
+.list-scroll::-webkit-scrollbar {
   width: 4px;
 }
-.settings-pane::-webkit-scrollbar-thumb, .vip-pane::-webkit-scrollbar-thumb, .list-scroll::-webkit-scrollbar-thumb {
+.list-scroll::-webkit-scrollbar-thumb {
   border-radius: 4px;
   background: color-mix(in srgb, var(--accent) 30%, transparent);
 }
@@ -947,7 +969,7 @@ a { color: inherit; }
   background: rgba(255, 255, 255, 0.055);
   color: var(--dim);
 }
-.source-icon .icon { width: 18px; height: 18px; fill: currentColor; stroke: none; }
+.source-icon .icon { width: 18px; height: 18px; }
 .source-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .source-body .source-title { color: var(--text); font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-heading { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -1013,6 +1035,16 @@ a { color: inherit; }
 .background-status { margin-top: 9px; font-size: 10.5px; }
 .background-desktop { margin-top: 8px; font-size: 10.5px; }
 .settings-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; margin-top: 12px; }
+/* Sits inside its source row, indented to the row's text column. Flat: no
+   card surface, border or corner. */
+.remote-picker {
+  margin: 2px 0 12px;
+  padding: 0 0 0 52px;
+  min-width: 0;
+}
+/* The panel takes focus after OAuth so the library section is read in
+   context; it is not a control, so no ring is drawn around the whole panel. */
+.remote-picker:focus { outline: none; }
 .picker-crumbs {
   display: flex;
   flex-wrap: wrap;
@@ -1022,7 +1054,16 @@ a { color: inherit; }
   font-size: 10.5px;
 }
 .picker-crumb + .picker-crumb::before { content: "/"; margin-right: 5px; opacity: 0.5; }
-.picker-list { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow: auto; }
+.picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 .picker-folder {
   width: 100%;
   padding: 9px 10px;
@@ -1100,24 +1141,44 @@ a { color: inherit; }
   transition: transform 0.18s var(--ease);
 }
 .toggle-switch.is-on .toggle-knob { transform: translateX(17px); background: var(--bg); }
-.language-list { display: flex; flex-direction: column; }
+.language-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px;
+  align-items: stretch;
+}
+/* "Follow system · <language>" carries the resolved name: two cells keep it
+   readable instead of ellipsising the language away. */
+.language-list > .language-row:first-child { grid-column: span 2; }
 .language-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 9px 2px;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 10px;
   border-radius: 8px;
   color: var(--dim);
   text-align: left;
   font-size: 12px;
 }
-.language-row + .language-row { border-top: 1px solid var(--stroke); }
+.language-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .language-row:hover { color: var(--text); }
 .language-row.is-active .language-name { color: var(--accent); }
-.language-check { width: 16px; height: 16px; opacity: 0; color: var(--accent); }
+.language-check { width: 16px; height: 16px; flex: none; opacity: 0; color: var(--accent); }
 .language-row.is-active .language-check { opacity: 1; }
-.language-browser { margin: 4px 2px 8px; color: var(--muted); font-size: 9.5px; line-height: 1.5; }
+.language-browser {
+  grid-column: 1 / -1;
+  margin: 2px 2px 4px;
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
 .about-row {
   display: flex;
   align-items: center;
