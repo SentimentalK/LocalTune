@@ -45,6 +45,10 @@ import { diffScan } from './scan.js';
 import {
   createQueue,
   setQueue,
+  alignQueue,
+  appendQueue as appendQueueState,
+  restoreRound,
+  moveTo,
   currentTrack,
   advance,
   back,
@@ -76,6 +80,7 @@ import { yieldToMain } from './timing.js';
 
 const VIEWS = new Set(['folders', 'queue', 'search', 'settings', 'vip']);
 const MEDIA_SYNC_INTERVAL = 1000;
+const QUEUE_ROUND_KEY = 'localtune.queueRound';
 const REPLAYGAIN_HEAD_BYTES = 1 << 19;
 const SOURCE_KINDS = ['local', 'onedrive', 'gdrive', 'dropbox'];
 const TRACK_SOURCE = {
@@ -190,6 +195,52 @@ function fallbackTitle(path) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function queueSession() {
+  try {
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The shuffle order survives a reload (no jump back to the round start) but
+ * lives only for this tab session: a killed app reshuffles on the next cold
+ * start. It is deliberately not part of the IndexedDB playback snapshot.
+ */
+function loadQueueRound() {
+  const storage = queueSession();
+  if (!storage) return null;
+  try {
+    const value = JSON.parse(storage.getItem(QUEUE_ROUND_KEY));
+    if (!value || !Array.isArray(value.ids)) return null;
+    const ids = value.ids.filter((id) => typeof id === 'string');
+    return { ids, indexId: typeof value.indexId === 'string' ? value.indexId : null };
+  } catch {
+    return null;
+  }
+}
+
+function saveQueueRound(queue) {
+  const storage = queueSession();
+  if (!storage) return;
+  try {
+    if (!queue?.shuffle || !queue.tracks?.length) {
+      storage.removeItem(QUEUE_ROUND_KEY);
+      return;
+    }
+    storage.setItem(
+      QUEUE_ROUND_KEY,
+      JSON.stringify({
+        ids: queue.order.map((index) => queue.tracks[index]?.id).filter(Boolean),
+        indexId: queue.tracks[queue.index]?.id ?? null,
+      }),
+    );
+  } catch {
+    // Session storage is best-effort, like playback persistence.
+  }
 }
 
 function errorMessage(error) {
@@ -380,7 +431,7 @@ export class Store extends EventTarget {
       view: 'folders',
       pendingView: null,
       tracks: [],
-      queue: { tracks: [], index: -1, shuffle: false, repeat: 'off' },
+      queue: { tracks: [], index: -1, shuffle: false, repeat: 'off', order: [], cursor: 0 },
       current: { track: null, playing: false, position: 0, duration: 0, volume: 1 },
       sources: SOURCE_KINDS.map((kind) => emptyRow(kind, this.sources[kind])),
       picker: { kind: null, open: false, path: '', items: [], loading: false, current: null },
@@ -770,6 +821,7 @@ export class Store extends EventTarget {
         queueTracks,
         startIndex,
       );
+      this.queue = this._applySessionRound(this.queue);
       const track = currentTrack(this.queue);
       const savedPosition = Number.isFinite(playback?.position) ? Math.max(playback.position, 0) : 0;
       const position = track?.duration > 0 ? Math.min(savedPosition, track.duration) : savedPosition;
@@ -792,7 +844,8 @@ export class Store extends EventTarget {
         DEMO_TRACKS,
         0,
       );
-      const track = DEMO_TRACKS[0];
+      this.queue = this._applySessionRound(this.queue);
+      const track = currentTrack(this.queue);
       this._state.current = {
         track,
         playing: false,
@@ -810,6 +863,8 @@ export class Store extends EventTarget {
         index: -1,
         shuffle: initialShuffle,
         repeat: initialRepeat,
+        order: [],
+        cursor: 0,
       };
     }
 
@@ -1860,7 +1915,17 @@ export class Store extends EventTarget {
     await this.playQueue(tracks, trackId, source);
   }
 
-  async playQueue(tracks, startId, source = 'user') {
+  /**
+   * Start (or continue) playback over `tracks`.
+   *
+   * With shuffle on and the same id set already queued, the running round is
+   * kept: order entries are remapped by id and the playhead moves to the
+   * requested track. Tapping a row is "play it now"; it must not recycle the
+   * tracks already played into the pool (that caused duplicate/skip rounds).
+   * `fresh` is for explicit round restarts (play all / shuffle play), and
+   * `shuffle` forces the mode before the round is built.
+   */
+  async playQueue(tracks, startId, source = 'user', { fresh = false, shuffle = null } = {}) {
     const list = Array.from(tracks ?? []);
     if (!list.length) return;
     if (!list.some(isDemoTrack) && this.queue.tracks.some(isDemoTrack)) {
@@ -1868,7 +1933,12 @@ export class Store extends EventTarget {
     }
     let startIndex = list.findIndex((track) => track.id === startId);
     if (startIndex < 0) startIndex = 0;
-    this.queue = setQueue(this.queue, list, startIndex);
+    if (typeof shuffle === 'boolean' && shuffle !== this.queue.shuffle) {
+      this.queue = { ...this.queue, shuffle };
+      savePrefs({ shuffle, repeat: this.queue.repeat });
+    }
+    const aligned = !fresh && this.queue.shuffle ? alignQueue(this.queue, list, startIndex) : null;
+    this.queue = aligned ?? setQueue(this.queue, list, startIndex);
     this._reflectQueue();
     this._emit();
     this._applyLevelingPolicy();
@@ -1877,13 +1947,18 @@ export class Store extends EventTarget {
     this._syncMediaSession(true);
   }
 
+  /** 「随机播放」: one new round over the original order, random opening track. */
+  async shufflePlay(tracks, source = 'user') {
+    const list = Array.from(tracks ?? []);
+    if (!list.length) return;
+    const start = list[Math.floor(Math.random() * list.length)];
+    await this.playQueue(list, start?.id, source, { fresh: true, shuffle: true });
+  }
+
   appendQueue(tracks) {
     const list = Array.from(tracks ?? []).filter(Boolean);
     if (!list.length) return;
-    const base = this.queue ?? createQueue([]);
-    const merged = [...base.tracks, ...list];
-    const index = base.index >= 0 ? base.index : 0;
-    this.queue = setQueue(base, merged, index);
+    this.queue = appendQueueState(this.queue ?? createQueue([]), list);
     this._reflectQueue();
     this._emit();
     this._savePlayback();
@@ -2075,16 +2150,11 @@ export class Store extends EventTarget {
     this._emit();
   }
 
+  /** Play the queue entry at `index` now; the running round is not rebuilt. */
   async jumpTo(index) {
-    const list = this.queue.tracks;
-    if (!Number.isInteger(index) || index < 0 || index >= list.length) return;
-    const order = [...this.queue.order];
-    let cursor = order.indexOf(index);
-    if (cursor < 0) {
-      order.unshift(index);
-      cursor = 0;
-    }
-    this.queue = { ...this.queue, index, order, cursor };
+    const next = moveTo(this.queue, index);
+    if (next === this.queue) return;
+    this.queue = next;
     this._reflectQueue();
     this._emit();
     await this._loadTrack(currentTrack(this.queue), { play: true });
@@ -2181,6 +2251,11 @@ export class Store extends EventTarget {
         deliver(null);
       },
     );
+  }
+
+  _applySessionRound(queue) {
+    if (!queue.shuffle) return queue;
+    return restoreRound(queue, loadQueueRound()) ?? queue;
   }
 
   _savePlayback() {
@@ -2348,7 +2423,17 @@ export class Store extends EventTarget {
       index: queue.index,
       shuffle: queue.shuffle,
       repeat: queue.repeat,
+      order: queue.order,
+      cursor: queue.cursor,
     };
+    // Rewriting the round for every metadata refill would serialise the whole
+    // order hundreds of times per import; the round itself only changes when
+    // `order` or the playhead changes.
+    const saved = this._savedRound;
+    if (!saved || saved.order !== queue.order || saved.index !== queue.index) {
+      saveQueueRound(queue);
+      this._savedRound = { order: queue.order, index: queue.index };
+    }
     const track = currentTrack(queue);
     const current = this._state.current;
     if (!track) {
@@ -2404,10 +2489,12 @@ export class Store extends EventTarget {
     }
     const currentId = currentTrack(queue)?.id ?? null;
     const tracks = [];
-    const indexMap = new Map();
+    const oldToNew = new Map();
+    const positionById = new Map();
     queue.tracks.forEach((track, i) => {
       if (removed.has(track.id)) return;
-      indexMap.set(i, tracks.length);
+      oldToNew.set(i, tracks.length);
+      positionById.set(track.id, tracks.length);
       tracks.push(byId.get(track.id) ?? track);
     });
 
@@ -2417,13 +2504,23 @@ export class Store extends EventTarget {
       return;
     }
 
-    const order = queue.order.filter((i) => indexMap.has(i)).map((i) => indexMap.get(i));
-    let index = currentId ? tracks.findIndex((track) => track.id === currentId) : -1;
-    if (index < 0) index = clamp(queue.index, 0, tracks.length - 1);
-    let cursor = order.indexOf(index);
-    if (cursor < 0) {
-      order.unshift(index);
-      cursor = 0;
+    // Remap the playback order by id: removing rows must not shift `order`
+    // onto the wrong tracks, and the surviving players keep their sequence.
+    const order = queue.order.filter((i) => oldToNew.has(i)).map((i) => oldToNew.get(i));
+    let index;
+    let cursor;
+    if (currentId && positionById.has(currentId)) {
+      index = positionById.get(currentId);
+      cursor = order.indexOf(index);
+      if (cursor < 0) {
+        cursor = Math.min(queue.cursor, order.length - 1);
+        index = order[cursor];
+      }
+    } else {
+      // The current track is gone: the next survivor in playback order takes
+      // the slot, so the rest of the round is not replayed from the top.
+      cursor = Math.min(queue.cursor, order.length - 1);
+      index = order[cursor];
     }
     this.queue = { ...queue, tracks, index, order, cursor };
     const lostCurrent = Boolean(currentId) && !tracks.some((track) => track.id === currentId);
