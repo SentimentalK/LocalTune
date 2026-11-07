@@ -123,6 +123,7 @@ export default {
   'settings.gdrive.root': 'Google Drive',
   'settings.gdrive.unconfigured': 'Google Drive benötigt eine Client-ID, um sich zu verbinden.',
   'settings.gdrive.setupLink': 'Einrichtungsanleitung',
+  'settings.gdrive.betaNote': 'Kontaktiere den Autor, um dich zu verbinden',
   'settings.gdrive.authFailed': 'Die Google-Drive-Anmeldung ist abgelaufen. Bitte erneut verbinden.',
   'settings.onedrive.connectedHint': 'Mit OneDrive verbunden – wähle deinen Musikordner',
   'settings.onedrive.authFailed': 'Die OneDrive-Anmeldung wurde nicht abgeschlossen. Bitte erneut versuchen.',

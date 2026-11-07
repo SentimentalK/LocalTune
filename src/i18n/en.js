@@ -126,6 +126,7 @@ export default {
   'settings.gdrive.root': 'Google Drive',
   'settings.gdrive.unconfigured': 'Google Drive needs a client ID before it can connect.',
   'settings.gdrive.setupLink': 'Setup guide',
+  'settings.gdrive.betaNote': 'Contact the author to connect',
   'settings.gdrive.authFailed': 'Google Drive sign-in expired. Reconnect to sync.',
   'settings.onedrive.connectedHint': 'Connected to OneDrive — choose your music folder',
   'settings.onedrive.authFailed': "OneDrive sign-in didn't finish. Please try again.",

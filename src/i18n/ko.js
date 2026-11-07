@@ -122,6 +122,7 @@ export default {
   'settings.gdrive.root': 'Google Drive',
   'settings.gdrive.unconfigured': 'Google Drive에 클라이언트 ID가 없어 연결할 수 없습니다.',
   'settings.gdrive.setupLink': '설정 안내',
+  'settings.gdrive.betaNote': '연결하려면 작성자에게 문의하세요',
   'settings.gdrive.authFailed': 'Google Drive 로그인이 만료되었습니다. 다시 연결하세요.',
   'settings.onedrive.connectedHint': 'OneDrive에 연결됨 — 음악 폴더를 선택하세요',
   'settings.onedrive.authFailed': 'OneDrive 로그인이 완료되지 않았습니다. 다시 시도하세요.',

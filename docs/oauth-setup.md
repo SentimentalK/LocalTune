@@ -61,6 +61,7 @@ https://www.googleapis.com/auth/drive.readonly
 - `drive.readonly` 属于敏感 scope。应用处于 **Testing** 状态时，只有 **Test users** 里的账号能完成授权。
 - Testing 状态下的 refresh token（本项目不使用）有 7 天过期限制；本项目用 GIS token model，token 本身就是短命的，过期后重新连接即可。
 - 要让任意 Google 账号使用，必须把应用提交给 Google 验证（OAuth verification）。未验证时不要对外发布，否则其他账号会在授权页被拦截。
+- **Beta**：本版本的 Google Drive 来源标记为 Beta——只有 Test users 能完成授权，其他账号想连接请联系作者；正式公开使用需要通过 restricted scope verification。
 
 ---
 
