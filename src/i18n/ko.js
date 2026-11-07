@@ -185,6 +185,7 @@ export default {
   'settings.storage.clearAllConfirm':
     '모든 곡과 캐시된 음악을 지울까요? 디스크와 OneDrive의 파일은 삭제되지 않습니다. 다음 동기화 때 색인이 다시 만들어집니다.',
   'settings.storage.clearedAll': '모두 지웠습니다',
+  'settings.appearance.title': '모양',
   'settings.language.title': '언어',
   'settings.language.auto': '시스템 설정 따르기',
   'settings.language.browser': '브라우저: {list}',

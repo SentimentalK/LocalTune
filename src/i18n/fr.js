@@ -191,6 +191,7 @@ export default {
   'settings.storage.clearAllConfirm':
     'Effacer toutes les pistes et la musique en cache ? Les fichiers sur le disque et dans OneDrive ne sont pas supprimés. La prochaine synchro reconstruit l’index.',
   'settings.storage.clearedAll': 'Tout est effacé',
+  'settings.appearance.title': 'Apparence',
   'settings.language.title': 'Langue',
   'settings.language.auto': 'Suivre le système',
   'settings.language.browser': 'Navigateur : {list}',

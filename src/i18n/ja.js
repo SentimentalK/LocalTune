@@ -198,6 +198,7 @@ export default {
   'settings.storage.clearAllConfirm':
     'すべての曲とキャッシュを削除しますか？ディスクや OneDrive のファイルは削除されません。次回の同期でインデックスを再作成します。',
   'settings.storage.clearedAll': '削除しました',
+  'settings.appearance.title': '外観',
   'settings.language.title': '言語',
   'settings.language.auto': 'システムに従う',
   'settings.language.browser': 'ブラウザー：{list}',

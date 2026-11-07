@@ -185,6 +185,7 @@ export default {
   'settings.storage.clearAllConfirm':
     'Стереть все треки и музыку в кэше? Файлы на диске и в OneDrive не удаляются. Следующая синхронизация соберёт индекс заново.',
   'settings.storage.clearedAll': 'Всё очищено',
+  'settings.appearance.title': 'Оформление',
   'settings.language.title': 'Язык',
   'settings.language.auto': 'Как в системе',
   'settings.language.browser': 'Браузер: {list}',

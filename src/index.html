@@ -9,7 +9,8 @@
     <script>
       try {
         var theme = localStorage.getItem('localtune-theme');
-        if (theme === 'burgundy' || theme === 'forest') document.documentElement.dataset.theme = theme;
+        // Unknown names simply match no selector and fall back to :root.
+        if (theme && /^[a-z][a-z-]{1,23}$/.test(theme)) document.documentElement.dataset.theme = theme;
         var bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
         var meta = document.querySelector('meta[name="theme-color"]');
         if (meta) meta.content = bg || '#101921';
