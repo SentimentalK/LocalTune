@@ -123,6 +123,7 @@ export default {
   'settings.gdrive.root': 'Google Drive',
   'settings.gdrive.unconfigured': 'Для подключения Google Drive нужен идентификатор клиента.',
   'settings.gdrive.setupLink': 'Инструкция по настройке',
+  'settings.gdrive.betaNote': 'Свяжитесь с автором, чтобы подключиться',
   'settings.gdrive.authFailed': 'Сеанс Google Drive истёк. Подключитесь снова.',
   'settings.onedrive.connectedHint': 'OneDrive подключён — выберите папку с музыкой',
   'settings.onedrive.authFailed': 'Вход в OneDrive не завершился. Повторите попытку.',

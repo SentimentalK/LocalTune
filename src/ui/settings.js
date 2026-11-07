@@ -63,8 +63,8 @@ export function createSettingsView(store, sw) {
   // ---- library ----
   const sourceViews = new Map();
 
-  const OAUTH_SETUP_URL =
-    'https://github.com/SentimentalK/LocalTune/blob/main/docs/oauth-setup.md';
+  const REPO_URL = 'https://github.com/SentimentalK/LocalTune';
+  const OAUTH_SETUP_URL = `${REPO_URL}/blob/main/docs/oauth-setup.md`;
 
   const CONNECT_LABELS = {
     local: 'settings.source.connectLocal',
@@ -107,6 +107,10 @@ export function createSettingsView(store, sw) {
 
   function createSourceRow(kind) {
     const name = el('b', { class: 'source-title', text: t(SOURCE_TITLES[kind]) });
+    const beta =
+      kind === 'gdrive'
+        ? el('span', { class: 'source-badge', 'data-testid': 'gdrive-beta', text: 'Beta' })
+        : null;
     const count = el('span', { class: 'source-count' });
     setHidden(count, true);
     const subtitle = el('span', {
@@ -248,6 +252,17 @@ export function createSettingsView(store, sw) {
       setHidden(view.hint, true);
     }
 
+    // Beta note is fixed copy: it never replaces the unconfigured hint or the
+    // per-row error, which both keep their own lines below it.
+    const betaNote =
+      kind === 'gdrive'
+        ? el('p', {
+            class: 'settings-hint muted source-beta-note',
+            'data-testid': 'gdrive-beta-note',
+            text: t('settings.gdrive.betaNote'),
+          })
+        : null;
+
     view.node = el('div', { class: 'source-card-body', 'data-testid': `source-row-${kind}` }, [
       el('div', { class: 'source-summary' }, [
         el('span', {
@@ -255,12 +270,13 @@ export function createSettingsView(store, sw) {
           'aria-hidden': 'true',
         }, [icon(SOURCE_ICONS[kind])]),
         el('span', { class: 'source-body' }, [
-          name,
+          el('span', { class: 'source-heading' }, [name, beta]),
           el('span', { class: 'source-meta' }, [subtitle, count]),
         ]),
         view.actions,
       ]),
       progress,
+      ...(betaNote ? [betaNote] : []),
       ...(view.hint ? [view.hint] : []),
       rowError,
     ]);
@@ -910,6 +926,18 @@ export function createSettingsView(store, sw) {
     ]);
   }
 
+  const githubLink = el(
+    'a',
+    {
+      class: 'settings-github',
+      href: REPO_URL,
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      'data-testid': 'settings-github',
+    },
+    [icon('github'), el('span', { text: 'GitHub' })],
+  );
+
   node.append(
     libraryCard,
     pickerCard,
@@ -918,6 +946,7 @@ export function createSettingsView(store, sw) {
     settingsBlock(t('settings.playback.title'), playbackCard),
     settingsBlock(t('settings.language.title'), languageCard),
     settingsBlock(t('settings.about.title'), aboutCard),
+    githubLink,
   );
 
   // Storage figures are async and can be expensive on a large cache: throttle

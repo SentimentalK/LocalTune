@@ -120,6 +120,7 @@ export default {
   'settings.gdrive.root': 'Google Drive',
   'settings.gdrive.unconfigured': 'Google Drive 尚未配置客户端 ID，无法连接。',
   'settings.gdrive.setupLink': '配置指南',
+  'settings.gdrive.betaNote': '想连接请联系作者',
   'settings.gdrive.authFailed': 'Google Drive 登录已过期，请重新连接。',
   'settings.onedrive.connectedHint': '已连接 OneDrive，选择音乐文件夹',
   'settings.onedrive.authFailed': 'OneDrive 登录未完成，请重试',

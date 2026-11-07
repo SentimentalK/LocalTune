@@ -950,6 +950,19 @@ a { color: inherit; }
 .source-icon .icon { width: 18px; height: 18px; fill: currentColor; stroke: none; }
 .source-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .source-body .source-title { color: var(--text); font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-heading { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.source-body .source-badge {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+}
+.settings-hint.source-beta-note { padding-bottom: 6px; }
 .source-body span { color: var(--muted); font-size: 11px; }
 .source-meta { display: flex; align-items: baseline; min-width: 0; }
 .source-subtitle { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1116,6 +1129,18 @@ a { color: inherit; }
 }
 .about-row b { color: var(--text); font-weight: 500; }
 .about-state { color: var(--muted); font-size: 10.5px; }
+.settings-github {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.settings-github:hover,
+.settings-github:focus-visible { color: var(--accent); }
+.settings-github .icon { width: 16px; height: 16px; }
 .vip-view { display: flex; flex-direction: column; gap: 14px; }
 .vip-head { display: flex; align-items: center; gap: 13px; }
 .vip-crown {
