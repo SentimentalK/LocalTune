@@ -283,3 +283,100 @@ test('every locale renders its caption in the bundled face', async ({ browser })
     await context.close();
   }
 });
+
+test('the chalk hint hides while the demo plays and returns on pause', async ({ page }) => {
+  await openDemo(page);
+  const layer = page.locator('.chalk-layer');
+  await expect(layer).not.toHaveClass(/is-hidden/);
+  await expect
+    .poll(() => layer.evaluate((node) => Number(getComputedStyle(node).opacity) > 0.99))
+    .toBe(true);
+
+  await page.locator('.hub-hit').click();
+  await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'true');
+  await expect(layer).toHaveClass(/is-hidden/);
+  await expect
+    .poll(() => layer.evaluate((node) => getComputedStyle(node).visibility))
+    .toBe('hidden');
+  expect(
+    await page.evaluate(() => {
+      const node = document.querySelector('.chalk-layer text');
+      const rect = node.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return Boolean(hit?.closest?.('.chalk-layer'));
+    }),
+  ).toBe(false);
+
+  await page.locator('.hub-hit').click();
+  await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'false');
+  await expect(layer).not.toHaveClass(/is-hidden/);
+  await expect
+    .poll(() => layer.evaluate((node) => getComputedStyle(node).visibility))
+    .toBe('visible');
+  await expect
+    .poll(() => layer.evaluate((node) => Number(getComputedStyle(node).opacity) > 0.99))
+    .toBe(true);
+});
+
+test('a queue without demo tracks keeps the hint hidden', async ({ page }) => {
+  page.on('dialog', (dialog) => dialog.accept());
+  await openDemo(page);
+  const layer = page.locator('.chalk-layer');
+  await expect(layer).not.toHaveClass(/is-hidden/);
+
+  await page.locator('[data-testid="queue-clear"]').click();
+  await expect(page.locator('.track-item.queue')).toHaveCount(0);
+  await expect(layer).toHaveClass(/is-hidden/);
+  await expect
+    .poll(() => layer.evaluate((node) => getComputedStyle(node).visibility))
+    .toBe('hidden');
+
+  // Persist the dismissal directly and reload: a boot with no demo queue is
+  // hidden from the first frame too.
+  await page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const open = indexedDB.open('localtune', 6);
+        open.onsuccess = () => {
+          const db = open.result;
+          const tx = db.transaction('meta', 'readwrite');
+          tx.objectStore('meta').put({ key: 'demoDismissed', value: true });
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+        open.onerror = () => reject(open.error);
+      }),
+  );
+  await page.reload();
+  await expect(page.locator('.track-item.queue')).toHaveCount(0);
+  await expect(layer).toHaveClass(/is-hidden/);
+  await expect
+    .poll(() => layer.evaluate((node) => getComputedStyle(node).visibility))
+    .toBe('hidden');
+});
+
+test('hiding the hint leaves the deck geometry alone', async ({ page }) => {
+  await openDemo(page);
+  // The library panel slides open on boot (width transition), which reflows the
+  // stage; let it settle before sampling so only the chalk toggle is compared.
+  await page.waitForTimeout(700);
+  const measure = () =>
+    page.evaluate(() => {
+      const deck = document.querySelector('.deck').getBoundingClientRect();
+      return {
+        scroll: document.scrollingElement.scrollTop,
+        x: deck.x,
+        y: deck.y,
+        width: deck.width,
+        height: deck.height,
+      };
+    });
+  const before = await measure();
+  await page.locator('.hub-hit').click();
+  await expect(page.locator('.chalk-layer')).toHaveClass(/is-hidden/);
+  await page.waitForTimeout(400);
+  expect(await measure()).toEqual(before);
+});

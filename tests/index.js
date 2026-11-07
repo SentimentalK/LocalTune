@@ -31,3 +31,4 @@ import './install.test.js';
 import './battery.test.js';
 import './playerPrefs.test.js';
 import './covers.test.js';
+import './chalk-visibility.test.js';

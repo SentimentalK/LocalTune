@@ -84,16 +84,27 @@ function wavePath({ from, to, y, amplitude = 2.2, turns = 3.5, seed = 3 }) {
 }
 
 /**
+ * The chalk captions are a first-run hint: they exist while the queue still
+ * holds demo tracks, and they give the stage back while music plays.
+ */
+export function shouldShowChalk({ hasDemo, playing }) {
+  return Boolean(hasDemo) && !playing;
+}
+
+/**
  * Mounts the chalk layer into a deck and returns its handle. `layout()` forces
- * a remeasure; `destroy()` drops the observer and the nodes.
+ * a remeasure; `setVisible()` shows or hides the hint; `destroy()` drops the
+ * observer and the nodes.
  */
 export function mountChalkLayer(deck) {
-  if (!deck || typeof deck.getBoundingClientRect !== 'function') return { layout() {}, destroy() {} };
+  if (!deck || typeof deck.getBoundingClientRect !== 'function') {
+    return { layout() {}, setVisible() {}, destroy() {} };
+  }
 
   const label = (key) => t(key);
 
   const layer = make('svg', {
-    class: 'chalk-layer',
+    class: 'chalk-layer is-hidden',
     viewBox: `0 0 ${VIEW_W} ${VIEW_H}`,
     'aria-hidden': 'true',
     focusable: 'false',
@@ -170,6 +181,16 @@ export function mountChalkLayer(deck) {
   playTitle.textContent = label('chalk.play');
   seekTextTop.textContent = label('chalk.seekPlace');
   seekTextBottom.textContent = label('chalk.seekMove');
+
+  let visible = false;
+
+  /** Show or hide the hint. Only the class changes: no layout, no rAF. */
+  function setVisible(next) {
+    const show = Boolean(next);
+    if (show === visible) return;
+    visible = show;
+    layer.classList.toggle('is-hidden', !show);
+  }
 
   let measuring = false;
 
@@ -282,6 +303,7 @@ export function mountChalkLayer(deck) {
 
   return {
     layout,
+    setVisible,
     destroy() {
       observer.disconnect();
       layer.remove();
