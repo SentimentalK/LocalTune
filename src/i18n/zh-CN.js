@@ -294,4 +294,16 @@ export default {
   'player.statusStopped': '已停止',
 
   'error.db.writeStats': '写入播放统计失败',
+
+  'permission.title.local': '无法读取本地文件夹',
+  'permission.title.onedrive': 'OneDrive 需要重新连接',
+  'permission.title.gdrive': 'Google Drive 需要重新连接',
+  'permission.title.dropbox': 'Dropbox 需要重新连接',
+  'permission.bodyLocal':
+    '应用更新或授权过期后，浏览器可能已收回文件夹访问权限。若重新授权仍失败，请在浏览器的站点设置中允许本站访问文件，然后刷新页面。',
+  'permission.bodyCloud':
+    '应用更新或授权过期后，云盘登录可能已失效。请重新连接；若仍无法访问，请检查账号的授权设置里本应用是否仍然有效。',
+  'permission.reauthorize': '重新授权',
+  'permission.settings': '去设置',
+  'permission.close': '关闭',
 };

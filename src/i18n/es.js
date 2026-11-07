@@ -305,4 +305,16 @@ export default {
   'player.statusStopped': 'Detenido',
 
   'error.db.writeStats': 'Error al escribir las estadísticas de reproducción',
+
+  'permission.title.local': 'No se puede leer tu carpeta local',
+  'permission.title.onedrive': 'OneDrive necesita reconectarse',
+  'permission.title.gdrive': 'Google Drive necesita reconectarse',
+  'permission.title.dropbox': 'Dropbox necesita reconectarse',
+  'permission.bodyLocal':
+    'Una actualización de la app o un permiso caducado pueden haber retirado el acceso a tu carpeta. Si volver a autorizar falla, permite el acceso a archivos de este sitio en los ajustes del navegador y recarga la página.',
+  'permission.bodyCloud':
+    'Una actualización de la app o un permiso caducado pueden haber cerrado la sesión de esta nube. Vuelve a conectarla; si aún no hay acceso, comprueba en los ajustes de tu cuenta que esta app siga autorizada.',
+  'permission.reauthorize': 'Volver a autorizar',
+  'permission.settings': 'Abrir ajustes',
+  'permission.close': 'Cerrar',
 };

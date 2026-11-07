@@ -313,4 +313,16 @@ export default {
   'player.statusStopped': '停止中',
 
   'error.db.writeStats': '再生統計の書き込みに失敗しました',
+
+  'permission.title.local': 'ローカルフォルダを読み取れません',
+  'permission.title.onedrive': 'OneDrive の再接続が必要です',
+  'permission.title.gdrive': 'Google Drive の再接続が必要です',
+  'permission.title.dropbox': 'Dropbox の再接続が必要です',
+  'permission.bodyLocal':
+    'アプリの更新や許可の期限切れにより、フォルダへのアクセス権が失われた可能性があります。再許可しても失敗する場合は、ブラウザのサイト設定でこのサイトのファイルアクセスを許可してから再読み込みしてください。',
+  'permission.bodyCloud':
+    'アプリの更新や許可の期限切れにより、クラウドのサインインが切れた可能性があります。再接続してください。それでもアクセスできない場合は、アカウントの許可設定でこのアプリが有効か確認してください。',
+  'permission.reauthorize': '再許可',
+  'permission.settings': '設定を開く',
+  'permission.close': '閉じる',
 };

@@ -77,6 +77,8 @@ export async function installGraphMock(
     holdRanges = false,
     failRangeIds = [],
     failWholeIds = [],
+    failDownloadUrlTimes = 0,
+    failTokenRefresh = false,
   } = {},
 ) {
   // A spec that names several roots drives the folder picker; the default is
@@ -93,6 +95,9 @@ export async function installGraphMock(
     tokenRequests: [],
     rangeStarted: 0,
     rangeDone: 0,
+    failDownloadUrlTimes,
+    failTokenRefresh,
+    tokenRefreshes: 0,
     releaseRanges: () => {
       openGate();
     },
@@ -104,6 +109,11 @@ export async function installGraphMock(
 
     if (url.pathname.endsWith('/token')) {
       state.tokenRequests.push(request.url());
+      const body = request.postData() ?? '';
+      if (state.failTokenRefresh && /refresh_token/.test(body)) {
+        return json(route, 400, { error: 'invalid_grant' });
+      }
+      if (/refresh_token/.test(body)) state.tokenRefreshes += 1;
       return route.fulfill({
         status: 200,
         headers: { ...CORS, 'content-type': 'application/json' },
@@ -165,7 +175,13 @@ export async function installGraphMock(
     const itemMatch = /^\/v1\.0\/drives\/drive-1\/items\/([^/]+)$/.exec(pathname);
     if (itemMatch) {
       const file = allFiles.find((entry) => entry.id === itemMatch[1]);
-      if (file) return json(route, 200, driveItem(file));
+      if (file) {
+        if (state.failDownloadUrlTimes > 0) {
+          state.failDownloadUrlTimes -= 1;
+          return json(route, 401, { error: { code: 'InvalidAuthenticationToken' } });
+        }
+        return json(route, 200, driveItem(file));
+      }
     }
 
     return json(route, 404, { error: { code: 'itemNotFound', message: 'not found' } });

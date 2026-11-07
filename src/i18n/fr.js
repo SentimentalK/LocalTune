@@ -306,4 +306,16 @@ export default {
   'player.statusStopped': 'Arrêté',
 
   'error.db.writeStats': 'Échec de l’écriture des statistiques de lecture',
+
+  'permission.title.local': 'Impossible de lire votre dossier local',
+  'permission.title.onedrive': 'OneDrive doit être reconnecté',
+  'permission.title.gdrive': 'Google Drive doit être reconnecté',
+  'permission.title.dropbox': 'Dropbox doit être reconnecté',
+  'permission.bodyLocal':
+    'Une mise à jour de l’application ou une autorisation expirée a peut-être retiré l’accès à votre dossier. Si la réautorisation échoue encore, autorisez l’accès aux fichiers pour ce site dans les réglages du navigateur, puis rechargez la page.',
+  'permission.bodyCloud':
+    'Une mise à jour de l’application ou une autorisation expirée a peut-être déconnecté ce cloud. Reconnectez-le ; si l’accès échoue toujours, vérifiez dans les réglages de votre compte que cette application est encore autorisée.',
+  'permission.reauthorize': 'Réautoriser',
+  'permission.settings': 'Ouvrir les réglages',
+  'permission.close': 'Fermer',
 };

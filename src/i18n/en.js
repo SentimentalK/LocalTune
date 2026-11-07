@@ -306,4 +306,16 @@ export default {
   'player.statusStopped': 'Stopped',
 
   'error.db.writeStats': 'Writing play statistics failed',
+
+  'permission.title.local': 'Can\'t read your local folder',
+  'permission.title.onedrive': 'OneDrive needs reconnecting',
+  'permission.title.gdrive': 'Google Drive needs reconnecting',
+  'permission.title.dropbox': 'Dropbox needs reconnecting',
+  'permission.bodyLocal':
+    'An app update or an expired grant may have removed access to your folder. If reauthorizing still fails, allow file access for this site in your browser settings, then reload.',
+  'permission.bodyCloud':
+    'An app update or an expired grant may have signed you out of this cloud source. Reconnect it; if access still fails, check that this app is still authorized in your account settings.',
+  'permission.reauthorize': 'Reauthorize',
+  'permission.settings': 'Open settings',
+  'permission.close': 'Close',
 };

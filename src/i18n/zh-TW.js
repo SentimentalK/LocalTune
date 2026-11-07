@@ -295,4 +295,16 @@ export default {
   'player.statusStopped': '已停止',
 
   'error.db.writeStats': '寫入播放統計失敗',
+
+  'permission.title.local': '無法讀取本機資料夾',
+  'permission.title.onedrive': 'OneDrive 需要重新連線',
+  'permission.title.gdrive': 'Google Drive 需要重新連線',
+  'permission.title.dropbox': 'Dropbox 需要重新連線',
+  'permission.bodyLocal':
+    '應用程式更新或授權過期後，瀏覽器可能已收回資料夾存取權限。若重新授權仍失敗，請在瀏覽器的網站設定中允許本站存取檔案，然後重新整理頁面。',
+  'permission.bodyCloud':
+    '應用程式更新或授權過期後，雲端登入可能已失效。請重新連線；若仍無法存取，請檢查帳號授權設定中本應用程式是否仍然有效。',
+  'permission.reauthorize': '重新授權',
+  'permission.settings': '前往設定',
+  'permission.close': '關閉',
 };

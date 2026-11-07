@@ -140,6 +140,34 @@ function kindOfTrack(track) {
   return 'local';
 }
 
+function hasAuthStatus(error) {
+  for (let item = error; item; item = item.cause) {
+    if (item.status === 401) return true;
+  }
+  return false;
+}
+
+function isPermissionFailure(error) {
+  for (let item = error; item; item = item.cause) {
+    const name = item?.name;
+    if (name === 'NotFoundError') return false;
+    if (name === 'NotAllowedError' || name === 'SecurityError') return true;
+    if (item?.code === 'authRequired') return true;
+    if (item?.status === 401) return true;
+    const message = typeof item?.message === 'string' ? item.message : '';
+    if (/permission|not\s?allowed|auth.*required|unauthori[sz]ed|token.*expir/i.test(message)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function permissionReason(kind) {
+  if (kind === 'local') return 'permission';
+  if (kind === 'gdrive') return 'gesture';
+  return 'auth';
+}
+
 /** Tracks whose adapter reads over the network instead of the device. */
 function isRemoteTrack(track) {
   return track?.source === 'onedrive' || track?.source === 'gdrive' || track?.source === 'dropbox';
@@ -314,6 +342,7 @@ export class Store extends EventTarget {
       },
       updateReady: false,
       migration: { running: false, done: 0, total: 0, error: null },
+      permissionIssue: null,
     };
 
     this.#bindPlayer();
@@ -763,6 +792,61 @@ export class Store extends EventTarget {
     if (track?.source === 'onedrive') return this.onedrive;
     if (track?.source === 'opfs') return this.opfs;
     return this.reference;
+  }
+
+  async _recoverPermission(kind, error) {
+    const adapter = this.sources[kind];
+    if (!adapter || typeof adapter.ensurePermission !== 'function') return false;
+    const force = kind !== 'local' && kind !== 'gdrive' && hasAuthStatus(error);
+    const granted = await adapter
+      .ensurePermission(force ? { force: true } : undefined)
+      .catch(() => false);
+    if (!granted) return false;
+    this._refreshSource(kind, { error: null, errorStage: null });
+    return true;
+  }
+
+  _setPermissionIssue(kind) {
+    this._state.permissionIssue = { kind, reason: permissionReason(kind) };
+  }
+
+  resolvePermissionIssue() {
+    if (!this._state.permissionIssue) return;
+    this._state.permissionIssue = null;
+    this._emit();
+  }
+
+  /**
+   * User-gesture recovery from the permission dialog. FSA asks for
+   * requestPermission, OneDrive/Dropbox force a token refresh, Google Drive
+   * reruns GIS (it must run inside the click). Success retries the current
+   * track once; failure leaves the dialog state in place.
+   */
+  async recoverSource(kind = this._state.permissionIssue?.kind) {
+    if (!kind) return false;
+    let granted = false;
+    if (kind === 'gdrive') {
+      granted = await this.reconnectGdrive().catch(() => false);
+    } else {
+      const adapter = this.sources[kind];
+      if (!adapter || typeof adapter.ensurePermission !== 'function') return false;
+      granted = await adapter
+        .ensurePermission(kind === 'local' ? undefined : { force: true })
+        .catch(() => false);
+      if (granted) this._refreshSource(kind, { error: null, errorStage: null });
+    }
+    if (!granted) {
+      this._setPermissionIssue(kind);
+      this._emit();
+      return false;
+    }
+    this._state.permissionIssue = null;
+    this._emit();
+    const track = currentTrack(this.queue);
+    if (track && kindOfTrack(track) === kind) {
+      await this._loadTrack(track, { play: true, source: 'recover', allowRecovery: false });
+    }
+    return true;
   }
 
   /**
@@ -2195,7 +2279,10 @@ export class Store extends EventTarget {
     this._pendingSeek = null;
   }
 
-  async _loadTrack(track, { play = true, position = 0, source = 'user' } = {}) {
+  async _loadTrack(
+    track,
+    { play = true, position = 0, source = 'user', allowRecovery = true } = {},
+  ) {
     if (!track || !this.player) return false;
     this._loading = true;
     this._pauseAfterLoad = false;
@@ -2261,11 +2348,21 @@ export class Store extends EventTarget {
       this._startPlaySession(track, this._state.current.position);
       void this._applyGainForTrack(track);
       void this._primeNext();
+      if (this._state.permissionIssue) this._state.permissionIssue = null;
       return true;
     } catch (error) {
-      // One unplayable file is not a source failure; the row stays clean.
-      // The play log still records why, so a silent toggle is visible.
       this._state.current.playing = false;
+      const kind = kindOfTrack(track);
+      if (allowRecovery && isPermissionFailure(error)) {
+        const recovered = await this._recoverPermission(kind, error);
+        if (recovered) {
+          if (currentTrack(this.queue)?.id !== track.id) return false;
+          return this._loadTrack(track, { play, position, source, allowRecovery: false });
+        }
+        this._setPermissionIssue(kind);
+      }
+      // One unplayable file is not a source failure; the row stays clean.
+      // The play log still records why.
       this.log('loadfail', {
         error: String(error?.cause?.message ?? error?.message ?? error),
       });

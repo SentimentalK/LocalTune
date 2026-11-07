@@ -49,6 +49,13 @@ const REPEAT_LABEL_KEY = {
   one: 'player.repeatOne',
 };
 
+const PERMISSION_TITLE_KEYS = {
+  local: 'permission.title.local',
+  onedrive: 'permission.title.onedrive',
+  gdrive: 'permission.title.gdrive',
+  dropbox: 'permission.title.dropbox',
+};
+
 const SEARCH_GROUPS = [
   { id: 'title', labelKey: 'search.groupTitle' },
   { id: 'artist', labelKey: 'search.groupArtist' },
@@ -388,6 +395,155 @@ const TONEARM = `
   <circle class="arm-rest-knob" cx="593" cy="148" r="5" stroke-width="2"/>
 </svg>`;
 
+const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Source-permission dialog. The store owns the issue; the modal only mirrors
+ * it and calls back. Reauthorizing runs inside the click gesture so FSA and
+ * GIS prompts are still allowed.
+ */
+function createPermissionModal(store) {
+  const title = el('h2', {
+    id: 'permission-dialog-title',
+    tabindex: '-1',
+    'data-testid': 'permission-title',
+  });
+  const body = el('p', { class: 'muted', 'data-testid': 'permission-body' });
+  const reauthorize = el('button', {
+    class: 'btn-pill',
+    type: 'button',
+    'data-testid': 'permission-reauthorize',
+    text: t('permission.reauthorize'),
+  });
+  const settingsButton = el('button', {
+    class: 'btn-pill ghost',
+    type: 'button',
+    'data-testid': 'permission-settings',
+    text: t('permission.settings'),
+  });
+  const closeButton = el('button', {
+    class: 'btn-pill ghost',
+    type: 'button',
+    'data-testid': 'permission-close',
+    text: t('permission.close'),
+  });
+  const panel = el('div', { class: 'modal-panel permission-panel' }, [
+    el('header', { class: 'modal-head' }, [title]),
+    body,
+    el('div', { class: 'modal-actions' }, [reauthorize, settingsButton, closeButton]),
+  ]);
+  const node = el(
+    'div',
+    {
+      class: 'modal permission-modal',
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-labelledby': 'permission-dialog-title',
+      'data-testid': 'permission-dialog',
+      hidden: true,
+    },
+    panel,
+  );
+
+  let trigger = null;
+  let previousOverflow = '';
+  let open = false;
+  let kind = null;
+  let onSettings = null;
+  let busy = false;
+
+  function onKeydown(event) {
+    if (!open) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      dismiss();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = [...panel.querySelectorAll(FOCUSABLE)].filter(
+      (item) => !item.hasAttribute('hidden') && item.offsetParent !== null,
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function show() {
+    trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!node.isConnected) document.body.append(node);
+    previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    setHidden(node, false);
+    open = true;
+    document.addEventListener('keydown', onKeydown);
+    title.focus();
+  }
+
+  function hide() {
+    if (!open) return;
+    open = false;
+    setHidden(node, true);
+    document.removeEventListener('keydown', onKeydown);
+    document.body.style.overflow = previousOverflow;
+    if (trigger && trigger.isConnected !== false && typeof trigger.focus === 'function') {
+      trigger.focus();
+    }
+  }
+
+  function dismiss() {
+    store.resolvePermissionIssue();
+    hide();
+  }
+
+  function sync(issue) {
+    if (!issue) {
+      if (open) hide();
+      return;
+    }
+    kind = issue.kind;
+    setText(title, t(PERMISSION_TITLE_KEYS[kind] ?? PERMISSION_TITLE_KEYS.local));
+    setText(body, t(kind === 'local' ? 'permission.bodyLocal' : 'permission.bodyCloud'));
+    if (!open) show();
+  }
+
+  node.addEventListener('click', (event) => {
+    if (event.target === node) dismiss();
+  });
+  closeButton.addEventListener('click', dismiss);
+  settingsButton.addEventListener('click', () => {
+    const target = kind;
+    store.resolvePermissionIssue();
+    hide();
+    if (target) onSettings?.(target);
+  });
+  reauthorize.addEventListener('click', async () => {
+    if (busy || !kind) return;
+    busy = true;
+    reauthorize.disabled = true;
+    try {
+      await store.recoverSource(kind);
+    } finally {
+      busy = false;
+      reauthorize.disabled = false;
+    }
+  });
+
+  return {
+    node,
+    sync,
+    setSettingsHandler(fn) {
+      onSettings = typeof fn === 'function' ? fn : null;
+    },
+  };
+}
+
 function createShell(store, sw) {
   const status = el('span', { class: 'status', id: 'status' });
   const statusSep = el('span', { class: 'status-sep', 'aria-hidden': 'true', hidden: true });
@@ -590,6 +746,7 @@ function createShell(store, sw) {
   ]);
 
   const toast = el('div', { class: 'toast', role: 'status', hidden: true });
+  const permissionModal = createPermissionModal(store);
 
   const mainCol = el('div', { class: 'main-col' }, [topbar, errorBox, deniedHint, stage]);
 
@@ -599,6 +756,7 @@ function createShell(store, sw) {
     panel,
     updateBanner,
     toast,
+    permissionModal.node,
     topActions,
   ]);
   app.insertAdjacentHTML('afterbegin', SPRITE);
@@ -641,6 +799,7 @@ function createShell(store, sw) {
     panelTitle,
     updateBanner,
     toast,
+    permissionModal,
   };
 }
 
@@ -657,6 +816,21 @@ export function mountUi(root, store, sw) {
   let toastTimer = null;
   let renderedSignature = null;
   let ui = createShell(store, sw);
+
+  function handlePermissionSettings(kind) {
+    openPanel('settings', { toggle: false });
+    requestAnimationFrame(() => {
+      const row = ui.settingsView.node.querySelector(`[data-testid="source-row-${kind}"]`);
+      row?.scrollIntoView({ block: 'center' });
+      const changeId = kind === 'local' ? 'settings-source-change' : `settings-source-${kind}`;
+      const selector =
+        `[data-testid="source-connect-${kind}"]:not([hidden]), ` +
+        `[data-testid="${changeId}"]:not([hidden])`;
+      row?.querySelector(selector)?.focus({ preventScroll: true });
+    });
+  }
+  ui.permissionModal.setSettingsHandler(handlePermissionSettings);
+
   let panelView = 'library';
   let panelOpen = false;
   let swapTimer = 0;
@@ -1673,6 +1847,7 @@ export function mountUi(root, store, sw) {
       }
     }
 
+    ui.permissionModal.sync(state.permissionIssue);
     setHidden(ui.updateBanner, !state.updateReady);
   }
 
@@ -1684,7 +1859,11 @@ export function mountUi(root, store, sw) {
     activeSwipe?.destroy();
     activeArm = null;
     activeSwipe = null;
+    // Tear the old dialog down first: it owns a document keydown listener and
+    // the body scroll lock, and the replacement shell builds a fresh one.
+    ui.permissionModal.sync(null);
     ui = createShell(store, sw);
+    ui.permissionModal.setSettingsHandler(handlePermissionSettings);
     resetCache();
     bindShellEvents();
     bindArm();

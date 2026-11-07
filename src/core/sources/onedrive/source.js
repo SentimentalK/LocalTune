@@ -33,6 +33,12 @@ const SILENT_WINDOW_MS = PKCE_TTL_MS;
 const ITEM_SELECT =
   'id,name,size,file,folder,lastModifiedDateTime,parentReference,@microsoft.graph.downloadUrl';
 
+function authRequiredError() {
+  const error = new Error(t('error.onedrive.authRequired'));
+  error.code = 'authRequired';
+  return error;
+}
+
 function cleanPath(path) {
   return String(path ?? '')
     .replace(/^\/+|\/+$/g, '')
@@ -146,8 +152,8 @@ export class OneDriveSource {
   }
 
   /** Refresh an expired token when a refresh token is still present. */
-  async ensurePermission() {
-    if (this._token && !isTokenExpired(this._token, this.now())) {
+  async ensurePermission({ force = false } = {}) {
+    if (!force && this._token && !isTokenExpired(this._token, this.now())) {
       this._permission = 'granted';
       return true;
     }
@@ -181,7 +187,7 @@ export class OneDriveSource {
    */
   async browse(path = '') {
     if (!(await this.ensurePermission())) {
-      throw new Error(t('error.onedrive.authRequired'));
+      throw authRequiredError();
     }
     const driveId = await this._driveIdOrFetch();
     const clean = cleanPath(path);
@@ -259,9 +265,9 @@ export class OneDriveSource {
    */
   async *scan({ signal } = {}) {
     if (!(await this.ensurePermission())) {
-      throw new Error(t('error.onedrive.authRequired'));
+      throw authRequiredError();
     }
-    if (!this._root) throw new Error(t('error.onedrive.authRequired'));
+    if (!this._root) throw authRequiredError();
     const driveId = await this._driveIdOrFetch();
     const items = { ...(this._items ?? {}) };
     const self = this;
@@ -325,7 +331,7 @@ export class OneDriveSource {
     if (cached) return { file: cached };
 
     if (!(await this.ensurePermission())) {
-      throw new Error(t('error.onedrive.authRequired'));
+      throw authRequiredError();
     }
     const driveId = await this._driveIdOrFetch();
     const resolved = await this._resolveItemId(driveId, clean, { folder: false, itemId });
@@ -411,7 +417,7 @@ export class OneDriveSource {
   async _validToken() {
     if (this._token && !isTokenExpired(this._token, this.now())) return this._token;
     const granted = await this.ensurePermission();
-    if (!granted || !this._token) throw new Error(t('error.onedrive.authRequired'));
+    if (!granted || !this._token) throw authRequiredError();
     return this._token;
   }
 

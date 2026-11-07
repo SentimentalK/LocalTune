@@ -120,7 +120,7 @@ test('expired OneDrive token keeps the cached library visible and playable', asy
   expect(mock.authorizeRequests.length).toBeGreaterThan(authorizeBefore);
 });
 
-test('uncached tracks fail quietly and land in the play log', async ({ page }) => {
+test('uncached tracks with a dead token show the permission dialog', async ({ page }) => {
   test.setTimeout(120_000);
   const mock = await installGraphMock(page, { files: FILES });
 
@@ -139,6 +139,8 @@ test('uncached tracks fail quietly and land in the play log', async ({ page }) =
 
   await page.locator('[data-testid="track-row"] .track').first().click();
   await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'false');
+  await expect(page.locator('[data-testid="permission-dialog"]')).toBeVisible();
+  await expect(page.locator('[data-testid="permission-title"]')).toContainText('OneDrive');
   // The header error box is a permanent (hidden) placeholder node, so assert
   // on visibility: an empty hidden box never surfaces login state.
   await expect(page.locator('.app > .alert[role="alert"]')).toBeHidden();

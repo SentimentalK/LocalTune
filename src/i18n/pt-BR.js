@@ -301,4 +301,16 @@ export default {
   'player.statusStopped': 'Parado',
 
   'error.db.writeStats': 'Falha ao gravar as estatísticas de reprodução',
+
+  'permission.title.local': 'Não foi possível ler sua pasta local',
+  'permission.title.onedrive': 'OneDrive precisa ser reconectado',
+  'permission.title.gdrive': 'Google Drive precisa ser reconectado',
+  'permission.title.dropbox': 'Dropbox precisa ser reconectado',
+  'permission.bodyLocal':
+    'Uma atualização do app ou uma permissão expirada pode ter removido o acesso à sua pasta. Se autorizar novamente ainda falhar, permita o acesso a arquivos para este site nas configurações do navegador e recarregue a página.',
+  'permission.bodyCloud':
+    'Uma atualização do app ou uma permissão expirada pode ter desconectado esta nuvem. Reconecte; se o acesso ainda falhar, verifique nas configurações da conta se este app continua autorizado.',
+  'permission.reauthorize': 'Autorizar novamente',
+  'permission.settings': 'Abrir configurações',
+  'permission.close': 'Fechar',
 };

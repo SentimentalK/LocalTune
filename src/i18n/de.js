@@ -304,4 +304,16 @@ export default {
   'player.statusStopped': 'Gestoppt',
 
   'error.db.writeStats': 'Schreiben der Wiedergabestatistik fehlgeschlagen',
+
+  'permission.title.local': 'Lokaler Ordner nicht lesbar',
+  'permission.title.onedrive': 'OneDrive muss erneut verbunden werden',
+  'permission.title.gdrive': 'Google Drive muss erneut verbunden werden',
+  'permission.title.dropbox': 'Dropbox muss erneut verbunden werden',
+  'permission.bodyLocal':
+    'Ein App-Update oder eine abgelaufene Berechtigung kann den Zugriff auf deinen Ordner entzogen haben. Falls die erneute Autorisierung fehlschlägt, erlaube dieser Website in den Browsereinstellungen den Dateizugriff und lade die Seite neu.',
+  'permission.bodyCloud':
+    'Ein App-Update oder eine abgelaufene Berechtigung kann diese Cloud abgemeldet haben. Verbinde sie erneut; falls der Zugriff weiterhin fehlschlägt, prüfe in den Kontoeinstellungen, ob diese App noch autorisiert ist.',
+  'permission.reauthorize': 'Erneut autorisieren',
+  'permission.settings': 'Einstellungen öffnen',
+  'permission.close': 'Schließen',
 };

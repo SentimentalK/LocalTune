@@ -300,4 +300,16 @@ export default {
   'player.statusStopped': '정지됨',
 
   'error.db.writeStats': '재생 통계 쓰기 실패',
+
+  'permission.title.local': '로컬 폴더를 읽을 수 없습니다',
+  'permission.title.onedrive': 'OneDrive 다시 연결 필요',
+  'permission.title.gdrive': 'Google Drive 다시 연결 필요',
+  'permission.title.dropbox': 'Dropbox 다시 연결 필요',
+  'permission.bodyLocal':
+    '앱 업데이트나 권한 만료로 폴더 접근 권한이 사라졌을 수 있습니다. 다시 권한을 부여해도 실패하면 브라우저 사이트 설정에서 이 사이트의 파일 접근을 허용한 뒤 새로고침하세요.',
+  'permission.bodyCloud':
+    '앱 업데이트나 권한 만료로 클라우드 로그인이 만료되었을 수 있습니다. 다시 연결하세요. 그래도 접근할 수 없다면 계정 권한 설정에서 이 앱이 여전히 허용되어 있는지 확인하세요.',
+  'permission.reauthorize': '다시 권한 부여',
+  'permission.settings': '설정 열기',
+  'permission.close': '닫기',
 };
