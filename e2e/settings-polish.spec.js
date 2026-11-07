@@ -184,3 +184,43 @@ test('the settings pane paints the library bar on a reserved gutter', async ({ p
   expect(vip.reserved).toBe(4);
   expect(vip.clientWidth).toBe(settings.clientWidth);
 });
+
+// The panel's horizontal gutter lives on the content, not on .panel-inner, so
+// the 4px bar of the scrolling pane reaches the viewport's right edge while the
+// text keeps its inset.
+test('the settings pane reaches the viewport edge so its bar does', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openSettings(page);
+
+  // The panel slides open over 0.5s; measure only once it has settled.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() =>
+          Math.abs(document.querySelector('.settings-pane').getBoundingClientRect().right - window.innerWidth),
+        ),
+      { timeout: 3000 },
+    )
+    .toBeLessThanOrEqual(1);
+
+  const geometry = await page.evaluate(() => {
+    const pane = document.querySelector('.settings-pane');
+    const inner = document.querySelector('.panel-inner');
+    const paneRect = pane.getBoundingClientRect();
+    const contentRight = pane.firstElementChild.getBoundingClientRect().right;
+    return {
+      paneRight: paneRect.right,
+      innerWidth: window.innerWidth,
+      innerPaddingRight: Number.parseFloat(getComputedStyle(inner).paddingRight) || 0,
+      panePaddingRight: Number.parseFloat(getComputedStyle(pane).paddingRight) || 0,
+      contentInset: window.innerWidth - contentRight,
+    };
+  });
+
+  expect(geometry.innerPaddingRight).toBe(0);
+  expect(Math.abs(geometry.paneRight - geometry.innerWidth)).toBeLessThanOrEqual(1);
+  // The scrollbar takes 4px of the pane; the rest of the inset is the gutter
+  // that used to sit on .panel-inner, so the text has not moved.
+  expect(geometry.panePaddingRight).toBeGreaterThan(0);
+  expect(Math.abs(geometry.contentInset - (geometry.panePaddingRight + 4))).toBeLessThanOrEqual(1);
+});
