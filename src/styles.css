@@ -802,27 +802,17 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
   /* Reserve the bar's width so switching panes never shifts the content. */
   scrollbar-gutter: stable;
 }
+/* The library list and the settings/VIP panes share one bar: 4px, flush with
+   the right edge, accent at 30%. Width, radius and colour live in this single
+   block so the two surfaces cannot drift apart. */
+.list-scroll::-webkit-scrollbar,
 .settings-pane::-webkit-scrollbar,
 .vip-pane::-webkit-scrollbar {
-  width: 17px;
-}
-.settings-pane::-webkit-scrollbar-track,
-.vip-pane::-webkit-scrollbar-track {
-  background: transparent;
-}
-/* The transparent border plus content-box clipping leaves a 6px gap between
-   the painted thumb and the panel's right edge. */
-.settings-pane::-webkit-scrollbar-thumb,
-.vip-pane::-webkit-scrollbar-thumb {
-  border: 6px solid transparent;
-  border-radius: 8px;
-  background-color: color-mix(in srgb, var(--accent) 30%, transparent);
-  background-clip: content-box;
-}
-.list-scroll::-webkit-scrollbar {
   width: 4px;
 }
-.list-scroll::-webkit-scrollbar-thumb {
+.list-scroll::-webkit-scrollbar-thumb,
+.settings-pane::-webkit-scrollbar-thumb,
+.vip-pane::-webkit-scrollbar-thumb {
   border-radius: 4px;
   background: color-mix(in srgb, var(--accent) 30%, transparent);
 }
