@@ -125,6 +125,17 @@ export default {
   'settings.gdrive.unconfigured': 'O Google Drive precisa de um ID de cliente para conectar.',
   'settings.gdrive.setupLink': 'Guia de configuração',
   'settings.gdrive.betaNote': 'Fale com o autor para conectar',
+  'settings.gdrive.betaWarning':
+    'Beta: só contas na lista de teste conseguem conectar (escreva para {contact} para entrar)',
+  'settings.gdrive.betaConfirmTitle': 'Google Drive beta',
+  'settings.gdrive.betaConfirmBody':
+    'O Google Drive ainda está em beta: só contas Google na lista de teste conseguem concluir a conexão. Continuar?',
+  'settings.gdrive.betaConfirmContinue': 'Continuar',
+  'settings.gdrive.betaConfirmCancel': 'Cancelar',
+  'settings.gdrive.notInTestList':
+    'Esta conta do Google não está na lista de teste. Envie o e-mail da sua conta do Google para {contact} para ser adicionado e depois toque em “Reconectar”.',
+  'settings.gdrive.copyContact': 'Copiar contato',
+  'settings.gdrive.copied': '{contact} copiado',
   'settings.gdrive.authFailed': 'A sessão do Google Drive expirou. Reconecte.',
   'settings.onedrive.connectedHint': 'Conectado ao OneDrive — escolha sua pasta de músicas',
   'settings.onedrive.authFailed': 'O login do OneDrive não terminou. Tente de novo.',

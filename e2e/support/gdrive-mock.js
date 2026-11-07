@@ -64,6 +64,8 @@ function driveItem(entry) {
  *   folders?: Array<{ id: string, name: string, parentId?: string }>,
  *   pageSize?: number,
  *   clientId?: string,
+ *   oauthError?: string|null,
+ *   betaAck?: boolean,
  * }} [options]
  */
 export async function installGdriveMock(
@@ -73,6 +75,8 @@ export async function installGdriveMock(
     folders = DEFAULT_FOLDERS,
     pageSize = 1,
     clientId = DEFAULT_CLIENT_ID,
+    oauthError = null,
+    betaAck = true,
   } = {},
 ) {
   const folderTree = folders.map((folder) => ({
@@ -96,6 +100,14 @@ export async function installGdriveMock(
     window.__LT_GOOGLE_CLIENT_ID__ = id;
   }, clientId);
 
+  // The beta confirmation is a returning-browser state by default: only the
+  // beta spec opts out to exercise the first-click notice.
+  if (betaAck) {
+    await page.addInitScript(() => {
+      localStorage.setItem('localtune:gdriveBetaAck', 'v1');
+    });
+  }
+
   await page.route('https://accounts.google.com/gsi/client', async (route) => {
     mock.tokenRequests += 1;
     return route.fulfill({
@@ -106,11 +118,13 @@ export async function installGdriveMock(
         window.google.accounts = window.google.accounts || {};
         window.google.accounts.oauth2 = {
           initTokenClient: ({ callback }) => ({
-            requestAccessToken: () => setTimeout(() => callback({
-              access_token: 'gdrive-token',
-              expires_in: 3600,
-              scope: 'https://www.googleapis.com/auth/drive.readonly',
-            }), 0),
+            requestAccessToken: () => setTimeout(() => callback(${JSON.stringify(
+              oauthError ? { error: oauthError } : {
+                access_token: 'gdrive-token',
+                expires_in: 3600,
+                scope: 'https://www.googleapis.com/auth/drive.readonly',
+              },
+            )}), 0),
           }),
         };
       `,

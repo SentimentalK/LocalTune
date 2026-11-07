@@ -124,6 +124,17 @@ export default {
   'settings.gdrive.unconfigured': 'Google Drive에 클라이언트 ID가 없어 연결할 수 없습니다.',
   'settings.gdrive.setupLink': '설정 안내',
   'settings.gdrive.betaNote': '연결하려면 작성자에게 문의하세요',
+  'settings.gdrive.betaWarning':
+    'Beta: 테스트 사용자 목록에 있는 계정만 연결할 수 있습니다 ({contact}에게 연락해 추가 요청)',
+  'settings.gdrive.betaConfirmTitle': 'Google Drive Beta',
+  'settings.gdrive.betaConfirmBody':
+    'Google Drive는 아직 Beta입니다: 테스트 사용자 목록에 있는 Google 계정만 연결을 마칠 수 있습니다. 계속할까요?',
+  'settings.gdrive.betaConfirmContinue': '계속',
+  'settings.gdrive.betaConfirmCancel': '취소',
+  'settings.gdrive.notInTestList':
+    '이 Google 계정은 테스트 사용자 목록에 없습니다. Google 계정 이메일을 {contact}으로 보내 추가된 후 「다시 연결」을 누르세요.',
+  'settings.gdrive.copyContact': '연락처 복사',
+  'settings.gdrive.copied': '{contact} 복사됨',
   'settings.gdrive.authFailed': 'Google Drive 로그인이 만료되었습니다. 다시 연결하세요.',
   'settings.onedrive.connectedHint': 'OneDrive에 연결됨 — 음악 폴더를 선택하세요',
   'settings.onedrive.authFailed': 'OneDrive 로그인이 완료되지 않았습니다. 다시 시도하세요.',

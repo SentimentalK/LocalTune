@@ -127,6 +127,17 @@ export default {
   'settings.gdrive.unconfigured': 'Google Drive はクライアント ID が未設定のため接続できません。',
   'settings.gdrive.setupLink': '設定ガイド',
   'settings.gdrive.betaNote': '接続するには作者に連絡してください',
+  'settings.gdrive.betaWarning':
+    'Beta：テストユーザーリストのアカウントのみ接続できます（{contact} までご連絡ください）',
+  'settings.gdrive.betaConfirmTitle': 'Google Drive Beta',
+  'settings.gdrive.betaConfirmBody':
+    'Google Drive はまだ Beta です：テストユーザーリストにある Google アカウントのみ接続できます。続けますか？',
+  'settings.gdrive.betaConfirmContinue': '続行',
+  'settings.gdrive.betaConfirmCancel': 'キャンセル',
+  'settings.gdrive.notInTestList':
+    'この Google アカウントはテストユーザーリストにありません。Google アカウントのメールアドレスを {contact} までお送りいただき追加されたあと、「再接続」を押してください。',
+  'settings.gdrive.copyContact': '連絡先をコピー',
+  'settings.gdrive.copied': '{contact} をコピーしました',
   'settings.gdrive.authFailed': 'Google Drive のサインインが切れました。再接続してください。',
   'settings.onedrive.connectedHint':
     'OneDrive に接続しました。音楽フォルダーを選択してください',
