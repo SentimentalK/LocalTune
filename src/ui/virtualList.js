@@ -274,6 +274,25 @@ export function createVirtualizer({
   return {
     refresh,
 
+    /**
+     * Re-render the rows currently in the window from fresh data. The window
+     * range and padding stay put, so the scroller keeps its offset: this is the
+     * metadata-refresh path, not a remount.
+     */
+    repaint() {
+      if (disposed) return false;
+      const viewport = getViewport();
+      viewportReady = viewport.height > 0;
+      const effective = effectiveViewport(viewport);
+      if (!wantsWindow(effective)) {
+        paintAll();
+        return true;
+      }
+      measureStride();
+      paintWindow(effective);
+      return true;
+    },
+
     dispose() {
       if (disposed) return;
       disposed = true;

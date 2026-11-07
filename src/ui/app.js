@@ -927,6 +927,7 @@ export function mountUi(root, store, sw) {
   // One controller per mounted `.track-list`. They are torn down whenever the
   // list's nodes are replaced, because the controller owns the rows it built.
   let virtualLists = [];
+  let listBindings = [];
   let virtualRaf = 0;
   let virtualRetry = 0;
   let virtualAttempts = 0;
@@ -950,16 +951,20 @@ export function mountUi(root, store, sw) {
     return { top: -box.top, height: window.innerHeight };
   }
 
-  function mountVirtualList(container, count, renderRow) {
+  function mountVirtualList(container, count, makeRenderer) {
+    const binding = { makeRenderer, renderRow: null };
+    binding.renderRow = makeRenderer();
     const list = createVirtualizer({
       container,
       count,
       estimateStride: estimateStride(),
       getViewport: () => listViewport(container),
       scrollParent: ui.listScroll,
-      renderRow,
+      renderRow: (index, coverIds) => binding.renderRow(index, coverIds),
       releaseCover: (id) => store.releaseCover(id),
     });
+    binding.list = list;
+    listBindings.push(binding);
     virtualLists.push(list);
     // A list mounted into a hidden panel cannot measure yet; retry until the
     // panel gives it a height.
@@ -967,10 +972,19 @@ export function mountUi(root, store, sw) {
     return list;
   }
 
+  /** Rebuild each mounted window from the current state without remounting. */
+  function repaintVirtualLists() {
+    for (const binding of listBindings) {
+      binding.renderRow = binding.makeRenderer();
+      binding.list.repaint();
+    }
+  }
+
   function clearVirtualLists() {
     const lists = virtualLists;
     for (const list of lists) list.dispose();
     virtualLists = [];
+    listBindings = [];
     if (virtualRaf) {
       cancelAnimationFrame(virtualRaf);
       virtualRaf = 0;
@@ -1034,23 +1048,29 @@ export function mountUi(root, store, sw) {
 
   /** Attach a freshly built list and hand the previous list's covers back. */
   function replaceTrackList(children) {
-    // The new list only regains its full height once the virtualizer paints,
-    // so the scrollable content collapses in between and the browser clamps
-    // `scrollTop` to 0. Remember the offset and put it back as soon as this
-    // turn's mount has restored the height (same as a plain replaceChildren).
+    // Remember the offsets BEFORE teardown: the new list has no height until
+    // its virtualizer paints, so the browser clamps both the panel scroller and
+    // the page while this turn's DOM is being swapped. On ≤900px the panel
+    // scroller never scrolls (`overflow: visible`) and `window.scrollY` is the
+    // only position to keep.
     const scrollTop = ui.listScroll.scrollTop;
+    const pageTop = window.scrollY;
     clearVirtualLists();
     clearRenderedCovers();
     ui.trackList.replaceChildren(...children);
     renderedCoverIds = buildingCoverIds;
     buildingCoverIds = [];
+    // Runs after the synchronous mount below, i.e. after the virtualizer's
+    // first paint restored the content height, and before the frame paints.
     queueMicrotask(() => {
-      if (!(scrollTop > 0)) return;
-      if (ui.listScroll.scrollTop !== scrollTop) ui.listScroll.scrollTop = scrollTop;
-      // The new list's first window was painted at the clamped offset, and the
-      // restored offset fires no scroll event: always re-anchor it, even when
-      // the browser already kept the original offset.
-      scheduleVirtual();
+      if (scrollTop > 0 && ui.listScroll.scrollTop !== scrollTop) {
+        ui.listScroll.scrollTop = scrollTop;
+      }
+      if (pageTop > 0 && window.scrollY !== pageTop) window.scrollTo(0, pageTop);
+      if (scrollTop > 0 || pageTop > 0) {
+        // The restored offset fires no scroll event; re-anchor the window.
+        scheduleVirtual();
+      }
     });
   }
 
@@ -1548,15 +1568,6 @@ export function mountUi(root, store, sw) {
       return;
     }
 
-    const currentId = state.current.track?.id ?? null;
-    const rowFor = (track, coverIds) =>
-      trackRow(track, {
-        now: track.id === currentId,
-        onActivate: () => activateTrack(state.tracks, track.id),
-        onMore: openTrackMenu,
-        coverIds,
-      });
-
     const nodes = [
       el('p', {
         class: 'search-count',
@@ -1585,7 +1596,17 @@ export function mountUi(root, store, sw) {
     }
     replaceTrackList(nodes);
     for (const { list, hits } of groups) {
-      mountVirtualList(list, hits.length, (index, coverIds) => rowFor(hits[index].track, coverIds));
+      mountVirtualList(list, hits.length, () => {
+        const currentId = store.state.current.track?.id ?? null;
+        const rows = hits.map((hit) => hit.track);
+        return (index, coverIds) =>
+          trackRow(rows[index], {
+            now: rows[index].id === currentId,
+            onActivate: () => activateTrack(store.state.tracks, rows[index].id),
+            onMore: openTrackMenu,
+            coverIds,
+          });
+      });
     }
   }
 
@@ -1714,7 +1735,6 @@ export function mountUi(root, store, sw) {
     const all = tracksUnder(list, dir);
     const direct = tracksDirect(list, dir);
     const subs = subdirsOf(list, dir);
-    const currentId = state.current.track?.id ?? null;
 
     const children = [folderHeader(state, kind, dir, all)];
     let subsBox = null;
@@ -1735,23 +1755,30 @@ export function mountUi(root, store, sw) {
     replaceTrackList(children);
 
     if (subsBox) {
-      mountVirtualList(subsBox, subs.length, (index) =>
-        dirRow(subs[index], () => {
-          folder = { source: kind, dir: subs[index].dir };
-          render(store.state);
-          scheduleVirtual();
-        }),
-      );
+      mountVirtualList(subsBox, subs.length, () => {
+        const rows = subdirsOf(kindTracks(store.state, kind), dir);
+        return (index) =>
+          dirRow(rows[index], () => {
+            folder = { source: kind, dir: rows[index].dir };
+            render(store.state);
+            scheduleVirtual();
+          });
+      });
     }
     if (tracksBox) {
-      mountVirtualList(tracksBox, direct.length, (index, coverIds) =>
-        trackRow(direct[index], {
-          now: direct[index].id === currentId,
-          onActivate: () => activateTrack(all, direct[index].id),
-          onMore: openTrackMenu,
-          coverIds,
-        }),
-      );
+      mountVirtualList(tracksBox, direct.length, () => {
+        const list = kindTracks(store.state, kind);
+        const rows = tracksDirect(list, dir);
+        const all = tracksUnder(list, dir);
+        const currentId = store.state.current.track?.id ?? null;
+        return (index, coverIds) =>
+          trackRow(rows[index], {
+            now: rows[index].id === currentId,
+            onActivate: () => activateTrack(all, rows[index].id),
+            onMore: openTrackMenu,
+            coverIds,
+          });
+      });
     }
   }
 
@@ -1793,17 +1820,59 @@ export function mountUi(root, store, sw) {
 
     const list = el('div', { class: 'track-list' });
     replaceTrackList([head, list]);
-    mountVirtualList(list, tracks.length, (index, coverIds) =>
-      queueRow(tracks[index], index, {
-        now: index === state.queue.index,
-        onActivate: () => {
-          pulseSwap();
-          run(store.jumpTo(index));
-        },
-        onRemove: () => store.removeQueueAt(index),
-        coverIds,
-      }),
-    );
+    mountVirtualList(list, tracks.length, () => {
+      const rows = store.state.queue.tracks;
+      const queueIndex = store.state.queue.index;
+      return (index, coverIds) =>
+        queueRow(rows[index], index, {
+          now: index === queueIndex,
+          onActivate: () => {
+            pulseSwap();
+            run(store.jumpTo(index));
+          },
+          onRemove: () => store.removeQueueAt(index),
+          coverIds,
+        });
+    });
+  }
+
+  /** Row fields the folder/queue/search rows actually render. */
+  const TRACK_ROW_FIELDS = [
+    'title',
+    'artist',
+    'album',
+    'year',
+    'trackNo',
+    'duration',
+    'hasCover',
+    'coverSrc',
+    'source',
+  ];
+
+  /** Same count and same ids in the same order: the mounted windows stay valid. */
+  function sameTrackStructure(a, b) {
+    if (a === b) return true;
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index += 1) {
+      if (a[index]?.id !== b[index]?.id) return false;
+    }
+    return true;
+  }
+
+  /** Shallow row comparison: avoids repainting for an equal-content re-emit. */
+  function sameTrackRows(a, b) {
+    if (a === b) return true;
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index += 1) {
+      const left = a[index];
+      const right = b[index];
+      if (left === right) continue;
+      if (!left || !right || left.id !== right.id) return false;
+      for (const field of TRACK_ROW_FIELDS) {
+        if (left[field] !== right[field]) return false;
+      }
+    }
+    return true;
   }
 
   function renderLibrary(state) {
@@ -1816,10 +1885,13 @@ export function mountUi(root, store, sw) {
       .map((row) => `${row.permission}:${row.trackCount ?? 0}`)
       .join(',');
     const query = searchQuery;
+    const previousTracks = last.tracks;
+    const tracksChanged = previousTracks !== state.tracks;
+    const tracksInPlace = tracksChanged && sameTrackStructure(previousTracks, state.tracks);
     const rebuild =
       last.view !== 'library' ||
       last.tab !== libraryTab ||
-      last.tracks !== state.tracks ||
+      (tracksChanged && !tracksInPlace) ||
       last.stats !== state.stats ||
       permissions !== last.permissions ||
       installPromptSeen !== last.installable ||
@@ -1831,7 +1903,13 @@ export function mountUi(root, store, sw) {
       (libraryTab === 'queue' &&
         (state.queue.tracks !== last.queueTracks || state.queue.index !== last.queueIndex));
 
-    if (!rebuild) return;
+    if (!rebuild) {
+      if (tracksInPlace) {
+        last.tracks = state.tracks;
+        if (!sameTrackRows(previousTracks, state.tracks)) repaintVirtualLists();
+      }
+      return;
+    }
 
     last.view = 'library';
     last.tab = libraryTab;
