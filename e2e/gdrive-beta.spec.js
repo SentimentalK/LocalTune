@@ -17,7 +17,8 @@ async function openSettings(page) {
 async function screenshot(page, width, height, name) {
   mkdirSync(SHOTS, { recursive: true });
   await page.setViewportSize({ width, height });
-  await page.locator('[data-testid="settings-library-gdrive"]').scrollIntoViewIfNeeded();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(80);
   await page.screenshot({ path: path.join(SHOTS, name), fullPage: true });
 }
 
