@@ -799,61 +799,20 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
 .settings-pane, .vip-pane {
   overflow-y: auto;
   padding-bottom: 20px;
-}
-/* Scrollbar prototype (APP-001-BG): `?scroll=A|B|C|D` on <html> picks the
-   settings/VIP bar. C is the shipped look, B copies the library list, A keeps
-   out of the platform's way, D is B plus C's reserved gutter. Keep the four in
-   this block so the comparison stays one edit away. */
-[data-scroll='C'] .settings-pane,
-[data-scroll='C'] .vip-pane {
   /* Reserve the bar's width so switching panes never shifts the content. */
   scrollbar-gutter: stable;
 }
-[data-scroll='C'] .settings-pane::-webkit-scrollbar,
-[data-scroll='C'] .vip-pane::-webkit-scrollbar {
-  width: 17px;
-}
-[data-scroll='C'] .settings-pane::-webkit-scrollbar-track,
-[data-scroll='C'] .vip-pane::-webkit-scrollbar-track {
-  background: transparent;
-}
-/* The transparent border plus content-box clipping leaves a 6px gap between
-   the painted thumb and the panel's right edge. */
-[data-scroll='C'] .settings-pane::-webkit-scrollbar-thumb,
-[data-scroll='C'] .vip-pane::-webkit-scrollbar-thumb {
-  border: 6px solid transparent;
-  border-radius: 8px;
-  background-color: color-mix(in srgb, var(--accent) 30%, transparent);
-  background-clip: content-box;
-}
-/* B: the library list's bar, verbatim. */
-[data-scroll='B'] .settings-pane::-webkit-scrollbar,
-[data-scroll='B'] .vip-pane::-webkit-scrollbar {
+/* The library list and the settings/VIP panes share one bar: 4px, flush with
+   the right edge, accent at 30%. Width, radius and colour live in this single
+   block so the two surfaces cannot drift apart. */
+.list-scroll::-webkit-scrollbar,
+.settings-pane::-webkit-scrollbar,
+.vip-pane::-webkit-scrollbar {
   width: 4px;
 }
-[data-scroll='B'] .settings-pane::-webkit-scrollbar-thumb,
-[data-scroll='B'] .vip-pane::-webkit-scrollbar-thumb {
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--accent) 30%, transparent);
-}
-/* D: B's bar plus C's reserved gutter (the recommended combination). */
-[data-scroll='D'] .settings-pane,
-[data-scroll='D'] .vip-pane {
-  scrollbar-gutter: stable;
-}
-[data-scroll='D'] .settings-pane::-webkit-scrollbar,
-[data-scroll='D'] .vip-pane::-webkit-scrollbar {
-  width: 4px;
-}
-[data-scroll='D'] .settings-pane::-webkit-scrollbar-thumb,
-[data-scroll='D'] .vip-pane::-webkit-scrollbar-thumb {
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--accent) 30%, transparent);
-}
-.list-scroll::-webkit-scrollbar {
-  width: 4px;
-}
-.list-scroll::-webkit-scrollbar-thumb {
+.list-scroll::-webkit-scrollbar-thumb,
+.settings-pane::-webkit-scrollbar-thumb,
+.vip-pane::-webkit-scrollbar-thumb {
   border-radius: 4px;
   background: color-mix(in srgb, var(--accent) 30%, transparent);
 }

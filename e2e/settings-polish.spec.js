@@ -127,38 +127,60 @@ test('languages flow into a left-aligned grid without row separators', async ({ 
   }
 });
 
-// The settings scrollbar keeps the library list's 4px bar untouched, but its
-// own bar is wider and paints a 5px thumb inset 6px from the panel edge.
-test('the settings pane reserves an inset scrollbar gutter', async ({ page }) => {
+// The settings/VIP panes paint the library list's bar — same width, radius and
+// colour, flush with the right edge — on a reserved gutter, so switching panes
+// never shifts the content.
+test('the settings pane paints the library bar on a reserved gutter', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openSettings(page);
 
-  const pane = page.locator('.settings-pane');
-  await expect(pane).toHaveCSS('scrollbar-gutter', 'stable');
-
-  const bar = await pane.evaluate((node) => {
-    const scrollbar = getComputedStyle(node, '::-webkit-scrollbar');
-    const thumb = getComputedStyle(node, '::-webkit-scrollbar-thumb');
+  const bars = await page.evaluate(() => {
+    const read = (node) => {
+      const scrollbar = getComputedStyle(node, '::-webkit-scrollbar');
+      const thumb = getComputedStyle(node, '::-webkit-scrollbar-thumb');
+      return {
+        width: Number.parseFloat(scrollbar.width),
+        radius: thumb.borderTopLeftRadius,
+        colour: thumb.backgroundColor,
+        inset: Number.parseFloat(thumb.borderLeftWidth) || 0,
+        clip: thumb.backgroundClip,
+        gutter: getComputedStyle(node).scrollbarGutter,
+        reserved: node.offsetWidth - node.clientWidth,
+      };
+    };
     return {
-      width: Number.parseFloat(scrollbar.width),
-      inset: Number.parseFloat(thumb.borderLeftWidth),
-      clip: thumb.backgroundClip,
-      thumbColor: thumb.backgroundColor,
-      reserved: node.offsetWidth - node.clientWidth,
+      list: read(document.querySelector('.list-scroll')),
+      settings: read(document.querySelector('.settings-pane')),
     };
   });
 
-  expect(bar.width).toBeGreaterThanOrEqual(16);
-  expect(bar.width).toBeLessThanOrEqual(18);
-  expect(bar.inset).toBeGreaterThanOrEqual(5);
-  expect(bar.clip).toBe('content-box');
-  expect(bar.width - bar.inset * 2).toBeGreaterThanOrEqual(4);
-  expect(bar.thumbColor).not.toBe('rgba(0, 0, 0, 0)');
-  expect(bar.reserved).toBe(bar.width);
+  // One set of parameters for both surfaces: this is the whole point of the
+  // change, so compare the settings bar against the list bar instead of
+  // hard-coding 4px twice.
+  expect(bars.list.width).toBe(4);
+  expect(bars.settings.width).toBe(bars.list.width);
+  expect(bars.settings.radius).toBe(bars.list.radius);
+  expect(bars.settings.colour).toBe(bars.list.colour);
+  expect(bars.settings.inset).toBe(0);
+  expect(bars.settings.clip).toBe(bars.list.clip);
+  expect(bars.settings.gutter).toBe('stable');
+  // The gutter reserves exactly the bar, not a wider inset.
+  expect(bars.settings.reserved).toBe(4);
 
-  // The library list is out of scope and keeps its thin bar.
-  const listBarWidth = await page.evaluate(
-    () => Number.parseFloat(getComputedStyle(document.querySelector('.list-scroll'), '::-webkit-scrollbar').width),
-  );
-  expect(listBarWidth).toBe(4);
+  // Both panes reserve the same bar width, so the content box is the same size
+  // in either one and switching cannot shift it.
+  const visiblePane = () =>
+    page.evaluate(() => {
+      const pane = document.querySelector('.settings-pane:not([hidden]), .vip-pane:not([hidden])');
+      return { clientWidth: pane.clientWidth, reserved: pane.offsetWidth - pane.clientWidth };
+    });
+
+  const settings = await visiblePane();
+  await page.locator('[data-testid="vip-open"]').click();
+  await expect(page.locator('#vipView')).toBeVisible();
+  await page.waitForTimeout(600); // panel width transition
+
+  const vip = await visiblePane();
+  expect(vip.reserved).toBe(4);
+  expect(vip.clientWidth).toBe(settings.clientWidth);
 });
