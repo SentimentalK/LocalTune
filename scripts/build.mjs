@@ -94,10 +94,7 @@ async function bundle(entries, extension, loader = 'js', define = {}) {
   const urls = Object.fromEntries(
     Object.keys(entries).map((name) => [name, outputOf(result, extension, entries[name])]),
   );
-  const all = Object.keys(result.metafile.outputs)
-    .map((file) => toUrl(path.resolve(root, file)))
-    .sort();
-  return { urls, outputs: outputUrls(result, extension), all };
+  return { urls, outputs: outputUrls(result, extension) };
 }
 
 /** Version of the build: hash of every source file plus the optional label. */
@@ -145,8 +142,6 @@ async function main() {
   const css = await bundle({ styles: 'styles.css' }, '.css', 'css', define);
   const jsUrl = js.urls.main;
   const cssUrl = css.urls.styles;
-  // Fonts and other url() assets of the stylesheet (emitted next to it).
-  const cssAssets = css.all.filter((url) => !url.endsWith('.css'));
 
   const jsPath = path.join(distDir, jsUrl);
   const cssPath = path.join(distDir, cssUrl);
@@ -192,7 +187,6 @@ async function main() {
     jsUrl,
     ...chunks,
     cssUrl,
-    ...cssAssets,
     './manifest.webmanifest',
     ...icons.map((name) => `./icons/${name}`),
   ];

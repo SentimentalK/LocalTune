@@ -307,9 +307,9 @@ export default {
   'player.statusPaused': 'En pausa',
   'player.statusStopped': 'Detenido',
 
-  'chalk.play': 'Tap to play',
-  'chalk.seekPlace': 'Drag the arm',
-  'chalk.seekMove': 'to move playback',
+  'chalk.play': 'Toca para reproducir',
+  'chalk.seekPlace': 'Colócalo aquí',
+  'chalk.seekMove': 'y muévelo',
 
   'error.db.writeStats': 'Error al escribir las estadísticas de reproducción',
 

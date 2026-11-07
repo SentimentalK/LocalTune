@@ -302,9 +302,9 @@ export default {
   'player.statusPaused': 'Пауза',
   'player.statusStopped': 'Остановлено',
 
-  'chalk.play': 'Играть',
-  'chalk.seekPlace': 'Тяните тонарм',
-  'chalk.seekMove': 'в нужное место',
+  'chalk.play': 'Нажать · играть',
+  'chalk.seekPlace': 'Поставьте сюда',
+  'chalk.seekMove': 'и двигайте',
 
   'error.db.writeStats': 'Не удалось записать статистику воспроизведения',
 

@@ -302,9 +302,9 @@ export default {
   'player.statusPaused': '일시정지됨',
   'player.statusStopped': '정지됨',
 
-  'chalk.play': 'Tap to play',
-  'chalk.seekPlace': 'Drag the arm',
-  'chalk.seekMove': 'to move playback',
+  'chalk.play': '탭하여 재생',
+  'chalk.seekPlace': '여기에 맞춰',
+  'chalk.seekMove': '이동',
 
   'error.db.writeStats': '재생 통계 쓰기 실패',
 

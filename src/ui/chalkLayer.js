@@ -10,14 +10,12 @@
  * base and the arm head) are measured from the live DOM, which keeps each
  * arrow tip exactly 8 px off its target at any window size.
  *
- * The handwriting face is bundled instead of fetched: esbuild copies
- * `src/assets/fonts/zmx-sub3.woff2` (Zhi Mang Xing, SIL OFL 1.1, a subset of
- * the caption characters plus basic Latin) into `assets/` and the stylesheet
- * loads it from the same origin. `?chalkLang=zh|tw|en` forces the caption
- * language for screenshots; the app locale wins otherwise.
+ * The handwriting faces are bundled instead of fetched: esbuild copies the
+ * per-script subsets under `src/assets/fonts/` (all SIL OFL 1.1) into
+ * `assets/`, and styles.css picks one by `[lang]`. The captions themselves
+ * follow the app locale like every other string.
  */
 
-import en from '../i18n/en.js';
 import { t } from '../i18n/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -26,18 +24,6 @@ const VIEW_H = 550;
 const GAP_PX = 8;
 const TIP_R = 0.5;
 const INK = '#F2F5F3';
-
-const COPY_LOADERS = {
-  en: () => Promise.resolve(en),
-  zh: () => import('../i18n/zh-CN.js').then((module) => module.default),
-  tw: () => import('../i18n/zh-TW.js').then((module) => module.default),
-};
-
-/** `?chalkLang=zh|tw|en`, or '' when the app locale should decide. */
-export function chalkLang(search = globalThis.location?.search ?? '') {
-  const picked = (new URLSearchParams(search).get('chalkLang') ?? '').toLowerCase();
-  return picked in COPY_LOADERS ? picked : '';
-}
 
 const rad = (deg) => (deg * Math.PI) / 180;
 const round2 = (value) => Math.round(value * 100) / 100;
@@ -104,8 +90,7 @@ function wavePath({ from, to, y, amplitude = 2.2, turns = 3.5, seed = 3 }) {
 export function mountChalkLayer(deck) {
   if (!deck || typeof deck.getBoundingClientRect !== 'function') return { layout() {}, destroy() {} };
 
-  const forced = chalkLang();
-  let label = (key) => t(key);
+  const label = (key) => t(key);
 
   const layer = make('svg', {
     class: 'chalk-layer',
@@ -183,28 +168,27 @@ export function mountChalkLayer(deck) {
 
   deck.append(layer);
 
-  const relabel = () => {
-    playTitle.textContent = label('chalk.play');
-    seekTextTop.textContent = label('chalk.seekPlace');
-    seekTextBottom.textContent = label('chalk.seekMove');
-  };
-  relabel();
-
-  if (forced) {
-    COPY_LOADERS[forced]().then((table) => {
-      label = (key) => table[key] ?? en[key] ?? key;
-      relabel();
-      layout();
-    });
-  }
+  playTitle.textContent = label('chalk.play');
+  seekTextTop.textContent = label('chalk.seekPlace');
+  seekTextBottom.textContent = label('chalk.seekMove');
 
   let measuring = false;
 
-  /** Places a right-aligned line, returns its width in user units. */
-  function placeLabel(node, { x, y, rotate = 0 }) {
+  /**
+   * Places a right-aligned line, shrinking long translations until they fit
+   * `max` user units. Returns the width in user units.
+   */
+  function placeLabel(node, { x, y, rotate = 0, size, max = Infinity, min = 15 }) {
     node.setAttribute('x', fmt(x));
     node.setAttribute('y', fmt(y));
-    const width = node.getComputedTextLength();
+    if (size) node.setAttribute('font-size', fmt(size));
+    let width = node.getComputedTextLength();
+    if (width > max) {
+      const base = Number(node.getAttribute('font-size'));
+      const scaled = Math.max(min, (base * max) / width);
+      node.setAttribute('font-size', fmt(scaled));
+      width = node.getComputedTextLength();
+    }
     if (rotate) {
       const cx = x - width / 2;
       node.setAttribute('transform', `rotate(${rotate} ${fmt(cx)} ${fmt(y)})`);
@@ -238,7 +222,7 @@ export function mountChalkLayer(deck) {
       const head = toUnits(deck.querySelector('.arm-head-hit'));
 
       // 1. play: caption right of the record, pigtail into the arm base.
-      placeLabel(playTitle, { x: 382, y: 46, rotate: -3 });
+      placeLabel(playTitle, { x: 382, y: 46, rotate: -3, size: 30, max: 230, min: 20 });
       if (hub) {
         const tip = { x: hub.x0 - gap, y: hub.cy };
         playLoop.setAttribute(
@@ -254,9 +238,20 @@ export function mountChalkLayer(deck) {
         playTip.setAttribute('cy', fmt(tip.y));
       }
 
-      // 2. seek: two lines under the arm, hooking up to the head.
-      const bottomWidth = placeLabel(seekTextBottom, { x: 594, y: 522 });
-      placeLabel(seekTextTop, { x: 594, y: 490 });
+      // 2. seek: two lines under the arm, hooking up to the head. Both lines
+      // share one size, shrunk together when a translation runs long.
+      const seekBase = 24;
+      const seekMax = 172;
+      seekTextTop.setAttribute('font-size', fmt(seekBase));
+      seekTextBottom.setAttribute('font-size', fmt(seekBase));
+      const widest = Math.max(
+        seekTextTop.getComputedTextLength(),
+        seekTextBottom.getComputedTextLength(),
+      );
+      const seekSize =
+        widest > seekMax ? Math.max(15, (seekBase * seekMax) / widest) : seekBase;
+      const bottomWidth = placeLabel(seekTextBottom, { x: 594, y: 522, size: seekSize });
+      placeLabel(seekTextTop, { x: 594, y: 490, size: seekSize });
       seekUnderline.setAttribute(
         'd',
         wavePath({ from: 594 - bottomWidth - 6, to: 600, y: 536, seed: 7 }),

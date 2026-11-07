@@ -309,8 +309,8 @@ export default {
   'player.statusStopped': 'Stopped',
 
   'chalk.play': 'Tap to play',
-  'chalk.seekPlace': 'Drag the arm',
-  'chalk.seekMove': 'to move playback',
+  'chalk.seekPlace': 'Place it here',
+  'chalk.seekMove': 'move to play',
 
   'error.db.writeStats': 'Writing play statistics failed',
 

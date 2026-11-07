@@ -315,9 +315,9 @@ export default {
   'player.statusPaused': '一時停止中',
   'player.statusStopped': '停止中',
 
-  'chalk.play': 'Tap to play',
-  'chalk.seekPlace': 'Drag the arm',
-  'chalk.seekMove': 'to move playback',
+  'chalk.play': 'タップで再生',
+  'chalk.seekPlace': 'ここに合わせて',
+  'chalk.seekMove': '動かす',
 
   'error.db.writeStats': '再生統計の書き込みに失敗しました',
 
