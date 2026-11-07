@@ -328,14 +328,4 @@ export default {
   'permission.reauthorize': '再許可',
   'permission.settings': '設定を開く',
   'permission.close': '閉じる',
-
-  'onboarding.title': 'クイックツアー',
-  'onboarding.skip': 'スキップ',
-  'onboarding.next': '次へ',
-  'onboarding.start': '再生をはじめる',
-  'onboarding.step.play': 'ここで再生 / 一時停止',
-  'onboarding.step.seek': 'トーンアームをドラッグして移動 — 中央ほど後半',
-  'onboarding.step.tabs': 'キュー / フォルダーを切り替え',
-  'onboarding.step.search': '曲名・アーティスト・アルバムを検索',
-  'settings.about.onboarding': 'ガイドをもう一度見る',
 };

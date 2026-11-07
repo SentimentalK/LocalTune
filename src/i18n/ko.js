@@ -315,14 +315,4 @@ export default {
   'permission.reauthorize': '다시 권한 부여',
   'permission.settings': '설정 열기',
   'permission.close': '닫기',
-
-  'onboarding.title': '빠른 안내',
-  'onboarding.skip': '건너뛰기',
-  'onboarding.next': '다음',
-  'onboarding.start': '듣기 시작',
-  'onboarding.step.play': '여기를 눌러 재생 / 일시정지',
-  'onboarding.step.seek': '톤암을 끌어 이동 — 가운데일수록 뒤쪽',
-  'onboarding.step.tabs': '여기서 대기열 / 폴더 전환',
-  'onboarding.step.search': '곡명, 아티스트, 앨범 검색',
-  'settings.about.onboarding': '안내 다시 보기',
 };

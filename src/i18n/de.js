@@ -319,14 +319,4 @@ export default {
   'permission.reauthorize': 'Erneut autorisieren',
   'permission.settings': 'Einstellungen öffnen',
   'permission.close': 'Schließen',
-
-  'onboarding.title': 'Kurze Tour',
-  'onboarding.skip': 'Überspringen',
-  'onboarding.next': 'Weiter',
-  'onboarding.start': 'Jetzt hören',
-  'onboarding.step.play': 'Hier tippen zum Abspielen / Pausieren',
-  'onboarding.step.seek': 'Arm ziehen zum Spulen — weiter innen ist später',
-  'onboarding.step.tabs': 'Warteschlange / Ordner hier wechseln',
-  'onboarding.step.search': 'Titel, Künstler, Alben suchen',
-  'settings.about.onboarding': 'Anleitung erneut anzeigen',
 };

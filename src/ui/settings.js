@@ -912,15 +912,6 @@ export function createSettingsView(store, sw) {
     onclick: () => openPlayLog(),
   });
 
-  // The shell owns the overlay, so About only announces the intent.
-  const onboardingButton = el('button', {
-    class: 'btn-pill ghost',
-    type: 'button',
-    'data-testid': 'onboarding-replay',
-    text: t('settings.about.onboarding'),
-    onclick: () => node.dispatchEvent(new CustomEvent('onboarding-replay', { bubbles: true })),
-  });
-
   const githubLink = el(
     'a',
     {
@@ -947,7 +938,6 @@ export function createSettingsView(store, sw) {
         applyButton,
         clearDataButton,
         playLogButton,
-        onboardingButton,
       ]),
     ],
   );

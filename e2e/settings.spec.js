@@ -41,7 +41,7 @@ test('settings view covers library, storage, language and about', async ({ page 
   const aboutCard = page.locator('[data-testid="settings-section-about"]');
   await expect(aboutCard.locator('[data-testid="setting-youtube-key"]')).toHaveCount(0);
   await expect(aboutCard.locator('[data-testid="setting-proxy-url"]')).toHaveCount(0);
-  await expect(aboutCard.locator('.settings-actions > *')).toHaveCount(6);
+  await expect(aboutCard.locator('.settings-actions > *')).toHaveCount(5);
   await expect(
     aboutCard.locator('.settings-actions').first().locator(':scope > *').first(),
   ).toHaveAttribute('data-testid', 'settings-github');

@@ -321,14 +321,4 @@ export default {
   'permission.reauthorize': 'Reauthorize',
   'permission.settings': 'Open settings',
   'permission.close': 'Close',
-
-  'onboarding.title': 'Quick tour',
-  'onboarding.skip': 'Skip',
-  'onboarding.next': 'Next',
-  'onboarding.start': 'Start listening',
-  'onboarding.step.play': 'Tap here to play / pause',
-  'onboarding.step.seek': 'Drag the arm to seek — nearer the centre is later',
-  'onboarding.step.tabs': 'Switch queue / folders here',
-  'onboarding.step.search': 'Search titles, artists, albums',
-  'settings.about.onboarding': 'Show the guide again',
 };
