@@ -62,21 +62,15 @@ async function swipe(page, dx) {
   }, dx);
 }
 
-/** Union bbox of every visible chalk path/text, against the named chrome. */
+/**
+ * Every visible chalk path/text box, against the chrome the layer must not
+ * cover. Boxes never intersect, and the closest approach keeps a real gutter.
+ */
 function inkAgainstChrome() {
   const layer = document.querySelector('.chalk-layer');
   const boxes = [...layer.querySelectorAll('path, text')]
-    .map((node) => node.getBoundingClientRect())
-    .filter((rect) => rect.width > 0 && rect.height > 0);
-  const ink = boxes.reduce(
-    (acc, rect) => ({
-      left: Math.min(acc.left, rect.left),
-      top: Math.min(acc.top, rect.top),
-      right: Math.max(acc.right, rect.right),
-      bottom: Math.max(acc.bottom, rect.bottom),
-    }),
-    { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity },
-  );
+    .map((node) => ({ name: node.textContent?.slice(0, 12) || node.tagName, rect: node.getBoundingClientRect() }))
+    .filter((entry) => entry.rect.width > 0 && entry.rect.height > 0);
   const groups = {
     icons: [...document.querySelectorAll('.icon-btn')]
       .map((node) => node.getBoundingClientRect())
@@ -94,30 +88,33 @@ function inkAgainstChrome() {
     .filter((node) => node)
     .map((node) => ({ name: String(node.className || node.id), rect: node.getBoundingClientRect() }))
     .filter((entry) => entry.rect.width > 0 && entry.rect.height > 0);
-  const overlaps = chrome.filter((entry) => {
-    const x = Math.min(ink.right, entry.rect.right) - Math.max(ink.left, entry.rect.left);
-    const y = Math.min(ink.bottom, entry.rect.bottom) - Math.max(ink.top, entry.rect.top);
-    return x > 0.5 && y > 0.5;
+  let closest = Infinity;
+  const overlaps = [];
+  for (const box of boxes) {
+    for (const entry of chrome) {
+      const dx = Math.max(entry.rect.left - box.rect.right, 0, box.rect.left - entry.rect.right);
+      const dy = Math.max(entry.rect.top - box.rect.bottom, 0, box.rect.top - entry.rect.bottom);
+      const gap = Math.hypot(dx, dy);
+      if (gap < closest) closest = gap;
+      if (gap === 0) overlaps.push(`${box.name || 'path'} × ${entry.name}`);
+    }
+  }
+  return { groups, chrome: chrome.length, boxes: boxes.length, closest, overlaps };
+}
+
+/** Closest approach of each chalk text box to the record's inner 0.92 R disc. */
+function textAgainstArt() {
+  const vinyl = document.querySelector('.vinyl').getBoundingClientRect();
+  const cx = vinyl.left + vinyl.width / 2;
+  const cy = vinyl.top + vinyl.height / 2;
+  const radius = (vinyl.width / 2) * 0.92;
+  return [...document.querySelectorAll('.chalk-layer text')].map((node) => {
+    const box = node.getBoundingClientRect();
+    const px = Math.min(Math.max(cx, box.left), box.right);
+    const py = Math.min(Math.max(cy, box.top), box.bottom);
+    const distance = Math.hypot(px - cx, py - cy);
+    return { text: node.textContent, distance, radius, inside: distance < radius };
   });
-  const icons = [...document.querySelectorAll('.icon-btn')]
-    .map((node) => node.getBoundingClientRect())
-    .filter((rect) => rect.width > 0 && rect.height > 0);
-  const deck = document.querySelector('.deck').getBoundingClientRect();
-  const scale = deck.width / 640;
-  return {
-    ink: { left: ink.left, top: ink.top, right: ink.right, bottom: ink.bottom },
-    groups,
-    chrome: chrome.length,
-    overlaps: overlaps.map((entry) => entry.name),
-    // Same numbers in deck units, for the gutter assertion below.
-    inkTopUnits: (ink.top - deck.top) / scale,
-    iconBottomUnits: icons.length
-      ? (Math.max(...icons.map((rect) => rect.bottom)) - deck.top) / scale
-      : -Infinity,
-    inkTopGapPx: icons.length
-      ? ink.top - Math.max(...icons.map((rect) => rect.bottom))
-      : Infinity,
-  };
 }
 
 /** Tip distance to `.hub-hit`'s circle edge and to `.arm-head-hit`'s rect box. */
@@ -181,12 +178,9 @@ for (const viewport of VIEWPORTS) {
     expect(result.groups.tabs).toBe(1);
     expect(result.groups.search).toBe(1);
     expect(result.chrome).toBeGreaterThanOrEqual(5);
+    expect(result.boxes).toBeGreaterThan(0);
     expect(result.overlaps).toEqual([]);
-    expect(result.ink.right).toBeGreaterThan(result.ink.left);
-    // The ink keeps a real gutter below the toolbar band: 16 deck units, which
-    // is at least 4 CSS px at both viewports.
-    expect(result.inkTopUnits).toBeGreaterThanOrEqual(result.iconBottomUnits + 16);
-    expect(result.inkTopGapPx).toBeGreaterThanOrEqual(4);
+    expect(result.closest).toBeGreaterThanOrEqual(2);
   });
 }
 
@@ -203,6 +197,25 @@ for (const viewport of VIEWPORTS) {
     expect(gaps.seek).toBeLessThanOrEqual(10);
   });
 }
+
+test('no locale lets a caption touch the record artwork', async ({ browser }) => {
+  for (const locale of LOCALES) {
+    const context = await browser.newContext({
+      locale: locale.browser,
+      viewport: { width: 390, height: 844 },
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/`);
+    await expect(page.locator('.chalk-layer text').first()).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const rows = await page.evaluate(textAgainstArt);
+    for (const row of rows) {
+      expect(row.inside, `${locale.code} ${row.text}`).toBe(false);
+      expect(row.distance - row.radius, `${locale.code} ${row.text}`).toBeGreaterThanOrEqual(0);
+    }
+    await context.close();
+  }
+});
 
 test('every locale shares one caption size', async ({ browser }) => {
   const sizes = [];
