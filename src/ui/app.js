@@ -926,6 +926,7 @@ export function mountUi(root, store, sw) {
     currentId: null,
     queueTracks: null,
     queueIndex: -1,
+    queueOrder: null,
     permissions: null,
     query: '',
     folderSource: null,
@@ -942,6 +943,7 @@ export function mountUi(root, store, sw) {
     last.currentId = null;
     last.queueTracks = null;
     last.queueIndex = -1;
+    last.queueOrder = null;
     last.permissions = null;
     last.query = '';
     last.folderSource = null;
@@ -1662,15 +1664,6 @@ export function mountUi(root, store, sw) {
     return (state.tracks ?? []).filter((track) => trackKind(track) === kind);
   }
 
-  function shuffleOf(list) {
-    const copy = list.slice();
-    for (let i = copy.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [copy[i], copy[j]] = [copy[j], copy[i]];
-    }
-    return copy;
-  }
-
   function folderHeader(state, kind, dir, all) {
     const up = el(
       'button',
@@ -1704,10 +1697,14 @@ export function mountUi(root, store, sw) {
           text: t('common.playAll'),
           disabled: !all.length,
           onclick: () => {
-            if (all.length) {
-              pulseSwap();
-              run(store.playQueue(all, all[0].id));
-            }
+            if (!all.length) return;
+            pulseSwap();
+            // Play all is an explicit new round. Shuffle mode keeps the
+            // original track order and opens at a random position.
+            const start = store.state.queue.shuffle
+              ? all[Math.floor(Math.random() * all.length)].id
+              : all[0].id;
+            run(store.playQueue(all, start, 'user', { fresh: true }));
           },
         }),
         el('button', {
@@ -1718,9 +1715,8 @@ export function mountUi(root, store, sw) {
           disabled: !all.length,
           onclick: () => {
             if (!all.length) return;
-            const shuffled = shuffleOf(all);
             pulseSwap();
-            run(store.playQueue(shuffled, shuffled[0].id));
+            run(store.shufflePlay(all));
           },
         }),
       ]),
@@ -1848,18 +1844,23 @@ export function mountUi(root, store, sw) {
     const list = el('div', { class: 'track-list' });
     replaceTrackList([head, list]);
     mountVirtualList(list, tracks.length, () => {
-      const rows = store.state.queue.tracks;
-      const queueIndex = store.state.queue.index;
-      return (index, coverIds) =>
-        queueRow(rows[index], index, {
-          now: index === queueIndex,
+      const queue = store.state.queue;
+      // Shuffle shows the playback order; row number = play position. The
+      // original `tracks` order stays authoritative behind it.
+      const order = queue.shuffle ? queue.order : null;
+      const rows = order ? order.map((i) => queue.tracks[i]) : queue.tracks;
+      return (index, coverIds) => {
+        const trackIndex = order ? order[index] : index;
+        return queueRow(rows[index], index, {
+          now: trackIndex === queue.index,
           onActivate: () => {
             pulseSwap();
-            run(store.jumpTo(index));
+            run(store.jumpTo(trackIndex));
           },
-          onRemove: () => store.removeQueueAt(index),
+          onRemove: () => store.removeQueueAt(trackIndex),
           coverIds,
         });
+      };
     });
   }
 
@@ -1928,7 +1929,9 @@ export function mountUi(root, store, sw) {
       folder.source !== last.folderSource ||
       folder.dir !== last.folderDir ||
       (libraryTab === 'queue' &&
-        (state.queue.tracks !== last.queueTracks || state.queue.index !== last.queueIndex));
+        (state.queue.tracks !== last.queueTracks ||
+          state.queue.index !== last.queueIndex ||
+          state.queue.order !== last.queueOrder));
 
     if (!rebuild) {
       if (tracksInPlace) {
@@ -1951,6 +1954,7 @@ export function mountUi(root, store, sw) {
     last.folderDir = folder.dir;
     last.queueTracks = state.queue.tracks;
     last.queueIndex = state.queue.index;
+    last.queueOrder = state.queue.order;
 
     setHidden(ui.searchClear, !searchQuery);
 
