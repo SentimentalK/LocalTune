@@ -316,8 +316,8 @@ export default {
   'player.statusStopped': '停止中',
 
   'chalk.play': 'タップで再生',
-  'chalk.seekPlace': 'ここに合わせて',
-  'chalk.seekMove': '動かす',
+  'chalk.seekPlace': 'ここに',
+  'chalk.seekMove': '合わせて動かす',
 
   'error.db.writeStats': '再生統計の書き込みに失敗しました',
 

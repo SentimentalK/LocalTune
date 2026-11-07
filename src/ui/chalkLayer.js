@@ -22,8 +22,6 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const VIEW_W = 640;
 const VIEW_H = 550;
 const GAP_PX = 8;
-// Deck units between the toolbar icon band and the caption's tallest glyph.
-const PLAY_GAP = 20;
 const TIP_R = 0.5;
 const INK = '#F2F5F3';
 
@@ -158,11 +156,11 @@ export function mountChalkLayer(deck) {
   });
   const seekSlashes = make('path', {
     class: 'chalk-ink',
-    d: 'M600 544l5 13M607 538l5 13M614 544l5 13',
+    d: 'M600 522l5 13M607 516l5 13M614 522l5 13',
     'vector-effect': 'non-scaling-stroke',
   });
   // The whole caption leans like the reference sheet; the arrow does not.
-  seekCaption.setAttribute('transform', 'rotate(-3.5 594 528)');
+  seekCaption.setAttribute('transform', 'rotate(-5 594 515)');
   seekCaption.append(seekTextTop, seekTextBottom, seekUnderline, seekSlashes);
   seekAnno.append(seekArrows, seekCaption);
   layer.append(seekAnno);
@@ -201,7 +199,6 @@ export function mountChalkLayer(deck) {
 
   function layout() {
     if (!deck.isConnected || measuring) return;
-    let playBaseline = 46;
     const deckRect = deck.getBoundingClientRect();
     const scale = deckRect.width / VIEW_W;
     if (!scale) return;
@@ -227,36 +224,22 @@ export function mountChalkLayer(deck) {
       // The size is identical for every locale; when a script's ascender would
       // reach into the toolbar band, the whole caption drops instead of
       // shrinking (a smaller Russian line reads as a bug).
-      let playWidth = placeLabel(playTitle, { x: 382, y: 46, rotate: -3, size: 30 });
-      const chrome = [...document.querySelectorAll('.icon-btn')]
-        .map((node) => node.getBoundingClientRect())
-        .filter((rect) => rect.width > 0 && rect.height > 0);
-      if (chrome.length) {
-        const limit = (Math.max(...chrome.map((rect) => rect.bottom)) - deckRect.top) / scale + PLAY_GAP;
-        const naturalTop = (playTitle.getBoundingClientRect().top - deckRect.top) / scale;
-        if (naturalTop < limit) {
-          const baseline = 46 + (limit - naturalTop);
-          playWidth = placeLabel(playTitle, { x: 382, y: baseline, rotate: -3, size: 30 });
-          playBaseline = baseline;
-        }
-      }
-      const inkTop = (playTitle.getBoundingClientRect().top - deckRect.top) / scale;
-      // The three ticks sit just left of the caption's own left edge and at its
-      // cap line, so a long translation never runs into them.
-      const slashX = 382 - playWidth - 46;
+      const playWidth = placeLabel(playTitle, { x: 376, y: 46, rotate: -3, size: 30 });
+      // The three ticks sit just left of the caption's own left edge, so a long
+      // translation never runs into them.
+      const slashX = 376 - playWidth - 46;
       playSlashes.setAttribute(
         'd',
-        `M${fmt(slashX)} ${fmt(inkTop + 7)}l6 13M${fmt(slashX + 14)} ${fmt(inkTop + 2)}l6 13M${fmt(slashX + 28)} ${fmt(inkTop + 7)}l6 13`,
+        `M${fmt(slashX)} 10l6 13M${fmt(slashX + 14)} 5l6 13M${fmt(slashX + 28)} 10l6 13`,
       );
       if (hub) {
         const tip = { x: hub.x0 - gap, y: hub.cy };
-        const dy = playBaseline - 46;
         playLoop.setAttribute(
           'd',
-          `M394 ${fmt(54 + dy)}C390 ${fmt(36 + dy)} 402 ${fmt(24 + dy)} 412 ${fmt(33 + dy)}C421 ${fmt(41 + dy)} 414 ${fmt(54 + dy)} 403 ${fmt(51 + dy)}C397 ${fmt(49 + dy)} 396 ${fmt(43 + dy)} 401 ${fmt(38 + dy)}`,
+          'M388 54C384 36 396 24 406 33C415 41 408 54 397 51C391 49 390 43 395 38',
         );
-        const tail = { x: 401, y: 38 + dy };
-        const c1 = { x: 436, y: 20 };
+        const tail = { x: 395, y: 38 };
+        const c1 = { x: 430, y: 8 };
         const c2 = { x: tip.x - 26, y: tip.y - 26 };
         playTail.setAttribute('d', `M${pt(tail)}C${pt(c1)} ${pt(c2)} ${pt(tip)}`);
         playHead.setAttribute('d', arrowHeadPath(tip, { x: tip.x - c2.x, y: tip.y - c2.y }));
@@ -268,16 +251,16 @@ export function mountChalkLayer(deck) {
       // every locale; the caption sits low enough for the longest line to clear
       // the record instead of shrinking to fit.
       const SEEK_SIZE = 28;
-      const bottomWidth = placeLabel(seekTextBottom, { x: 594, y: 544, size: SEEK_SIZE });
-      placeLabel(seekTextTop, { x: 594, y: 512, size: SEEK_SIZE });
+      const bottomWidth = placeLabel(seekTextBottom, { x: 594, y: 522, size: SEEK_SIZE });
+      placeLabel(seekTextTop, { x: 594, y: 490, size: SEEK_SIZE });
       seekUnderline.setAttribute(
         'd',
-        wavePath({ from: 594 - bottomWidth - 6, to: 600, y: 548, seed: 7 }),
+        wavePath({ from: 594 - bottomWidth - 6, to: 600, y: 536, seed: 7 }),
       );
       if (head) {
         const tip = { x: head.cx, y: head.y1 + gap };
-        const tail = { x: 446, y: 480 };
-        const c1 = { x: 452, y: 430 };
+        const tail = { x: 446, y: 452 };
+        const c1 = { x: 452, y: 402 };
         const c2 = { x: tip.x - 26, y: tip.y + 30 };
         seekTail.setAttribute('d', `M${pt(tail)}C${pt(c1)} ${pt(c2)} ${pt(tip)}`);
         seekHead.setAttribute('d', arrowHeadPath(tip, { x: tip.x - c2.x, y: tip.y - c2.y }));
