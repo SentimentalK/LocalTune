@@ -103,7 +103,6 @@ export function mountChalkLayer(deck) {
   const playAnno = make('g', { class: 'chalk-anno', 'data-anno': 'play', 'data-phase': '0' });
   const playSlashes = make('path', {
     class: 'chalk-ink',
-    d: 'M212 10l6 13M226 5l6 13M240 10l6 13',
     'vector-effect': 'non-scaling-stroke',
   });
   const playLoop = make('path', {
@@ -222,7 +221,31 @@ export function mountChalkLayer(deck) {
       const head = toUnits(deck.querySelector('.arm-head-hit'));
 
       // 1. play: caption right of the record, pigtail into the arm base.
-      placeLabel(playTitle, { x: 382, y: 46, rotate: -3, size: 30, max: 230, min: 20 });
+      let playWidth = placeLabel(playTitle, { x: 382, y: 46, rotate: -3, size: 30, max: 230, min: 20 });
+      // Keep the tallest glyphs (Bad Script, Yomogi) below the toolbar band so
+      // the layer's ink never reaches into the .icon-btn boxes.
+      const chrome = [...document.querySelectorAll('.icon-btn')]
+        .map((node) => node.getBoundingClientRect())
+        .filter((rect) => rect.width > 0 && rect.height > 0);
+      if (chrome.length) {
+        const limit = Math.max(...chrome.map((rect) => rect.bottom)) + 2;
+        const box = playTitle.getBoundingClientRect();
+        if (box.top < limit) {
+          const size = Number(playTitle.getAttribute('font-size'));
+          const baseline = deckRect.top + 46 * scale;
+          const shorter = Math.max(16, (size * (baseline - limit)) / (baseline - box.top));
+          if (shorter < size) {
+            playWidth = placeLabel(playTitle, { x: 382, y: 46, rotate: -3, size: shorter });
+          }
+        }
+      }
+      // The three ticks sit just left of the caption's own left edge, so a
+      // translated caption that grows leftwards never runs into them.
+      const slashX = 382 - playWidth - 46;
+      playSlashes.setAttribute(
+        'd',
+        `M${fmt(slashX)} 24l6 13M${fmt(slashX + 14)} 19l6 13M${fmt(slashX + 28)} 24l6 13`,
+      );
       if (hub) {
         const tip = { x: hub.x0 - gap, y: hub.cy };
         playLoop.setAttribute(
@@ -274,6 +297,10 @@ export function mountChalkLayer(deck) {
   layout();
   const observer = new ResizeObserver(() => layout());
   observer.observe(deck);
+  // The caption metrics depend on the bundled face; remeasure once it swaps in
+  // so the height fit and the rotations are not computed on fallback metrics.
+  document.fonts?.ready?.then(() => layout()).catch(() => {});
+  document.fonts?.addEventListener?.('loadingdone', () => layout());
 
   return {
     layout,
