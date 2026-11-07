@@ -1453,3 +1453,72 @@ html.is-low-power .toast:not([hidden]) { animation: none; }
   }
   .disc-art { animation: none !important; }
 }
+
+/* First-run guide: chalk arrow over a dimmed deck, one caption per step. */
+.onboarding {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  color: var(--text);
+  background: rgba(9, 14, 18, 0.74);
+}
+.onboarding-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.onboarding.is-blind .onboarding-layer { display: none; }
+.onboarding-arrow {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.92;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: onboarding-draw 0.55s ease-out forwards;
+}
+.onboarding-tip { fill: currentColor; opacity: 0.92; }
+.onboarding-caption {
+  position: absolute;
+  margin: 0;
+  max-width: 240px;
+  font-family: var(--serif);
+  font-size: 15px;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+  pointer-events: none;
+}
+.onboarding-caption.is-centered { text-align: center; }
+.onboarding-actions {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@keyframes onboarding-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+html.is-low-power .onboarding-arrow { animation: none; stroke-dashoffset: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-arrow { animation: none !important; stroke-dashoffset: 0; }
+}
+
+/* The About row gained the guide replay action: six buttons need the compact
+   pill everywhere, and one notch tighter on the narrowest phones. */
+[data-testid="settings-section-about"] .settings-actions { gap: 4px; }
+[data-testid="settings-section-about"] .settings-actions .btn-pill { padding: 6px 6px; font-size: 10px; }
+
+@media (max-width: 430px) {
+  [data-testid="settings-section-about"] .settings-actions { gap: 3px; }
+  [data-testid="settings-section-about"] .settings-actions .btn-pill { padding: 6px 4px; }
+}

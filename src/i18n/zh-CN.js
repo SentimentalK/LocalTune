@@ -309,4 +309,14 @@ export default {
   'permission.reauthorize': '重新授权',
   'permission.settings': '去设置',
   'permission.close': '关闭',
+
+  'onboarding.title': '快速上手',
+  'onboarding.skip': '跳过',
+  'onboarding.next': '下一步',
+  'onboarding.start': '开始听歌',
+  'onboarding.step.play': '点这里播放 / 暂停',
+  'onboarding.step.seek': '拖唱臂跳转 — 越靠中间越往后',
+  'onboarding.step.tabs': '在这里切换队列 / 文件夹',
+  'onboarding.step.search': '搜歌名、歌手、专辑',
+  'settings.about.onboarding': '重新查看引导',
 };

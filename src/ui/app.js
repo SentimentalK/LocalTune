@@ -13,6 +13,7 @@ import { el, icon, symbolIcon, setIcon, setText, setHidden } from './dom.js';
 import { createSettingsView } from './settings.js';
 import { createVipView } from './vip.js';
 import { createVirtualizer } from './virtualList.js';
+import { clearOnboarded, createOnboarding, shouldShowOnboarding } from './onboarding.js';
 import { openTagInfo } from './diagnostics.js';
 import { bindStageSwipe, bindTonearm, ARM_PARK, angleForProgress } from './tonearm.js';
 import { createLowPowerGate, LOW_POWER_WINDOW_MS } from './lowPower.js';
@@ -859,6 +860,7 @@ export function mountUi(root, store, sw) {
   let toastTimer = null;
   let renderedSignature = null;
   let ui = createShell(store, sw);
+  const onboarding = createOnboarding({ onFinish: () => {} });
 
   function handlePermissionSettings(kind) {
     show('settings');
@@ -1291,6 +1293,13 @@ export function mountUi(root, store, sw) {
     });
     ui.settingsView.node.addEventListener('toast', (event) => {
       showToast(event.detail?.text ?? '');
+    });
+    // About replays the guide over the library; the completion mark is cleared
+    // first so a refresh mid-tour asks again, and finishing re-marks it.
+    ui.settingsView.node.addEventListener('onboarding-replay', () => {
+      show('library');
+      clearOnboarded(localStorage);
+      onboarding.replay();
     });
 
     ui.searchInput.addEventListener('input', () => {
@@ -2060,6 +2069,7 @@ export function mountUi(root, store, sw) {
     applyPanel();
     render(store.state);
     syncArm();
+    onboarding.refresh();
   }
 
   function togglePlayback() {
@@ -2196,6 +2206,21 @@ export function mountUi(root, store, sw) {
   render(store.state);
   if (panelView === 'settings') store.setView('settings');
   else if (panelView === 'vip') store.setView('vip');
+
+  // First run only, and only once: the guide is a one-shot after the first real
+  // render, never re-armed by store changes. Automated browsers are skipped so
+  // an unattended suite is never covered by the overlay; ?onboarding=force
+  // bypasses that gate for the guide's own tests.
+  if (
+    shouldShowOnboarding({
+      storage: localStorage,
+      hasTracks: store.state.queue.tracks.length > 0,
+      automated: navigator.webdriver === true,
+      force: new URLSearchParams(location.search).get('onboarding') === 'force',
+    })
+  ) {
+    onboarding.start();
+  }
 
   window.addEventListener('beforeinstallprompt', () => {
     installPromptSeen = true;

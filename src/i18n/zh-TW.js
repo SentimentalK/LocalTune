@@ -310,4 +310,14 @@ export default {
   'permission.reauthorize': '重新授權',
   'permission.settings': '前往設定',
   'permission.close': '關閉',
+
+  'onboarding.title': '快速上手',
+  'onboarding.skip': '跳過',
+  'onboarding.next': '下一步',
+  'onboarding.start': '開始聽歌',
+  'onboarding.step.play': '點這裡播放 / 暫停',
+  'onboarding.step.seek': '拖唱臂跳轉 — 越靠中間越後面',
+  'onboarding.step.tabs': '在這裡切換佇列 / 資料夾',
+  'onboarding.step.search': '搜歌名、歌手、專輯',
+  'settings.about.onboarding': '重新查看引導',
 };
