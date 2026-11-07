@@ -455,6 +455,56 @@ a { color: inherit; }
 .arm-handle:focus { outline: none; }
 .arm-handle:focus-visible { outline: none; filter: drop-shadow(0 0 7px var(--accent)); }
 
+/* ── chalk layer ───────────────────────────────────────────── */
+
+/* Decorative notes drawn over the deck. The layer is a sibling of the tonearm
+   SVG and paints above it, but it takes no pointer events and no accessibility
+   tree, so the arm base, the arm head and the stage keep every gesture. */
+.chalk-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 12;
+  overflow: visible;
+  pointer-events: none;
+}
+.chalk-layer text {
+  font-family:
+    'Bradley Hand', 'Segoe Script', 'Snell Roundhand', 'Snell Roundhand Script',
+    'Comic Sans MS', cursive;
+}
+.chalk-title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.chalk-body {
+  font-style: italic;
+  letter-spacing: 0.01em;
+}
+.chalk-spring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: chalk-spring 8s ease-in-out infinite;
+}
+@keyframes chalk-spring {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+.chalk-arrow {
+  opacity: 0.85;
+  animation: chalk-breathe 7.5s ease-in-out infinite;
+}
+.chalk-anno[data-phase='1'] .chalk-arrow { animation-delay: 1.2s; }
+.chalk-anno[data-phase='2'] .chalk-arrow { animation-delay: 2.4s; }
+@keyframes chalk-breathe {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chalk-layer * { animation: none !important; }
+}
+
 /* ── now playing ───────────────────────────────────────────── */
 
 .now {
@@ -1443,6 +1493,7 @@ html.is-low-power .app.is-overlay .panel { backdrop-filter: none; }
 html.is-low-power .disc-art { animation: none; }
 html.is-low-power .deck.swapping .disc-wrap { animation: none; }
 html.is-low-power .toast:not([hidden]) { animation: none; }
+html.is-low-power .chalk-layer * { animation: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

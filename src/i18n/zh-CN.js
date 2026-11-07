@@ -296,6 +296,19 @@ export default {
   'player.statusPaused': '已暂停',
   'player.statusStopped': '已停止',
 
+  'chalk.play': '点击播放',
+  'chalk.seek': '拖动跳转',
+  'chalk.swipe': '左右滑动切歌',
+  'chalk.playTitle': '点击播放',
+  'chalk.playBody1': '轻点唱臂底座',
+  'chalk.playBody2': '开始或暂停',
+  'chalk.seekTitle': '拖动唱臂',
+  'chalk.seekBody1': '按住唱头上下',
+  'chalk.seekBody2': '移动可跳转',
+  'chalk.swipeTitle': '左右切歌',
+  'chalk.swipeBody1': '在唱片区滑动',
+  'chalk.swipeBody2': '上一首 / 下一首',
+
   'error.db.writeStats': '写入播放统计失败',
 
   'permission.title.local': '无法读取本地文件夹',

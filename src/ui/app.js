@@ -16,6 +16,7 @@ import { createVirtualizer } from './virtualList.js';
 import { openTagInfo } from './diagnostics.js';
 import { bindStageSwipe, bindTonearm, ARM_PARK, angleForProgress } from './tonearm.js';
 import { createLowPowerGate, LOW_POWER_WINDOW_MS } from './lowPower.js';
+import { mountChalkLayer } from './chalkLayer.js';
 import {
   THEMES,
   THEME_NAMES,
@@ -609,6 +610,7 @@ function createShell(store, sw) {
   const discWrap = el('div', { class: 'disc-wrap' }, [vinyl]);
   const deck = el('div', { class: 'deck', id: 'deck' }, [discWrap]);
   deck.insertAdjacentHTML('beforeend', TONEARM);
+  mountChalkLayer(deck);
 
   const armSvg = deck.querySelector('#armSvg');
   const armRotor = deck.querySelector('#armRotor');

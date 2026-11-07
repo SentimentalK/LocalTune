@@ -307,6 +307,19 @@ export default {
   'player.statusPaused': 'En pausa',
   'player.statusStopped': 'Detenido',
 
+  'chalk.play': 'Play',
+  'chalk.seek': 'Seek',
+  'chalk.swipe': 'Swipe',
+  'chalk.playTitle': 'Play / Pause',
+  'chalk.playBody1': 'tap the arm base',
+  'chalk.playBody2': 'to play or pause',
+  'chalk.seekTitle': 'Drag arm',
+  'chalk.seekBody1': 'hold and slide',
+  'chalk.seekBody2': 'to seek',
+  'chalk.swipeTitle': 'Swipe',
+  'chalk.swipeBody1': 'left or right',
+  'chalk.swipeBody2': 'to skip',
+
   'error.db.writeStats': 'Error al escribir las estadísticas de reproducción',
 
   'permission.title.local': 'No se puede leer tu carpeta local',
