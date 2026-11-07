@@ -99,11 +99,24 @@ function inkAgainstChrome() {
     const y = Math.min(ink.bottom, entry.rect.bottom) - Math.max(ink.top, entry.rect.top);
     return x > 0.5 && y > 0.5;
   });
+  const icons = [...document.querySelectorAll('.icon-btn')]
+    .map((node) => node.getBoundingClientRect())
+    .filter((rect) => rect.width > 0 && rect.height > 0);
+  const deck = document.querySelector('.deck').getBoundingClientRect();
+  const scale = deck.width / 640;
   return {
     ink: { left: ink.left, top: ink.top, right: ink.right, bottom: ink.bottom },
     groups,
     chrome: chrome.length,
     overlaps: overlaps.map((entry) => entry.name),
+    // Same numbers in deck units, for the gutter assertion below.
+    inkTopUnits: (ink.top - deck.top) / scale,
+    iconBottomUnits: icons.length
+      ? (Math.max(...icons.map((rect) => rect.bottom)) - deck.top) / scale
+      : -Infinity,
+    inkTopGapPx: icons.length
+      ? ink.top - Math.max(...icons.map((rect) => rect.bottom))
+      : Infinity,
   };
 }
 
@@ -170,6 +183,10 @@ for (const viewport of VIEWPORTS) {
     expect(result.chrome).toBeGreaterThanOrEqual(5);
     expect(result.overlaps).toEqual([]);
     expect(result.ink.right).toBeGreaterThan(result.ink.left);
+    // The ink keeps a real gutter below the toolbar band: 16 deck units, which
+    // is at least 4 CSS px at both viewports.
+    expect(result.inkTopUnits).toBeGreaterThanOrEqual(result.iconBottomUnits + 16);
+    expect(result.inkTopGapPx).toBeGreaterThanOrEqual(4);
   });
 }
 
@@ -186,6 +203,36 @@ for (const viewport of VIEWPORTS) {
     expect(gaps.seek).toBeLessThanOrEqual(10);
   });
 }
+
+test('every locale shares one caption size', async ({ browser }) => {
+  const sizes = [];
+  for (const locale of LOCALES) {
+    const context = await browser.newContext({
+      locale: locale.browser,
+      viewport: { width: 390, height: 844 },
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/`);
+    await expect(page.locator('.chalk-layer text').first()).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const measured = await page.evaluate(() => {
+      const deck = document.querySelector('.deck').getBoundingClientRect();
+      const scale = deck.width / 640;
+      return [...document.querySelectorAll('.chalk-layer text')].map(
+        (node) => parseFloat(getComputedStyle(node).fontSize) / scale,
+      );
+    });
+    sizes.push({ code: locale.code, play: measured[0], seek: measured.slice(1) });
+    await context.close();
+  }
+  const plays = sizes.map((row) => row.play);
+  const seeks = sizes.flatMap((row) => row.seek);
+  expect(Math.min(...plays)).toBeGreaterThanOrEqual(28);
+  expect(Math.max(...plays) - Math.min(...plays)).toBeLessThanOrEqual(2);
+  expect(Math.min(...seeks)).toBeGreaterThanOrEqual(28);
+  expect(Math.max(...seeks) - Math.min(...seeks)).toBeLessThanOrEqual(2);
+  expect(sizes.map((row) => row.code)).toEqual(LOCALES.map((locale) => locale.code));
+});
 
 test('every locale renders its caption in the bundled face', async ({ browser }) => {
   for (const locale of LOCALES) {
