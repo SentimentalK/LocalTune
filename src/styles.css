@@ -563,17 +563,17 @@ a { color: inherit; }
 }
 .settings-pane::-webkit-scrollbar,
 .vip-pane::-webkit-scrollbar {
-  width: 10px;
+  width: 17px;
 }
 .settings-pane::-webkit-scrollbar-track,
 .vip-pane::-webkit-scrollbar-track {
   background: transparent;
 }
-/* The transparent border plus content-box clipping leaves a 3px gap between
+/* The transparent border plus content-box clipping leaves a 6px gap between
    the painted thumb and the panel's right edge. */
 .settings-pane::-webkit-scrollbar-thumb,
 .vip-pane::-webkit-scrollbar-thumb {
-  border: 3px solid transparent;
+  border: 6px solid transparent;
   border-radius: 8px;
   background-color: color-mix(in srgb, var(--accent) 30%, transparent);
   background-clip: content-box;
@@ -986,14 +986,13 @@ a { color: inherit; }
   letter-spacing: 0.04em;
   line-height: 1.5;
 }
-.settings-hint.source-beta-note { padding-bottom: 6px; }
 .source-body span { color: var(--muted); font-size: 11px; }
 .source-meta { display: flex; align-items: baseline; min-width: 0; }
 .source-subtitle { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-count { flex: none; }
 .source-actions { display: flex; align-items: center; gap: 3px; flex: none; }
 .source-actions-icons { display: flex; align-items: center; gap: 12px; }
-.source-connect { min-height: 30px; padding: 6px 11px; font-size: 10.5px; }
+.source-connect { min-height: 30px; padding: 6px 10px; font-size: 10.5px; }
 .icon-action {
   width: 44px;
   height: 44px;
@@ -1149,9 +1148,10 @@ a { color: inherit; }
   gap: 6px;
   align-items: stretch;
 }
-/* "Follow system · <language>" carries the resolved name: two cells keep it
-   readable instead of ellipsising the language away. */
-.language-list > .language-row:first-child { grid-column: span 2; }
+/* "Follow system" takes the whole first line with the browser hint pushed to
+   the right edge, so the resolved language name stays readable. */
+.language-first { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.language-first .language-row { flex: 0 1 auto; }
 .language-row {
   display: flex;
   align-items: center;
@@ -1175,8 +1175,9 @@ a { color: inherit; }
 .language-check { width: 16px; height: 16px; flex: none; opacity: 0; color: var(--accent); }
 .language-row.is-active .language-check { opacity: 1; }
 .language-browser {
-  grid-column: 1 / -1;
-  margin: 2px 2px 4px;
+  margin: 0 0 0 auto;
+  min-width: 0;
+  text-align: right;
   color: var(--muted);
   font-size: 9.5px;
   line-height: 1.5;
@@ -1191,12 +1192,11 @@ a { color: inherit; }
   font-size: 11.5px;
 }
 .about-row b { color: var(--text); font-weight: 500; }
-.about-state { color: var(--muted); font-size: 10.5px; }
 .settings-github {
   display: inline-flex;
   align-items: center;
-  align-self: flex-start;
   gap: 6px;
+  margin-right: auto;
   color: var(--muted);
   font-size: 11.5px;
   line-height: 1.4;
@@ -1413,6 +1413,8 @@ a { color: inherit; }
   .panel-inner { padding-left: 16px; padding-right: 16px; }
   .app.is-overlay .panel-inner { padding-top: calc(64px + env(safe-area-inset-top)); padding-left: 16px; padding-right: 16px; }
   .panel-head h2 { font-size: 27px; }
+  [data-testid="settings-section-about"] .settings-actions { gap: 4px; }
+  [data-testid="settings-section-about"] .settings-actions .btn-pill { padding: 6px 6px; font-size: 10px; }
 }
 
 @media (max-width: 360px) {

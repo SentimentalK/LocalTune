@@ -87,8 +87,12 @@ test('Google Drive sync caches the files and playback downloads nothing', async 
   await page.locator('[data-testid="settings-gdrive-remove"]').click();
   await expect(
     page.locator('[data-testid="source-row-gdrive"] .source-subtitle'),
-  ).toHaveText('连接 Google Drive 音乐目录');
+  ).toHaveText('想连接请联系作者');
   await expect(page.locator('[data-testid="source-row-gdrive"] .source-count')).toBeHidden();
+  const gdriveConnect = page.locator('[data-testid="source-connect-gdrive"]');
+  await expect(gdriveConnect).toBeVisible();
+  await expect(gdriveConnect).toHaveText('连接');
+  await expect(gdriveConnect).toHaveAttribute('aria-label', '连接 Google Drive');
 
   await backToFolders(page);
   await expect(page.locator('[data-testid="folder-source-gdrive"]')).toHaveCount(0);

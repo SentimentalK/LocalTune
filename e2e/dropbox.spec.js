@@ -96,6 +96,10 @@ test('Dropbox connect, browse, scan, cached playback and disconnect', async ({ p
     page.locator('[data-testid="source-row-dropbox"] .source-subtitle'),
   ).toHaveText('连接 Dropbox 音乐目录');
   await expect(page.locator('[data-testid="source-row-dropbox"] .source-count')).toBeHidden();
+  const dropboxConnect = page.locator('[data-testid="source-connect-dropbox"]');
+  await expect(dropboxConnect).toBeVisible();
+  await expect(dropboxConnect).toHaveText('连接');
+  await expect(dropboxConnect).toHaveAttribute('aria-label', '连接 Dropbox');
 
   await backToFolders(page);
   await expect(page.locator('[data-testid="folder-source-dropbox"]')).toHaveCount(0);

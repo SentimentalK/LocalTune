@@ -99,7 +99,6 @@ export function createSettingsView(store, sw) {
   const SOURCE_HINTS = {
     local: 'settings.source.hintLocal',
     onedrive: 'settings.source.hintOneDrive',
-    gdrive: 'settings.source.hintGdrive',
     dropbox: 'settings.source.hintDropbox',
   };
   /** Providers whose brief token loss keeps the root and asks for a reconnect. */
@@ -115,7 +114,7 @@ export function createSettingsView(store, sw) {
     setHidden(count, true);
     const subtitle = el('span', {
       class: 'source-subtitle',
-      text: t(SOURCE_HINTS[kind]),
+      text: t(kind === 'gdrive' ? 'settings.gdrive.betaNote' : SOURCE_HINTS[kind]),
     });
     const rowError = el('p', { class: 'settings-error muted', role: 'alert' });
     setHidden(rowError, true);
@@ -150,7 +149,9 @@ export function createSettingsView(store, sw) {
       class: 'btn-pill source-connect',
       type: 'button',
       'data-testid': `source-connect-${kind}`,
-      text: t(CONNECT_LABELS[kind]),
+      text: t(kind === 'local' ? 'settings.source.shortSelect' : 'settings.source.shortConnect'),
+      'aria-label': t(CONNECT_LABELS[kind]),
+      title: t(CONNECT_LABELS[kind]),
       onclick: () => changeSource(kind),
     });
 
@@ -252,17 +253,6 @@ export function createSettingsView(store, sw) {
       setHidden(view.hint, true);
     }
 
-    // Beta note is fixed copy: it never replaces the unconfigured hint or the
-    // per-row error, which both keep their own lines below it.
-    const betaNote =
-      kind === 'gdrive'
-        ? el('p', {
-            class: 'settings-hint muted source-beta-note',
-            'data-testid': 'gdrive-beta-note',
-            text: t('settings.gdrive.betaNote'),
-          })
-        : null;
-
     view.node = el('div', { class: 'source-card-body', 'data-testid': `source-row-${kind}` }, [
       el('div', { class: 'source-summary' }, [
         el('span', {
@@ -276,7 +266,6 @@ export function createSettingsView(store, sw) {
         view.actions,
       ]),
       progress,
-      ...(betaNote ? [betaNote] : []),
       ...(view.hint ? [view.hint] : []),
       rowError,
     ]);
@@ -733,6 +722,13 @@ export function createSettingsView(store, sw) {
     text: t('settings.language.browser', { list: browserLanguages().join(' · ') || '—' }),
   });
 
+  // "Follow system" and the browser hint share one full-width first line: the
+  // hint sits at that line's right edge instead of claiming a row of its own.
+  const languageFirst = el('div', { class: 'language-first' }, [
+    languageRows[0].button,
+    browserHint,
+  ]);
+
   const languageList = el(
     'div',
     {
@@ -740,9 +736,7 @@ export function createSettingsView(store, sw) {
       role: 'radiogroup',
       'aria-label': t('settings.language.title'),
     },
-    languageRows.flatMap(({ button }, index) =>
-      index === 0 ? [button, browserHint] : [button],
-    ),
+    [languageFirst, ...languageRows.slice(1).map(({ button }) => button)],
   );
 
   // Roving tabindex: one tab stop, arrows move focus and select in one step.
@@ -776,7 +770,6 @@ export function createSettingsView(store, sw) {
 
   // ---- about ----
   const version = el('b', { 'data-testid': 'about-version', text: BUILD_VERSION });
-  const updateState = el('span', { class: 'about-state', text: t('settings.about.upToDate') });
   const checkButton = el('button', {
     class: 'btn-pill ghost',
     type: 'button',
@@ -919,29 +912,6 @@ export function createSettingsView(store, sw) {
     onclick: () => openPlayLog(),
   });
 
-  const aboutCard = el(
-    'section',
-    { class: 'settings-card', 'data-testid': 'settings-section-about' },
-    [
-      el('div', { class: 'about-row' }, [
-        el('span', { text: t('settings.about.version') }),
-        version,
-      ]),
-      el('div', { class: 'about-row' }, [
-        el('span', { text: t('settings.about.updateState') }),
-        updateState,
-      ]),
-      el('div', { class: 'settings-actions' }, [checkButton, applyButton, clearDataButton, playLogButton]),
-    ],
-  );
-
-  function settingsBlock(title, card) {
-    return el('div', { class: 'settings-block' }, [
-      el('h3', { class: 'settings-block-title', text: title }),
-      card,
-    ]);
-  }
-
   const githubLink = el(
     'a',
     {
@@ -954,6 +924,31 @@ export function createSettingsView(store, sw) {
     [icon('github'), el('span', { text: 'GitHub' })],
   );
 
+  const aboutCard = el(
+    'section',
+    { class: 'settings-card', 'data-testid': 'settings-section-about' },
+    [
+      el('div', { class: 'about-row' }, [
+        el('span', { text: t('settings.about.version') }),
+        version,
+      ]),
+      el('div', { class: 'settings-actions' }, [
+        githubLink,
+        checkButton,
+        applyButton,
+        clearDataButton,
+        playLogButton,
+      ]),
+    ],
+  );
+
+  function settingsBlock(title, card) {
+    return el('div', { class: 'settings-block' }, [
+      el('h3', { class: 'settings-block-title', text: title }),
+      card,
+    ]);
+  }
+
   node.append(
     libraryCard,
     settingsBlock(t('settings.background.title'), backgroundCard),
@@ -961,7 +956,6 @@ export function createSettingsView(store, sw) {
     settingsBlock(t('settings.playback.title'), playbackCard),
     settingsBlock(t('settings.language.title'), languageCard),
     settingsBlock(t('settings.about.title'), aboutCard),
-    githubLink,
   );
 
   // Storage figures are async and can be expensive on a large cache: throttle
@@ -1046,7 +1040,8 @@ export function createSettingsView(store, sw) {
       const scanning = Boolean(row.scanning);
       const trackCount = row.trackCount ?? 0;
       const connected = permission === 'granted' || trackCount > 0;
-      const hint = t(SOURCE_HINTS[kind]);
+      const hint =
+        kind === 'gdrive' ? t('settings.gdrive.betaNote') : t(SOURCE_HINTS[kind]);
       setText(view.subtitle, connected && row.name ? row.name : hint);
       setText(
         view.count,
@@ -1058,12 +1053,19 @@ export function createSettingsView(store, sw) {
       const configured = row.configured !== false;
       const needsReconnect = Boolean(row.needsReconnect);
       const reconnect = RECONNECT_KINDS.has(kind) && needsReconnect;
-      const connectLabel = reconnect
+      const fullLabel = reconnect
         ? t('settings.source.reconnect')
         : t(CONNECT_LABELS[kind]);
-      setText(view.connectButton, connectLabel);
-      view.connectButton.setAttribute('aria-label', connectLabel);
-      view.connectButton.setAttribute('title', connectLabel);
+      const visibleLabel = reconnect
+        ? fullLabel
+        : t(
+            kind === 'local'
+              ? 'settings.source.shortSelect'
+              : 'settings.source.shortConnect',
+          );
+      setText(view.connectButton, visibleLabel);
+      view.connectButton.setAttribute('aria-label', fullLabel);
+      view.connectButton.setAttribute('title', fullLabel);
       // An unconfigured OAuth build cannot start a flow at all: no network, no
       // enabled connect button.
       view.connectButton.disabled = RECONNECT_KINDS.has(kind) && !configured;
@@ -1205,10 +1207,6 @@ export function createSettingsView(store, sw) {
     }
 
     setHidden(applyButton, !state.updateReady);
-    setText(
-      updateState,
-      state.updateReady ? t('settings.about.updateReady') : t('settings.about.upToDate'),
-    );
 
     renderPicker(state);
 

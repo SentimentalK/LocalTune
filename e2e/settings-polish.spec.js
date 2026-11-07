@@ -128,7 +128,7 @@ test('languages flow into a left-aligned grid without row separators', async ({ 
 });
 
 // The settings scrollbar keeps the library list's 4px bar untouched, but its
-// own bar is wider and paints a 4px thumb inset 3px from the panel edge.
+// own bar is wider and paints a 5px thumb inset 6px from the panel edge.
 test('the settings pane reserves an inset scrollbar gutter', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openSettings(page);
@@ -148,12 +148,11 @@ test('the settings pane reserves an inset scrollbar gutter', async ({ page }) =>
     };
   });
 
-  expect(bar.width).toBeGreaterThanOrEqual(8);
-  expect(bar.width).toBeLessThanOrEqual(10);
-  expect(bar.inset).toBeGreaterThanOrEqual(2);
-  expect(bar.inset).toBeLessThanOrEqual(4);
+  expect(bar.width).toBeGreaterThanOrEqual(16);
+  expect(bar.width).toBeLessThanOrEqual(18);
+  expect(bar.inset).toBeGreaterThanOrEqual(5);
   expect(bar.clip).toBe('content-box');
-  expect(bar.width - bar.inset * 2).toBeGreaterThanOrEqual(2);
+  expect(bar.width - bar.inset * 2).toBeGreaterThanOrEqual(4);
   expect(bar.thumbColor).not.toBe('rgba(0, 0, 0, 0)');
   expect(bar.reserved).toBe(bar.width);
 

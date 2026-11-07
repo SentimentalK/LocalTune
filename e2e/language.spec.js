@@ -149,6 +149,51 @@ function installBrowserLanguage(page, { language, languages }) {
   }, { language, languages });
 }
 
+test('the auto row shares its first line with the right-aligned browser hint', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await openSettings(page);
+
+  const layout = await page.evaluate(() => {
+    const auto = document.querySelector('[data-testid="language-auto"]');
+    const hint = document.querySelector('[data-testid="browser-language-hint"]');
+    const list = document.querySelector('.language-list');
+    const parent = auto.parentElement;
+    const parentStyle = getComputedStyle(parent);
+    const autoRect = auto.getBoundingClientRect();
+    const hintRect = hint.getBoundingClientRect();
+    return {
+      sharedParent: parent === hint.parentElement,
+      gridColumnStart: parentStyle.gridColumnStart,
+      gridColumnEnd: parentStyle.gridColumnEnd,
+      centerDelta: Math.abs(
+        autoRect.top + autoRect.height / 2 - (hintRect.top + hintRect.height / 2),
+      ),
+      autoLeft: autoRect.left,
+      hintLeft: hintRect.left,
+      rightGap: list.getBoundingClientRect().right - hintRect.right,
+      textAlign: getComputedStyle(hint).textAlign,
+      autoTabIndex: auto.tabIndex,
+      otherTabIndex: [...document.querySelectorAll('.language-row')]
+        .filter((row) => row !== auto)
+        .map((row) => row.tabIndex),
+    };
+  });
+
+  expect(layout.sharedParent).toBe(true);
+  expect(layout.gridColumnStart).toBe('1');
+  expect(layout.gridColumnEnd).toBe('-1');
+  expect(layout.centerDelta).toBeLessThanOrEqual(2);
+  expect(layout.autoLeft).toBeLessThan(layout.hintLeft);
+  expect(layout.rightGap).toBeLessThanOrEqual(1);
+  expect(layout.textAlign).toBe('right');
+  // One tab stop: the auto row keeps it, every other row stays out of order.
+  expect(layout.autoTabIndex).toBe(0);
+  for (const tabIndex of layout.otherTabIndex) expect(tabIndex).toBe(-1);
+});
+
 test('the English UI language beats Chinese content preferences', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 780 });
   await installBrowserLanguage(page, {
