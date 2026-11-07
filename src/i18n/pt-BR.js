@@ -24,7 +24,7 @@ export default {
   'common.deniedHint':
     'O navegador bloqueou o acesso à pasta. Restaure-o nas permissões do site e tente de novo.',
 
-  'update.available': 'Uma nova versão está disponível',
+  'update.available': 'Nova versão – atualiza sozinho',
   'update.apply': 'Atualizar agora',
   'migration.progress': 'Migrando tags {done} / {total}',
   'diagnostics.title': 'Informações da tag',

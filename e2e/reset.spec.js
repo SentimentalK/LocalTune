@@ -45,15 +45,35 @@ test('clearing all data returns the app to its first launch state', async ({ pag
   );
 
   // Recorded at document-start of the reloaded page: an unregistered worker
-  // means no controller when the fresh document boots.
+  // means no controller when the fresh document boots. The cache snapshot is
+  // gated so nothing can create a cache before it settles.
   await page.addInitScript(() => {
     window.__controllerAtBoot = navigator.serviceWorker.controller === null;
+    window.__storageAtBoot = localStorage.length;
+    const snapshot = caches.keys();
+    window.__cachesAtBoot = snapshot;
+    const gate = snapshot.catch(() => {});
+    // Nothing may create a cache before the boot snapshot settles: the app's
+    // playback restore opens audio-v1, and the SW install precaches localtune-*.
+    const open = CacheStorage.prototype.open;
+    CacheStorage.prototype.open = function patchedOpen(...args) {
+      return gate.then(() => open.apply(this, args));
+    };
+    const sw = navigator.serviceWorker;
+    const register = sw.register.bind(sw);
+    sw.register = (...args) => gate.then(() => register(...args));
   });
 
   await Promise.all([
     page.waitForNavigation(),
     page.locator('[data-testid="settings-clear-data"]').click(),
   ]);
+
+  // The reset marker is consumed at boot: the address bar is clean again.
+  const bootUrl = new URL(page.url());
+  expect(bootUrl.pathname).toBe('/');
+  expect(bootUrl.search).toBe('');
+  expect(bootUrl.hash).toBe('');
 
   await expect(page.locator('.wordmark')).toHaveText('localtune.');
   await expect(page.locator('#tab-queue')).toHaveAttribute('aria-selected', 'true');
@@ -69,8 +89,14 @@ test('clearing all data returns the app to its first launch state', async ({ pag
   ]);
   await expect(page.locator('.track-item.queue.now .track strong')).toHaveText('Baby Girl');
 
-  expect(await page.evaluate(() => localStorage.length)).toBe(0);
+  // Landing state, sampled before any app code ran: storage really was empty.
+  await expect.poll(() => page.evaluate(() => window.__storageAtBoot)).toBe(0);
+  // The app's own keys are gone at assert time too; only the version sentinel
+  // prepareNavigation writes at boot remains, and that is not user data.
+  expect(await page.evaluate(() => Object.keys(localStorage))).toEqual(['localtune:version']);
   expect(await page.evaluate(() => window.__controllerAtBoot)).toBe(true);
+  // Sampled at document-start, before the fresh boot re-registers the SW.
+  await expect.poll(() => page.evaluate(() => window.__cachesAtBoot)).toEqual([]);
 
   const after = await page.evaluate(
     () =>

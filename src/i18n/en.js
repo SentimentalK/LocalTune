@@ -27,7 +27,7 @@ export default {
   'common.deniedHint':
     'The browser blocked folder access. Restore it in the site permissions, then try again.',
 
-  'update.available': 'A new version is available',
+  'update.available': 'New version — updates automatically when idle',
   'update.apply': 'Update now',
   'migration.progress': 'Migrating tags {done} / {total}',
   'diagnostics.title': 'Tag info',

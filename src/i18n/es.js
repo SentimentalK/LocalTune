@@ -24,7 +24,7 @@ export default {
   'common.deniedHint':
     'El navegador bloqueó el acceso a la carpeta. Restáuralo en los permisos del sitio y vuelve a intentarlo.',
 
-  'update.available': 'Hay una nueva versión disponible',
+  'update.available': 'Nueva versión – se actualiza sola',
   'update.apply': 'Actualizar ahora',
   'migration.progress': 'Migrando etiquetas {done} / {total}',
   'diagnostics.title': 'Información de etiquetas',

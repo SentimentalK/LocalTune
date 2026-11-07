@@ -819,7 +819,7 @@ export function createSettingsView(store, sw) {
         storage: globalThis.localStorage,
         sessionStorage: globalThis.sessionStorage,
         opfs: globalThis.navigator?.storage,
-        reload: () => location.reload(),
+        replace: (url) => location.replace(url),
       });
     },
   });

@@ -1,7 +1,8 @@
 import { createApp } from './core/store.js';
 import { mountUi } from './ui/app.js';
 import { el } from './ui/dom.js';
-import { registerServiceWorker } from './pwa.js';
+import { prepareNavigation, registerServiceWorker } from './pwa.js';
+import { BUILD_VERSION } from './core/version.js';
 import {
   applyDocumentLang,
   browserLanguages,
@@ -49,6 +50,8 @@ function renderFatal(error) {
 
 let store = null;
 try {
+  // Consume ?reset= and heal a stale build before any other boot work.
+  prepareNavigation({ version: BUILD_VERSION });
   // createApp() turns OneDrive redirect failures into strings while it
   // restores state, before the saved setting is known. Load the browser
   // table first so those boot strings follow the browser (the pre-lazy-load
@@ -61,7 +64,12 @@ try {
   const loaded = await ensureLocale(target);
   setLocale(loaded);
   applyDocumentLang();
-  const sw = registerServiceWorker(() => store?.setUpdateReady(true));
+  const sw = registerServiceWorker(() => store?.setUpdateReady(true), {
+    isBusy: () => ({
+      playing: store.state.current.playing,
+      importing: store.state.sources.some((row) => row.scanning),
+    }),
+  });
   mountUi(root, store, sw);
 } catch (error) {
   console.error('LocalTune failed to start', error);

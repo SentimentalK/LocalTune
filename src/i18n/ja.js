@@ -26,7 +26,7 @@ export default {
   'common.deniedHint':
     'ブラウザーがフォルダーへのアクセスをブロックしました。サイトの権限設定で復元してから再試行してください。',
 
-  'update.available': '新しいバージョンがあります',
+  'update.available': '新しいバージョン — 待機中に自動更新',
   'update.apply': '今すぐ更新',
   'migration.progress': 'タグを移行中 {done} / {total}',
   'diagnostics.title': 'タグ情報',

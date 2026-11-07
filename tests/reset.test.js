@@ -135,16 +135,17 @@ test('every facility is wiped: caches, workers, storages and the OPFS music fold
   assert.deepEqual(reported.map((item) => item.name), ['opfs']);
 });
 
-test('resetAllData reloads even when a step fails', async () => {
-  let reloads = 0;
+test('resetAllData forces a hard navigation to /?reset=… even when a step fails', async () => {
+  const replaces = [];
   const failures = await resetAllData({
     store: { player: { pause: () => { throw new Error('pause failed'); } } },
     indexedDB: { deleteDatabase: () => request() },
-    reload: () => {
-      reloads += 1;
+    replace: (url) => {
+      replaces.push(url);
     },
   });
 
-  assert.equal(reloads, 1);
+  assert.equal(replaces.length, 1);
+  assert.match(replaces[0], /^\/\?reset=\d+$/);
   assert.deepEqual(failures.map((item) => item.name), ['player']);
 });

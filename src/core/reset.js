@@ -59,6 +59,8 @@ export async function resetAllData(env = {}) {
   const failures = await runResetSteps(createResetSteps(env), {
     onError: (name, error) => console.warn(`reset step failed: ${name}`, error),
   });
-  try { env.reload?.(); } catch {}
+  // A hard navigation, not a reload: it bypasses bfcache and lands back on the
+  // home screen. The `?reset=` marker is stripped by prepareNavigation on boot.
+  try { env.replace?.(`/?reset=${Date.now()}`); } catch {}
   return failures;
 }
