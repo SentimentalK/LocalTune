@@ -95,18 +95,26 @@ const TRACKS = 100;
 const CACHED_BYTES = 10;
 
 /** Store + counting AudioCache + counting metadata reader, wired for rescan. */
-function harness({ readMetadata: reader } = {}) {
+function harness({ readMetadata: reader, probeDuration } = {}) {
   const db = fakeDb();
   const meta = {
     reads: 0,
     reader: reader ?? (async () => ({ duration: 1000, cover: new Blob([new Uint8Array(4)]) })),
   };
-  const store = new Store(db, {
+  const probe = { calls: 0, resolve: null };
+  const options = {
     readMetadata: async (blob, path) => {
       meta.reads += 1;
       return meta.reader(blob, path);
     },
-  });
+  };
+  if (probeDuration) {
+    options.probeDuration = (blob) => {
+      probe.calls += 1;
+      return probeDuration(blob);
+    };
+  }
+  const store = new Store(db, options);
   const storage = memoryCaches();
   const audio = new AudioCache({ caches: storage, index: createCacheIndex(db) });
   const counts = { read: 0, write: 0, has: 0 };
@@ -141,10 +149,11 @@ function harness({ readMetadata: reader } = {}) {
   const reset = () => {
     for (const key of Object.keys(counts)) counts[key] = 0;
     meta.reads = 0;
+    probe.calls = 0;
     db.ops.tracks.put = 0;
     db.ops.cacheIndex.put = 0;
   };
-  return { db, store, storage, counts, meta, listed, reset };
+  return { db, store, storage, counts, meta, probe, listed, reset };
 }
 
 function entries(count) {
@@ -315,4 +324,87 @@ test('a failed tag read leaves the row unmarked and is retried', async () => {
   assert.equal(counts.read, 0);
 
   await settle(store);
+});
+
+test('a zero parsed duration is probed once and written to the row and the db', async () => {
+  let releaseProbe = null;
+  const { db, store, probe, listed, reset } = harness({
+    readMetadata: async () => ({ duration: 0 }),
+    probeDuration: () =>
+      new Promise((resolve) => {
+        releaseProbe = resolve;
+      }),
+  });
+  listed.splice(0, listed.length, ...entries(1));
+
+  await store.rescan('onedrive');
+
+  assert.equal(store.state.tracks[0].duration, 0);
+  assert.equal(store._probes.size, 1);
+  assert.equal(probe.calls, 1);
+
+  releaseProbe(250.5);
+  await store._probeChain;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(store.state.tracks[0].duration, 250.5);
+  assert.equal(db.dataFor('tracks').get('onedrive:Music/t0.mp3').duration, 250.5);
+
+  await settle(store);
+  assert.equal(store.state.tracks[0].duration, 250.5);
+
+  assert.equal(probe.calls, 1);
+  reset();
+  await store.rescan('onedrive');
+  await settle(store);
+  assert.equal(probe.calls, 0);
+});
+
+test('a parsed duration skips the audio probe', async () => {
+  const { store, probe, listed } = harness({
+    readMetadata: async () => ({ duration: 1000 }),
+    probeDuration: async () => 999,
+  });
+  listed.splice(0, listed.length, ...entries(1));
+
+  await store.rescan('onedrive');
+  await settle(store);
+
+  assert.equal(probe.calls, 0);
+  assert.equal(store.state.tracks[0].duration, 1000);
+});
+
+test('a probe that finds nothing leaves the row unknown and the scan completes', async () => {
+  const { store, listed } = harness({
+    readMetadata: async () => ({ duration: 0 }),
+    probeDuration: async () => 0,
+  });
+  listed.splice(0, listed.length, ...entries(1));
+
+  const summary = await store.rescan('onedrive');
+  await settle(store);
+
+  assert.ok(summary);
+  assert.equal(store.state.tracks[0].duration, 0);
+  assert.equal(store.state.tracks[0].metaScanned, true);
+  assert.equal(store.state.sources.find((row) => row.id === 'onedrive').error, null);
+});
+
+test('the tag pass keeps a duration that only the audio element knew', async () => {
+  const { store } = harness({ readMetadata: async () => ({ duration: 0 }) });
+  store._state.tracks = [
+    {
+      id: 'onedrive:Music/t0.mp3',
+      path: 'Music/t0.mp3',
+      title: 't0',
+      duration: 250.5,
+      source: 'onedrive',
+    },
+  ];
+  store._enrich('onedrive', [
+    { entry: { path: 'Music/t0.mp3', mtime: 1, size: 10 }, trackId: 'onedrive:Music/t0.mp3' },
+  ]);
+  await settle(store);
+
+  assert.equal(store.state.tracks[0].duration, 250.5);
 });

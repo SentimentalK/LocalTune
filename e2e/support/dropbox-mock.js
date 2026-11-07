@@ -62,12 +62,12 @@ function folderEntry(folder) {
   };
 }
 
-function fileEntry(file) {
+function fileEntry(file, size) {
   return {
     '.tag': 'file',
     id: file.id,
     name: file.name,
-    size: AUDIO.length,
+    size,
     server_modified: '2024-01-02T03:04:05Z',
     path_display: file.path,
     path_lower: file.path.toLowerCase(),
@@ -96,6 +96,7 @@ function parseCursor(value) {
  *   pageSize?: number,
  *   appKey?: string,
  *   refreshOk?: boolean,
+ *   audio?: Buffer,
  * }} [options]
  */
 export async function installDropboxMock(
@@ -106,6 +107,7 @@ export async function installDropboxMock(
     pageSize = 1,
     appKey = 'test-app-key',
     refreshOk = true,
+    audio = AUDIO,
   } = {},
 ) {
   const folderTree = folders.map((folder) => ({
@@ -116,7 +118,10 @@ export async function installDropboxMock(
     ...file,
     path: normalizePath(file.path ?? `/${file.name}`),
   }));
-  const all = [...folderTree.map(folderEntry), ...fileTree.map(fileEntry)];
+  const all = [
+    ...folderTree.map(folderEntry),
+    ...fileTree.map((file) => fileEntry(file, audio.length)),
+  ];
 
   const mock = {
     authorizeUrls: [],
@@ -259,14 +264,16 @@ export async function installDropboxMock(
       status: 200,
       headers: {
         ...CORS,
-        'content-type': 'audio/mpeg',
+        'content-type': basenameOf(apiPath).toLowerCase().endsWith('.wav')
+          ? 'audio/wav'
+          : 'audio/mpeg',
         'Dropbox-API-Result': JSON.stringify({
           name: basenameOf(apiPath),
           path_display: apiPath,
-          size: AUDIO.length,
+          size: audio.length,
         }),
       },
-      body: AUDIO,
+      body: audio,
     });
   });
 

@@ -10,3 +10,9 @@ export function formatTime(seconds) {
   const rest = total % 60;
   return `${minutes}:${String(rest).padStart(2, '0')}`;
 }
+
+/** Row duration: an unknown duration stays visibly unknown. */
+export function formatDuration(seconds) {
+  const value = Number(seconds);
+  return Number.isFinite(value) && value > 0 ? formatTime(value) : '--:--';
+}

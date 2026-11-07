@@ -5,7 +5,7 @@
  * separate play/prev/next buttons or progress bar are rendered.
  */
 
-import { formatTime } from '../core/selectors.js';
+import { formatDuration, formatTime } from '../core/selectors.js';
 import { subdirsOf, tracksDirect, tracksUnder } from '../core/folders.js';
 import { runSearch } from '../core/search.js';
 import { libraryVisible, visibleSources } from '../core/library.js';
@@ -241,7 +241,7 @@ function trackRow(track, { now, onActivate, onMore, coverIds }) {
         el('strong', { text: track.title }),
         el('small', { text: subtitleOf(track) }),
       ]),
-      el('span', { class: 'track-dur', text: formatTime(track.duration) }),
+      el('span', { class: 'track-dur', text: formatDuration(track.duration) }),
     ],
   );
   const row = el(
@@ -272,7 +272,7 @@ function queueRow(track, index, { now, onActivate, onRemove, coverIds }) {
         el('strong', { text: track.title }),
         el('small', { text: subtitleOf(track) }),
       ]),
-      el('span', { class: 'track-dur', text: formatTime(track.duration) }),
+      el('span', { class: 'track-dur', text: formatDuration(track.duration) }),
     ],
   );
   const remove = el(

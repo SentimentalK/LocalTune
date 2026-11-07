@@ -24,7 +24,7 @@ import {
   withoutCover,
 } from './db.js';
 import { createCoverCache } from './coverCache.js';
-import { createSource, hasDirectoryPicker } from './source.js';
+import { createSource, hasDirectoryPicker, AUDIO_EXTENSIONS } from './source.js';
 import { purgeSourceRows } from './purge.js';
 import { detachSource } from './sources/detach.js';
 import { OpfsSource } from './sources/opfs/source.js';
@@ -220,6 +220,11 @@ function emptyRow(kind, adapter) {
   };
 }
 
+function isAudioPath(path) {
+  const dot = String(path ?? '').lastIndexOf('.');
+  return dot >= 0 && AUDIO_EXTENSIONS.has(String(path).slice(dot + 1).toLowerCase());
+}
+
 function buildTrack(entry, meta, { trackSource = 'fsa', externalIds = {} } = {}) {
   const path = entry.path;
   const cover = meta.cover instanceof Blob ? meta.cover : null;
@@ -262,11 +267,57 @@ export function carryCover(track, previous) {
   track.coverType = previous.coverType ?? null;
 }
 
+/**
+ * Read a blob's duration from a throwaway audio element. Resolves 0 when the
+ * element cannot decode it or nothing arrives within `timeout`; never rejects.
+ */
+export function probeBlobDuration(blob, { timeout = 5000 } = {}) {
+  if (typeof Audio !== 'function' || !(blob instanceof Blob)) return Promise.resolve(0);
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio();
+  audio.preload = 'metadata';
+  return new Promise((resolve) => {
+    let done = false;
+    const settle = (value) => {
+      if (done) return;
+      done = true;
+      audio.removeEventListener('loadedmetadata', onMeta);
+      audio.removeEventListener('durationchange', onMeta);
+      audio.removeEventListener('error', onError);
+      clearTimeout(timer);
+      try {
+        audio.removeAttribute('src');
+        audio.load?.();
+      } catch {
+        // A detached element has nothing left to release.
+      }
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    const onMeta = () => {
+      const duration = Number(audio.duration);
+      if (Number.isFinite(duration) && duration > 0) settle(duration);
+    };
+    const onError = () => settle(0);
+    const timer = setTimeout(() => settle(0), timeout);
+    audio.addEventListener('loadedmetadata', onMeta);
+    audio.addEventListener('durationchange', onMeta);
+    audio.addEventListener('error', onError);
+    audio.src = url;
+  });
+}
+
 export class Store extends EventTarget {
-  constructor(db, { readMetadata: readTags = readMetadata } = {}) {
+  constructor(
+    db,
+    { readMetadata: readTags = readMetadata, probeDuration = probeBlobDuration } = {},
+  ) {
     super();
     this.db = db;
     this._readTags = readTags;
+    this._probeDuration = probeDuration;
+    this._probes = new Set();
+    this._probeChain = Promise.resolve();
     this.covers = createCoverCache({ load: (id) => getCover(this.db, id) });
     this.reference = createSource(db);
     this.opfs = new OpfsSource({ db });
@@ -415,6 +466,11 @@ export class Store extends EventTarget {
       this._adoptTrackDuration(duration);
       this._emit();
       this._syncMediaSession(true);
+    });
+
+    player.addEventListener('durationchange', (event) => {
+      const duration = Number(event.detail?.duration) || 0;
+      if (this._adoptTrackDuration(duration)) this._emit();
     });
 
     player.addEventListener('ended', () => {
@@ -1381,6 +1437,9 @@ export class Store extends EventTarget {
             // must not re-read this file's cached audio.
             track.metaScanned = true;
             carryCover(track, previous);
+            if (!(track.duration > 0) && previous?.duration > 0) {
+              track.duration = previous.duration;
+            }
             // The cover Blob only survives in the pending write; state gets
             // the cover-free row immediately (see spec APP-001-AA).
             const row = withoutCover(track);
@@ -1424,6 +1483,43 @@ export class Store extends EventTarget {
         this._enrichQueues.delete(kind);
       }
     }
+  }
+
+  /**
+   * One background duration probe per track. Probes run serially so a library
+   * whose tags carry no duration cannot open hundreds of audio elements.
+   */
+  _probeScannedDuration(id, blob) {
+    if (this._probes.has(id)) return;
+    this._probes.add(id);
+    const task = this._probeChain
+      .then(() => this._probeAndAdopt(id, blob))
+      .catch(() => {})
+      .finally(() => this._probes.delete(id));
+    this._probeChain = task;
+  }
+
+  async _probeAndAdopt(id, blob) {
+    let duration = 0;
+    try {
+      duration = Number(await this._probeDuration(blob)) || 0;
+    } catch {
+      duration = 0;
+    }
+    if (!(duration > 0)) return;
+    const track = this._state.tracks.find((item) => item.id === id);
+    if (!track || track.duration > 0) return;
+    const updated = { ...track, duration };
+    this._replaceTrack(updated);
+    if (this.queue.tracks.some((item) => item.id === id)) {
+      this.queue = {
+        ...this.queue,
+        tracks: this.queue.tracks.map((item) => (item.id === id ? updated : item)),
+      };
+      this._reflectQueue();
+    }
+    putTracks(this.db, [updated]).catch(() => {});
+    this._emit();
   }
 
   /**
@@ -1474,6 +1570,9 @@ export class Store extends EventTarget {
         tracks: this.queue.tracks.map((item) => (item.id === id ? row : item)),
       };
       this._reflectQueue();
+    }
+    if (!(track.duration > 0) && isAudioPath(entry.path)) {
+      this._probeScannedDuration(track.id, blob);
     }
   }
 
@@ -2278,10 +2377,10 @@ export class Store extends EventTarget {
    * state.current, and the updated Track is persisted.
    */
   _adoptTrackDuration(duration) {
-    if (!(duration > 0)) return;
+    if (!(duration > 0)) return false;
     const track = this._state.current.track;
-    if (!track) return;
-    if (track.duration !== 0 && Math.abs(track.duration - duration) < 1) return;
+    if (!track) return false;
+    if (track.duration > 0 && Math.abs(track.duration - duration) < 1) return false;
 
     const updated = { ...track, duration };
     this._state.tracks = this._state.tracks.map((item) => (item.id === updated.id ? updated : item));
@@ -2292,6 +2391,7 @@ export class Store extends EventTarget {
     this._state.current.duration = duration;
     this._reflectQueue();
     putTracks(this.db, [updated]).catch(() => {});
+    return true;
   }
 
   _reconcileQueue(removedIds = []) {

@@ -209,18 +209,44 @@ function buildMp4() {
   return Buffer.concat([ftyp, moov, mdat]);
 }
 
+/* ----------------------------------------------------------------- WAV -- */
+
+/** PCM 16-bit mono 8 kHz, two seconds of silence. */
+function buildWav() {
+  const header = Buffer.alloc(44);
+  const data = Buffer.alloc(32000, 0);
+  header.write('RIFF', 0, 'latin1');
+  header.writeUInt32LE(36 + data.length, 4);
+  header.write('WAVE', 8, 'latin1');
+  header.write('fmt ', 12, 'latin1');
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(1, 22); // mono
+  header.writeUInt32LE(8000, 24);
+  header.writeUInt32LE(16000, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write('data', 36, 'latin1');
+  header.writeUInt32LE(data.length, 40);
+  return Buffer.concat([header, data]);
+}
+
 /* ----------------------------------------------------------------- run -- */
 
 function main() {
   mkdirSync(OUT_DIR, { recursive: true });
   const mp3 = buildMp3();
   const m4a = buildMp4();
-  if (mp3.length + m4a.length > 200 * 1024) {
+  const wav = buildWav();
+  if (mp3.length + m4a.length + wav.length > 200 * 1024) {
     throw new Error('fixtures exceed 200 KB');
   }
   writeFileSync(join(OUT_DIR, 'sample.mp3'), mp3);
   writeFileSync(join(OUT_DIR, 'sample.m4a'), m4a);
-  console.log(`sample.mp3 ${mp3.length} bytes, sample.m4a ${m4a.length} bytes`);
+  writeFileSync(join(OUT_DIR, 'silence.wav'), wav);
+  console.log(
+    `sample.mp3 ${mp3.length} bytes, sample.m4a ${m4a.length} bytes, silence.wav ${wav.length} bytes`,
+  );
 }
 
 main();

@@ -54,6 +54,13 @@ export class AudioPlayer extends EventTarget {
         new CustomEvent('timeupdate', { detail: { position: this.position, duration: this.duration } }),
       );
     });
+    for (const type of ['loadedmetadata', 'durationchange']) {
+      this.#listen(type, () => {
+        this.dispatchEvent(
+          new CustomEvent('durationchange', { detail: { duration: this.duration } }),
+        );
+      });
+    }
     this.#listen('ended', () => this.dispatchEvent(new Event('ended')));
     this.#listen('play', () => this.dispatchEvent(new Event('play')));
     this.#listen('pause', () => this.dispatchEvent(new Event('pause')));
