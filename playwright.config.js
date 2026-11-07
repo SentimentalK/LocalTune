@@ -2,6 +2,14 @@ import { defineConfig, devices } from '@playwright/test';
 
 const PORT = Number(process.env.PW_PORT ?? 4173);
 
+// WebKit is not installed in CI (the test job installs Chromium only), so the
+// engine that showed the composited-layer clip bug is opt-in locally:
+//   PW_WEBKIT=1 npx playwright test e2e/disc-clip.spec.js --project=webkit
+const webkitProject =
+  process.env.PW_WEBKIT === '1'
+    ? [{ name: 'webkit', use: { ...devices['iPhone 13'] } }]
+    : [];
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -23,5 +31,6 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    ...webkitProject,
   ],
 });
