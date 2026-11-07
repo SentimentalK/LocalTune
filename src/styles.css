@@ -762,11 +762,15 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
   pointer-events: auto;
 }
 .panel-inner {
+  /* The panes scroll themselves, so their bars must reach the viewport edge:
+     the panel keeps only a left inset and every content block carries the right
+     one (see the shared rule next to the scrollbar block). */
+  --panel-gutter-r: clamp(24px, 2.8vw, 36px);
   width: var(--panel-w);
   height: 100svh;
   display: flex;
   flex-direction: column;
-  padding: 76px clamp(24px, 2.8vw, 36px) 24px;
+  padding: 76px 0 24px clamp(24px, 2.8vw, 36px);
 }
 .panel-head {
   display: flex;
@@ -802,9 +806,22 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
   /* Reserve the bar's width so switching panes never shifts the content. */
   scrollbar-gutter: stable;
 }
+/* The bars hug the panel's right edge, which is the viewport edge, so the
+   horizontal gutter sits on the content instead of on .panel-inner: the bar
+   reaches the screen edge and the text keeps its old inset. */
+.panel-head,
+.settings-pane,
+.vip-pane,
+.track-list {
+  padding-right: var(--panel-gutter-r);
+}
+.search,
+.tabs {
+  margin-right: var(--panel-gutter-r);
+}
 /* The library list and the settings/VIP panes share one bar: 4px, flush with
-   the right edge, accent at 30%. Width, radius and colour live in this single
-   block so the two surfaces cannot drift apart. */
+   the viewport's right edge, accent at 30%. Width, radius and colour live in
+   this single block so the two surfaces cannot drift apart. */
 .list-scroll::-webkit-scrollbar,
 .settings-pane::-webkit-scrollbar,
 .vip-pane::-webkit-scrollbar {
@@ -1706,9 +1723,10 @@ a.source-subtitle.is-beta:focus-visible { text-decoration: underline; }
   }
   .app.is-open .panel { width: auto; }
   .panel-inner {
+    --panel-gutter-r: 18px;
     width: 100%;
     height: auto;
-    padding: 0 18px 48px;
+    padding: 0 0 48px 18px;
   }
   .panel-head { margin-bottom: 12px; padding-top: 18px; }
   .panel-head h2 { font-size: 30px; }
@@ -1730,8 +1748,9 @@ a.source-subtitle.is-beta:focus-visible { text-decoration: underline; }
     display: flex;
   }
   .app.is-overlay .panel-inner {
+    --panel-gutter-r: 20px;
     height: 100svh;
-    padding: calc(72px + env(safe-area-inset-top)) 20px max(18px, env(safe-area-inset-bottom));
+    padding: calc(72px + env(safe-area-inset-top)) 0 max(18px, env(safe-area-inset-bottom)) 20px;
     display: flex;
     flex-direction: column;
   }
@@ -1749,8 +1768,13 @@ a.source-subtitle.is-beta:focus-visible { text-decoration: underline; }
   .brand-group { max-width: calc(100vw - 140px); }
   .stage { padding: 6px 12px 18px; }
   .deck { width: min(92vw, 380px); }
-  .panel-inner { padding-left: 16px; padding-right: 16px; }
-  .app.is-overlay .panel-inner { padding-top: calc(64px + env(safe-area-inset-top)); padding-left: 16px; padding-right: 16px; }
+  .panel-inner { --panel-gutter-r: 16px; padding-left: 16px; padding-right: 0; }
+  .app.is-overlay .panel-inner {
+    --panel-gutter-r: 16px;
+    padding-top: calc(64px + env(safe-area-inset-top));
+    padding-left: 16px;
+    padding-right: 0;
+  }
   .panel-head h2 { font-size: 27px; }
   [data-testid="settings-section-about"] .settings-actions { gap: 4px; }
   [data-testid="settings-section-about"] .settings-actions .btn-pill { padding: 6px 6px; font-size: 10px; }
