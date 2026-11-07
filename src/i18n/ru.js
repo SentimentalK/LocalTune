@@ -302,6 +302,10 @@ export default {
   'player.statusPaused': 'Пауза',
   'player.statusStopped': 'Остановлено',
 
+  'chalk.play': 'Нажать · играть',
+  'chalk.seekPlace': 'Поставьте сюда',
+  'chalk.seekMove': 'и двигайте',
+
   'error.db.writeStats': 'Не удалось записать статистику воспроизведения',
 
   'permission.title.local': 'Не удаётся прочитать локальную папку',

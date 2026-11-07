@@ -306,6 +306,10 @@ export default {
   'player.statusPaused': 'Pausiert',
   'player.statusStopped': 'Gestoppt',
 
+  'chalk.play': 'Tippen zum Abspielen',
+  'chalk.seekPlace': 'Hierher setzen',
+  'chalk.seekMove': 'und bewegen',
+
   'error.db.writeStats': 'Schreiben der Wiedergabestatistik fehlgeschlagen',
 
   'permission.title.local': 'Lokaler Ordner nicht lesbar',

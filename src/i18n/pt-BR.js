@@ -303,6 +303,10 @@ export default {
   'player.statusPaused': 'Pausado',
   'player.statusStopped': 'Parado',
 
+  'chalk.play': 'Toque para tocar',
+  'chalk.seekPlace': 'Coloque aqui',
+  'chalk.seekMove': 'e mova',
+
   'error.db.writeStats': 'Falha ao gravar as estatísticas de reprodução',
 
   'permission.title.local': 'Não foi possível ler sua pasta local',

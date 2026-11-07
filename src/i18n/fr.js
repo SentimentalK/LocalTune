@@ -308,6 +308,10 @@ export default {
   'player.statusPaused': 'En pause',
   'player.statusStopped': 'Arrêté',
 
+  'chalk.play': 'Touchez pour lire',
+  'chalk.seekPlace': 'Placez-le ici',
+  'chalk.seekMove': 'et déplacez',
+
   'error.db.writeStats': 'Échec de l’écriture des statistiques de lecture',
 
   'permission.title.local': 'Impossible de lire votre dossier local',

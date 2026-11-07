@@ -75,6 +75,7 @@ async function bundle(entries, extension, loader = 'js', define = {}) {
     outdir: distDir,
     entryNames: 'assets/[name]-[hash]',
     chunkNames: 'assets/[name]-[hash]',
+    assetNames: 'assets/[name]-[hash]',
     bundle: true,
     minify: true,
     // Only the JS build splits: `import('./t2s-table.js')` becomes a lazy chunk.
@@ -85,7 +86,7 @@ async function bundle(entries, extension, loader = 'js', define = {}) {
     // and the lazy table stays greppable in dist/.
     charset: 'utf8',
     legalComments: 'none',
-    loader: loader === 'js' ? {} : { [`.${loader}`]: loader },
+    loader: loader === 'js' ? {} : { [`.${loader}`]: loader, '.woff2': 'file' },
     define,
     metafile: true,
     logLevel: 'silent',

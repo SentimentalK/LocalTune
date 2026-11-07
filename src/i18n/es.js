@@ -307,6 +307,10 @@ export default {
   'player.statusPaused': 'En pausa',
   'player.statusStopped': 'Detenido',
 
+  'chalk.play': 'Toca para reproducir',
+  'chalk.seekPlace': 'Colócalo aquí',
+  'chalk.seekMove': 'y muévelo',
+
   'error.db.writeStats': 'Error al escribir las estadísticas de reproducción',
 
   'permission.title.local': 'No se puede leer tu carpeta local',

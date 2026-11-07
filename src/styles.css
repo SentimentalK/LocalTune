@@ -455,6 +455,121 @@ a { color: inherit; }
 .arm-handle:focus { outline: none; }
 .arm-handle:focus-visible { outline: none; filter: drop-shadow(0 0 7px var(--accent)); }
 
+/* ── chalk layer ───────────────────────────────────────────── */
+
+/* One bundled handwriting face per script, each a pyftsubset of an SIL OFL 1.1
+   family limited to the caption characters (see src/assets/fonts/OFL-*.txt).
+   esbuild copies them next to the stylesheet, so they load from the same origin
+   — never from a font CDN. The unicode-ranges keep every face off body copy,
+   and `[lang]` picks the face for the document's UI language. */
+@font-face {
+  font-family: 'ChalkZh';
+  src: url('./assets/fonts/chalk-zh.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+  font-style: normal;
+  unicode-range: U+0020, U+4F4D, U+51FB, U+52A8, U+53EF, U+5728, U+5BF9, U+5E94, U+64AD, U+653E,
+    U+70B9, U+7684, U+79FB, U+7F6E;
+}
+@font-face {
+  font-family: 'ChalkTw';
+  src: url('./assets/fonts/chalk-tw.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+  font-style: normal;
+  unicode-range: U+0020, U+4F4D, U+52D5, U+53EF, U+5728, U+5C0D, U+61C9, U+64AD, U+64CA, U+653E,
+    U+7684, U+79FB, U+7F6E, U+9EDE;
+}
+@font-face {
+  font-family: 'ChalkJa';
+  src: url('./assets/fonts/chalk-ja.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+  font-style: normal;
+  unicode-range: U+0020, U+304B, U+3053, U+3059, U+305B, U+3066-3067, U+306B, U+308F, U+30BF, U+30C3,
+    U+30D7, U+518D, U+52D5, U+5408, U+751F;
+}
+@font-face {
+  font-family: 'ChalkKo';
+  src: url('./assets/fonts/chalk-ko.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+  font-style: normal;
+  unicode-range: U+0020, U+AE30, U+B3D9, U+B9DE, U+C0DD, U+C5D0, U+C5EC, U+C774, U+C7AC, U+CDB0,
+    U+D0ED, U+D558;
+}
+@font-face {
+  font-family: 'ChalkRu';
+  src: url('./assets/fonts/chalk-ru.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+  font-style: normal;
+  unicode-range: U+0020, U+00B7, U+041D, U+041F, U+0430, U+0432-0436, U+0438-0439, U+043E,
+    U+0440-0442, U+044C, U+044E;
+}
+@font-face {
+  font-family: 'ChalkLat';
+  src: url('./assets/fonts/chalk-lat.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+  font-style: normal;
+  unicode-range: U+0020, U+002D, U+0041, U+0043, U+0048, U+0050, U+0054, U+0061-0065, U+0067-0069,
+    U+006C-0077, U+0079-007A, U+00E9, U+00ED, U+00F3;
+}
+
+/* Decorative notes drawn over the deck. The layer is a sibling of the tonearm
+   SVG and paints above it, but it takes no pointer events and no accessibility
+   tree, so the arm base, the arm head and the stage keep every gesture. */
+.chalk-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 12;
+  overflow: visible;
+  pointer-events: none;
+}
+/* Latin locales (en, de, es, fr, pt-BR) use Caveat; other scripts override. */
+.chalk-layer text {
+  font-family: 'ChalkLat', 'Bradley Hand', 'Segoe Script', 'Snell Roundhand', cursive;
+}
+:root[lang='zh-CN'] .chalk-layer text { font-family: 'ChalkZh', cursive; }
+:root[lang='zh-TW'] .chalk-layer text { font-family: 'ChalkTw', cursive; }
+:root[lang='ja'] .chalk-layer text { font-family: 'ChalkJa', cursive; }
+:root[lang='ko'] .chalk-layer text { font-family: 'ChalkKo', cursive; }
+:root[lang='ru'] .chalk-layer text { font-family: 'ChalkRu', cursive; }
+.chalk-ink {
+  fill: none;
+  stroke: #f2f5f3;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.chalk-head {
+  stroke: none;
+}
+.chalk-spring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: chalk-spring 8s ease-in-out infinite;
+}
+@keyframes chalk-spring {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+.chalk-arrow {
+  opacity: 0.85;
+  animation: chalk-breathe 7.5s ease-in-out infinite;
+}
+.chalk-anno[data-phase='1'] .chalk-arrow { animation-delay: 1.6s; }
+@keyframes chalk-breathe {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chalk-layer * { animation: none !important; }
+}
+
 /* ── now playing ───────────────────────────────────────────── */
 
 .now {
@@ -1443,6 +1558,7 @@ html.is-low-power .app.is-overlay .panel { backdrop-filter: none; }
 html.is-low-power .disc-art { animation: none; }
 html.is-low-power .deck.swapping .disc-wrap { animation: none; }
 html.is-low-power .toast:not([hidden]) { animation: none; }
+html.is-low-power .chalk-layer * { animation: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

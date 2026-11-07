@@ -297,6 +297,10 @@ export default {
   'player.statusPaused': '已暫停',
   'player.statusStopped': '已停止',
 
+  'chalk.play': '點擊播放',
+  'chalk.seekPlace': '放在對應的位置',
+  'chalk.seekMove': '可移動播放',
+
   'error.db.writeStats': '寫入播放統計失敗',
 
   'permission.title.local': '無法讀取本機資料夾',

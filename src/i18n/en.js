@@ -308,6 +308,10 @@ export default {
   'player.statusPaused': 'Paused',
   'player.statusStopped': 'Stopped',
 
+  'chalk.play': 'Tap to play',
+  'chalk.seekPlace': 'Place it here',
+  'chalk.seekMove': 'move to play',
+
   'error.db.writeStats': 'Writing play statistics failed',
 
   'permission.title.local': 'Can\'t read your local folder',
