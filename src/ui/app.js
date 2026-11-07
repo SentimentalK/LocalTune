@@ -598,7 +598,7 @@ function createShell(store, sw) {
   ]);
 
   // ---- stage ----
-  const cover = el('img', { class: 'disc-art', id: 'cover', alt: '' });
+  const cover = el('img', { class: 'disc-art', id: 'cover', alt: '', draggable: 'false' });
   const vinyl = el('div', { class: 'vinyl' }, [
     cover,
     el('span', { class: 'reflection', 'aria-hidden': 'true' }),
@@ -1916,8 +1916,16 @@ export function mountUi(root, store, sw) {
 
   function bindSwipe() {
     activeSwipe = bindStageSwipe(ui.app.querySelector('.stage'), {
-      onPrev: () => run(store.prev('gesture')),
-      onNext: () => run(store.next('gesture')),
+      onPrev: () => {
+        if (!store.state.current.track) return;
+        pulseSwap();
+        run(store.prev('gesture'));
+      },
+      onNext: () => {
+        if (!store.state.current.track) return;
+        pulseSwap();
+        run(store.next('gesture'));
+      },
     });
   }
 
@@ -1974,6 +1982,23 @@ export function mountUi(root, store, sw) {
     event.preventDefault();
     event.stopPropagation();
   }, true);
+
+  // Left/right change tracks. Registered in the bubble phase so list widgets
+  // such as the language radiogroup that call preventDefault keep their own
+  // arrow-key navigation.
+  document.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented || event.repeat) return;
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const dir = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (!dir) return;
+    if (document.querySelector('.modal:not([hidden])')) return;
+    const target = event.target;
+    if (target?.closest?.('input, textarea, select, [contenteditable="true"], #armRotor')) return;
+    if (!store.state.current.track) return;
+    event.preventDefault();
+    pulseSwap();
+    run(dir > 0 ? store.next('keyboard') : store.prev('keyboard'));
+  });
 
   bindShellEvents();
   bindArm();

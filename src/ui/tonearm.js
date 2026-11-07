@@ -202,7 +202,7 @@ export function bindStageSwipe(stage, { onPrev, onNext }) {
   let gesture = null;
 
   const start = (event) => {
-    if (event.pointerType === 'mouse') return;
+    if (event.button !== 0) return;
     if (event.target.closest?.('.tonearm-svg, .panel, button, input, a')) return;
     gesture = {
       id: event.pointerId,
