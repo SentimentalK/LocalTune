@@ -419,7 +419,6 @@ export function mountChalkLayer(deck) {
     return cx - rx * Math.sqrt(1 - reach * reach);
   }
 
-  let frame = 0;
   let observer = null;
 
   function layout() {
@@ -533,31 +532,38 @@ export function mountChalkLayer(deck) {
     }
   }
 
-  function schedule() {
-    if (frame) return;
-    frame = requestAnimationFrame(() => {
-      frame = 0;
+  let laying = false;
+
+  /**
+   * A plain re-entrancy guard, evaluated synchronously on demand: the deck
+   * schedules no animation frame of its own, so an idle player leaves the
+   * global rAF counter untouched.
+   */
+  function measure() {
+    if (laying) return;
+    laying = true;
+    try {
       layout();
-    });
+    } finally {
+      laying = false;
+    }
   }
 
-  schedule();
+  measure();
   observer = new ResizeObserver(() => {
     if (!deck.isConnected) {
       observer?.disconnect();
       return;
     }
-    schedule();
+    measure();
   });
   observer.observe(deck);
 
   return {
-    layout,
+    layout: measure,
     destroy() {
       observer?.disconnect();
       observer = null;
-      if (frame) cancelAnimationFrame(frame);
-      frame = 0;
       layer.remove();
     },
   };
