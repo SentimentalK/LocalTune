@@ -251,10 +251,14 @@ export function createOnboarding({ onFinish = () => {} } = {}) {
     const dx = geometry.end.x - geometry.start.x;
     const dy = geometry.end.y - geometry.start.y;
     const length = Math.hypot(dx, dy) || 1;
+    // Captions sit a hair off the tail. For a target above the control the
+    // forward step would land on whatever sits above it (the panel heading),
+    // so that side steps back along the arrow instead.
+    const lead = step.side === 'above' ? -CAPTION_LEAD : CAPTION_LEAD;
     placeCaption(
       {
-        x: geometry.start.x + (dx / length) * CAPTION_LEAD,
-        y: geometry.start.y + (dy / length) * CAPTION_LEAD,
+        x: geometry.start.x + (dx / length) * lead,
+        y: geometry.start.y + (dy / length) * lead,
       },
       viewport,
     );
