@@ -37,7 +37,7 @@ test('the top bar settings button switches the desktop panel', async ({ page }) 
   await expect(page.locator('[data-testid="settings-section-playback"]')).toBeVisible();
   await expect(page.locator('[data-testid="settings-open"]')).toHaveAttribute('aria-expanded', 'true');
   await expect(page.locator('[data-testid="panel-open"]')).toBeVisible();
-  await expect(page.locator('[data-testid="panel-open"]')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('[data-testid="panel-open"]')).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('.settings-view h2')).toHaveCount(0);
 
   await page.locator('[data-testid="panel-open"]').click();

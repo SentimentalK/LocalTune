@@ -560,12 +560,12 @@ function createShell(store, sw) {
   const vipButton = el(
     'button',
     { class: 'icon-btn', type: 'button', 'data-testid': 'vip-open', 'aria-label': t('vip.open') },
-    [symbolIcon('i-crown')],
+    [symbolIcon('i-crown', 'icon own-icon'), symbolIcon('i-x', 'icon x-icon')],
   );
   const settingsButton = el(
     'button',
     { class: 'icon-btn', type: 'button', 'data-testid': 'settings-open', 'aria-label': t('settings.open') },
-    [symbolIcon('i-settings')],
+    [symbolIcon('i-settings', 'icon own-icon'), symbolIcon('i-x', 'icon x-icon')],
   );
   const themeButton = el(
     'button',
@@ -583,7 +583,7 @@ function createShell(store, sw) {
       'aria-controls': 'panel',
     },
     [
-      symbolIcon('i-menu', 'icon menu-icon'),
+      symbolIcon('i-menu', 'icon own-icon'),
       symbolIcon('i-x', 'icon x-icon'),
     ],
   );
@@ -804,6 +804,48 @@ function createShell(store, sw) {
   };
 }
 
+const PANEL_VIEWS = ['vip', 'settings', 'library'];
+
+const PANEL_OPEN_KEYS = {
+  vip: 'vip.open',
+  settings: 'settings.open',
+  library: 'aria.library',
+};
+
+/**
+ * Icon and aria state for the three top-bar toggles, derived only from the
+ * panel state. The active view owns the ✕; everything else shows its own glyph.
+ * Labels stay i18n keys so the caller decides when to translate.
+ */
+export function derivePanelState({ panelView, panelOpen }) {
+  const keys = {};
+  for (const view of PANEL_VIEWS) {
+    const expanded = panelOpen === true && panelView === view;
+    keys[view] = {
+      icon: expanded ? 'close' : 'own',
+      expanded,
+      label: expanded ? 'panel.close' : PANEL_OPEN_KEYS[view],
+    };
+  }
+  return keys;
+}
+
+/** Next panel state after clicking one of the three toggles. */
+export function panelAfterToggle({ panelView, panelOpen }, view, mobile) {
+  if (panelOpen && panelView === view) {
+    return { panelView: 'library', panelOpen: view === 'library' ? false : !mobile };
+  }
+  if (mobile && view === 'library') return { panelView: 'library', panelOpen: false };
+  return { panelView: view, panelOpen: true };
+}
+
+/** Next panel state after Esc, an outside click, or the ✕ on the active view. */
+export function panelAfterClose({ panelView }, mobile) {
+  return panelView === 'library'
+    ? { panelView: 'library', panelOpen: false }
+    : { panelView: 'library', panelOpen: !mobile };
+}
+
 export function mountUi(root, store, sw) {
   coverStore = store;
   renderedCoverIds = [];
@@ -819,7 +861,7 @@ export function mountUi(root, store, sw) {
   let ui = createShell(store, sw);
 
   function handlePermissionSettings(kind) {
-    openPanel('settings', { toggle: false });
+    show('settings');
     requestAnimationFrame(() => {
       const row = ui.settingsView.node.querySelector(`[data-testid="source-row-${kind}"]`);
       row?.scrollIntoView({ block: 'center' });
@@ -1142,56 +1184,37 @@ export function mountUi(root, store, sw) {
     );
   }
 
-  function closePanel() {
-    if (!tabChosen && hasLibraryEntry(store.state)) libraryTab = 'folders';
-    if (panelView !== 'library') {
-      panelView = 'library';
-      panelOpen = !isMobile();
-      savePanel('library');
-      if (!isMobile()) savePanelOpen(true);
-      document.body.classList.remove('overlay-open');
-      panelTransitionArmed = true;
-      applyPanel();
-      store.setView(libraryTab);
-      return;
+  /** Single write point for the panel state: persist, paint, then sync the view. */
+  function commitPanelState(next, { render: shouldRender = true } = {}) {
+    if (next.panelView === 'library' && !tabChosen && hasLibraryEntry(store.state)) {
+      libraryTab = 'folders';
     }
-    panelOpen = false;
-    if (isMobile()) panelView = 'library';
-    else savePanelOpen(false);
-    document.body.classList.remove('overlay-open');
+    panelView = next.panelView;
+    panelOpen = next.panelOpen;
+    savePanel(panelView);
+    if (!isMobile()) savePanelOpen(panelOpen);
     panelTransitionArmed = true;
     applyPanel();
-    store.setView(libraryTab);
+    store.setView(panelView === 'library' ? libraryTab : panelView);
+    if (shouldRender) render(store.state);
   }
 
-  function openPanel(view, { toggle = true } = {}) {
-    if (view === 'library' && !tabChosen && hasLibraryEntry(store.state)) libraryTab = 'folders';
-    savePanel(view);
-    if (isMobile()) {
-      if (view === 'library') {
-        closePanel();
-        return;
-      }
-      if (toggle && panelView === view) {
-        closePanel();
-        return;
-      }
-      panelView = view;
-      panelOpen = true;
-    } else {
-      if (toggle && panelOpen && panelView === view) {
-        closePanel();
-        return;
-      }
-      panelView = view;
-      panelOpen = true;
-      savePanel(view);
-      savePanelOpen(true);
+  function closePanel() {
+    commitPanelState(panelAfterClose({ panelView, panelOpen }, isMobile()), { render: false });
+  }
+
+  function show(view) {
+    if (isMobile() && view === 'library') {
+      commitPanelState({ panelView: 'library', panelOpen: false });
+      return;
     }
-    store.setView(view === 'library' ? libraryTab : view);
-    panelTransitionArmed = true;
-    applyPanel();
-    render(store.state);
+    commitPanelState({ panelView: view, panelOpen: true });
+  }
+
+  function togglePanel(view) {
+    const closing = panelOpen && panelView === view;
+    const next = panelAfterToggle({ panelView, panelOpen }, view, isMobile());
+    commitPanelState(next, { render: !closing && next.panelOpen });
   }
 
   function applyPanel() {
@@ -1224,12 +1247,16 @@ export function mountUi(root, store, sw) {
       panelView === 'library' ? t('aria.library') : panelView === 'settings' ? t('settings.open') : t('vip.open'),
     );
 
-    const expanded = mobile ? overlay : panelOpen;
-    ui.panelButton.setAttribute('aria-expanded', String(expanded));
-    ui.panelButton.setAttribute('aria-label', expanded ? t('panel.close') : t('aria.library'));
-    ui.settingsButton.setAttribute('aria-expanded', String(panelOpen && panelView === 'settings'));
-    ui.vipButton.setAttribute('aria-expanded', String(panelOpen && panelView === 'vip'));
-    ui.panelButton.classList.toggle('is-open', expanded);
+    const keys = derivePanelState({ panelView, panelOpen });
+    for (const [button, entry] of [
+      [ui.vipButton, keys.vip],
+      [ui.settingsButton, keys.settings],
+      [ui.panelButton, keys.library],
+    ]) {
+      button.setAttribute('aria-expanded', String(entry.expanded));
+      button.setAttribute('aria-label', t(entry.label));
+      button.classList.toggle('is-open', entry.icon === 'close');
+    }
 
     // The panel showing or hiding changes what the lists can measure. Only a
     // real change repaints: the first call just records, so an idle deck stays
@@ -1243,7 +1270,7 @@ export function mountUi(root, store, sw) {
     bindVirtualSources();
     // The lists can only measure once the panel has its final width; the
     // transitionend is the signal that the animation is over. Only arming in
-    // openPanel/closePanel keeps the page-load auto-expand frame-free.
+    // commitPanelState keeps the page-load auto-expand frame-free.
     ui.panel.addEventListener('transitionend', (event) => {
       if (!panelTransitionArmed) return;
       if (event.target !== ui.panel) return;
@@ -1254,9 +1281,9 @@ export function mountUi(root, store, sw) {
     });
     ui.shuffleButton.addEventListener('click', () => store.toggleShuffle());
     ui.repeatButton.addEventListener('click', () => store.cycleRepeat());
-    ui.settingsButton.addEventListener('click', () => openPanel('settings'));
-    ui.vipButton.addEventListener('click', () => openPanel('vip'));
-    ui.panelButton.addEventListener('click', () => openPanel('library'));
+    ui.settingsButton.addEventListener('click', () => togglePanel('settings'));
+    ui.vipButton.addEventListener('click', () => togglePanel('vip'));
+    ui.panelButton.addEventListener('click', () => togglePanel('library'));
     ui.themeButton.addEventListener('click', () => {
       const active = currentTheme();
       const next = THEMES[(THEMES.indexOf(active) + 1) % THEMES.length];
@@ -1512,7 +1539,7 @@ export function mountUi(root, store, sw) {
         title: t('empty.chooseTitle'),
         text: t('empty.chooseText'),
         actionLabel: t('empty.chooseAction'),
-        onAction: () => openPanel('settings'),
+        onAction: () => show('settings'),
       });
     }
 
@@ -1995,7 +2022,7 @@ export function mountUi(root, store, sw) {
       const pending = state.pendingView;
       store.clearPendingView();
       if (pending.view === 'settings') {
-        openPanel('settings', { toggle: false });
+        show('settings');
         const section = ui.settingsView.node.querySelector('[data-testid="settings-section-library"]');
         section?.scrollIntoView({ block: 'start' });
         if (pending.picker) {
@@ -2038,7 +2065,7 @@ export function mountUi(root, store, sw) {
   function togglePlayback() {
     const current = store.state.current;
     if (!current.track) {
-      openPanel('library');
+      show('library');
       return;
     }
     const duration = current.duration || current.track.duration || 0;
