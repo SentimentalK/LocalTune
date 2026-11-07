@@ -211,9 +211,9 @@ a { color: inherit; }
 .icon-btn:active { transform: scale(0.94); }
 .icon-btn[aria-expanded="true"] { color: var(--accent); background: var(--accent-soft); }
 .icon-btn:disabled { opacity: 0.4; cursor: default; }
-.menu-toggle .x-icon { display: none; }
-.menu-toggle.is-open .menu-icon { display: none; }
-.menu-toggle.is-open .x-icon { display: block; }
+.icon-btn .x-icon { display: none; }
+.icon-btn.is-open .own-icon { display: none; }
+.icon-btn.is-open .x-icon { display: block; }
 .back-arrow { font-size: 19px; line-height: 1; }
 
 /* ── stage ─────────────────────────────────────────────────── */
