@@ -121,7 +121,6 @@ export default {
   'settings.gdrive.root': 'Google Drive',
   'settings.gdrive.unconfigured': 'Google Drive 尚未配置客户端 ID，无法连接。',
   'settings.gdrive.setupLink': '配置指南',
-  'settings.gdrive.betaNote': '想连接请联系作者',
   'settings.gdrive.betaWarning': 'Beta：只有测试名单里的账号能连接（联系 {contact} 加入）',
   'settings.gdrive.betaConfirmTitle': 'Google Drive Beta',
   'settings.gdrive.betaConfirmBody':

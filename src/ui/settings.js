@@ -120,22 +120,20 @@ export function createSettingsView(store, sw) {
         : null;
     const count = el('span', { class: 'source-count' });
     setHidden(count, true);
-    const subtitle = el('span', {
-      class: 'source-subtitle',
-      text: t(kind === 'gdrive' ? 'settings.gdrive.betaNote' : SOURCE_HINTS[kind]),
-    });
-    // The whole line is the mailto link, so the contact address is both
-    // readable and clickable without splitting the sentence per locale.
-    const betaWarning =
+    // Google Drive's beta notice IS the subtitle: one amber line, the whole
+    // line a mailto link. There is no second copy underneath.
+    const subtitle =
       kind === 'gdrive'
         ? el('a', {
-            class: 'source-beta-warning',
+            class: 'source-subtitle is-beta',
             href: `mailto:${AUTHOR_CONTACT}`,
-            'data-testid': 'gdrive-beta-warning',
             text: t('settings.gdrive.betaWarning', { contact: AUTHOR_CONTACT }),
             'aria-label': t('settings.gdrive.betaWarning', { contact: AUTHOR_CONTACT }),
           })
-        : null;
+        : el('span', {
+            class: 'source-subtitle',
+            text: t(SOURCE_HINTS[kind]),
+          });
     // One-time confirmation before the very first GIS popup. Amber, inline:
     // no modal infrastructure is introduced for a single sentence.
     const betaConfirm =
@@ -219,7 +217,6 @@ export function createSettingsView(store, sw) {
       error: rowError,
       errorBlock,
       copyContact,
-      betaWarning,
       betaConfirm,
       confirmOpen: false,
       progress,
@@ -342,19 +339,21 @@ export function createSettingsView(store, sw) {
       setHidden(view.hint, true);
     }
 
-    view.node = el('div', { class: 'source-card-body', 'data-testid': `source-row-${kind}` }, [
-      el('div', { class: 'source-summary' }, [
-        el('span', {
-          class: `source-icon source-icon-${kind}`,
-          'aria-hidden': 'true',
-        }, [icon(SOURCE_ICONS[kind])]),
-        el('span', { class: 'source-body' }, [
-          el('span', { class: 'source-heading' }, [name, beta]),
-          el('span', { class: 'source-meta' }, [subtitle, count]),
-        ]),
-        view.actions,
+    const summary = el('div', { class: 'source-summary' }, [
+      el('span', {
+        class: `source-icon source-icon-${kind}`,
+        'aria-hidden': 'true',
+      }, [icon(SOURCE_ICONS[kind])]),
+      el('span', { class: 'source-body' }, [
+        el('span', { class: 'source-heading' }, [name, beta]),
+        el('span', { class: 'source-meta' }, [subtitle, count]),
       ]),
-      ...(betaWarning ? [betaWarning] : []),
+      view.actions,
+    ]);
+    view.summary = summary;
+
+    view.node = el('div', { class: 'source-card-body', 'data-testid': `source-row-${kind}` }, [
+      summary,
       progress,
       ...(view.hint ? [view.hint] : []),
       errorBlock,
@@ -387,7 +386,7 @@ export function createSettingsView(store, sw) {
     view.confirmOpen = open;
     const attached = view.betaConfirm.parentElement === view.node;
     if (open && !attached) {
-      view.betaWarning.insertAdjacentElement('afterend', view.betaConfirm);
+      view.summary.insertAdjacentElement('afterend', view.betaConfirm);
       setHidden(view.betaConfirm, false);
       view.betaConfirm
         .querySelector('[data-testid="gdrive-beta-confirm-yes"]')
@@ -1275,16 +1274,30 @@ export function createSettingsView(store, sw) {
       const scanning = Boolean(row.scanning);
       const trackCount = row.trackCount ?? 0;
       const connected = permission === 'granted' || trackCount > 0;
-      const hint =
-        kind === 'gdrive' ? t('settings.gdrive.betaNote') : t(SOURCE_HINTS[kind]);
-      setText(view.subtitle, connected && row.name ? row.name : hint);
+      if (kind === 'gdrive') {
+        // Disconnected: the beta notice lives in the subtitle slot. Connected:
+        // the folder name only, so no beta copy survives the connection.
+        if (connected) {
+          setText(view.subtitle, row.name ?? '');
+          view.subtitle.removeAttribute('href');
+          view.subtitle.removeAttribute('aria-label');
+          view.subtitle.classList.remove('is-beta');
+        } else {
+          const beta = t('settings.gdrive.betaWarning', { contact: AUTHOR_CONTACT });
+          setText(view.subtitle, beta);
+          view.subtitle.setAttribute('href', `mailto:${AUTHOR_CONTACT}`);
+          view.subtitle.setAttribute('aria-label', beta);
+          view.subtitle.classList.add('is-beta');
+        }
+      } else {
+        const hint = t(SOURCE_HINTS[kind]);
+        setText(view.subtitle, connected && row.name ? row.name : hint);
+      }
       setText(
         view.count,
         trackCount > 0 ? `· ${t('settings.source.trackCount', { count: trackCount })}` : '',
       );
       setHidden(view.count, trackCount === 0);
-      // The beta notice is only useful before a working connection exists.
-      if (view.betaWarning) setHidden(view.betaWarning, connected);
       if (view.betaConfirm && !view.confirmOpen) view.betaConfirm.remove();
       syncActions(view, connected);
 

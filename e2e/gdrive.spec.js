@@ -87,7 +87,7 @@ test('Google Drive sync caches the files and playback downloads nothing', async 
   await page.locator('[data-testid="settings-gdrive-remove"]').click();
   await expect(
     page.locator('[data-testid="source-row-gdrive"] .source-subtitle'),
-  ).toHaveText('想连接请联系作者');
+  ).toHaveText('Beta：只有测试名单里的账号能连接（联系 kevinxu.senti@gmail.com 加入）');
   await expect(page.locator('[data-testid="source-row-gdrive"] .source-count')).toBeHidden();
   const gdriveConnect = page.locator('[data-testid="source-connect-gdrive"]');
   await expect(gdriveConnect).toBeVisible();

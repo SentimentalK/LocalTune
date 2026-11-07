@@ -123,7 +123,6 @@ export default {
   'settings.gdrive.root': 'Google Drive',
   'settings.gdrive.unconfigured': 'Google Drive에 클라이언트 ID가 없어 연결할 수 없습니다.',
   'settings.gdrive.setupLink': '설정 안내',
-  'settings.gdrive.betaNote': '연결하려면 작성자에게 문의하세요',
   'settings.gdrive.betaWarning':
     'Beta: 테스트 사용자 목록에 있는 계정만 연결할 수 있습니다 ({contact}에게 연락해 추가 요청)',
   'settings.gdrive.betaConfirmTitle': 'Google Drive Beta',
