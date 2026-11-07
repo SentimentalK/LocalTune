@@ -315,4 +315,14 @@ export default {
   'permission.reauthorize': 'Авторизовать снова',
   'permission.settings': 'Открыть настройки',
   'permission.close': 'Закрыть',
+
+  'onboarding.title': 'Краткий тур',
+  'onboarding.skip': 'Пропустить',
+  'onboarding.next': 'Далее',
+  'onboarding.start': 'Начать слушать',
+  'onboarding.step.play': 'Нажмите, чтобы играть / пауза',
+  'onboarding.step.seek': 'Тяните тонарм — ближе к центру значит позже',
+  'onboarding.step.tabs': 'Переключение очереди / папок',
+  'onboarding.step.search': 'Поиск по названию, исполнителю, альбому',
+  'settings.about.onboarding': 'Показать подсказки снова',
 };

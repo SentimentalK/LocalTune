@@ -320,4 +320,14 @@ export default {
   'permission.reauthorize': 'Volver a autorizar',
   'permission.settings': 'Abrir ajustes',
   'permission.close': 'Cerrar',
+
+  'onboarding.title': 'Guía rápida',
+  'onboarding.skip': 'Omitir',
+  'onboarding.next': 'Siguiente',
+  'onboarding.start': 'Empezar a escuchar',
+  'onboarding.step.play': 'Toca aquí para reproducir / pausar',
+  'onboarding.step.seek': 'Arrastra el brazo para avanzar: más al centro es más tarde',
+  'onboarding.step.tabs': 'Cambia cola / carpetas aquí',
+  'onboarding.step.search': 'Busca títulos, artistas, álbumes',
+  'settings.about.onboarding': 'Ver la guía otra vez',
 };

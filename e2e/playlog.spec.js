@@ -8,7 +8,7 @@ test('the about card opens, copies and clears the playback log', async ({ page }
   const about = page.locator('[data-testid="settings-section-about"]');
   const open = about.locator('[data-testid="playlog-open"]');
   await expect(open).toBeVisible();
-  await expect(about.locator('.settings-actions > *')).toHaveCount(5);
+  await expect(about.locator('.settings-actions > *')).toHaveCount(6);
   // The update controls survive next to the log entry.
   await expect(about.locator('[data-testid="check-update"]')).toBeVisible();
   await expect(about.locator('[data-testid="settings-clear-data"]')).toBeVisible();

@@ -316,4 +316,14 @@ export default {
   'permission.reauthorize': 'Autorizar novamente',
   'permission.settings': 'Abrir configurações',
   'permission.close': 'Fechar',
+
+  'onboarding.title': 'Tour rápido',
+  'onboarding.skip': 'Pular',
+  'onboarding.next': 'Próximo',
+  'onboarding.start': 'Começar a ouvir',
+  'onboarding.step.play': 'Toque aqui para reproduzir / pausar',
+  'onboarding.step.seek': 'Arraste o braço para avançar — mais ao centro é mais tarde',
+  'onboarding.step.tabs': 'Troque fila / pastas aqui',
+  'onboarding.step.search': 'Busque títulos, artistas, álbuns',
+  'settings.about.onboarding': 'Ver o guia novamente',
 };
