@@ -303,17 +303,8 @@ export default {
   'player.statusStopped': 'Остановлено',
 
   'chalk.play': 'Играть',
-  'chalk.seek': 'Перемотка',
-  'chalk.swipe': 'Свайп',
-  'chalk.playTitle': 'Играть / Пауза',
-  'chalk.playBody1': 'коснитесь основания',
-  'chalk.playBody2': 'чтобы играть',
-  'chalk.seekTitle': 'Тяните тонарм',
-  'chalk.seekBody1': 'держите головку',
-  'chalk.seekBody2': 'и ведите вверх-вниз',
-  'chalk.swipeTitle': 'Свайп',
-  'chalk.swipeBody1': 'влево или вправо',
-  'chalk.swipeBody2': 'сменить трек',
+  'chalk.seekPlace': 'Тяните тонарм',
+  'chalk.seekMove': 'в нужное место',
 
   'error.db.writeStats': 'Не удалось записать статистику воспроизведения',
 

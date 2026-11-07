@@ -75,6 +75,7 @@ async function bundle(entries, extension, loader = 'js', define = {}) {
     outdir: distDir,
     entryNames: 'assets/[name]-[hash]',
     chunkNames: 'assets/[name]-[hash]',
+    assetNames: 'assets/[name]-[hash]',
     bundle: true,
     minify: true,
     // Only the JS build splits: `import('./t2s-table.js')` becomes a lazy chunk.
@@ -85,7 +86,7 @@ async function bundle(entries, extension, loader = 'js', define = {}) {
     // and the lazy table stays greppable in dist/.
     charset: 'utf8',
     legalComments: 'none',
-    loader: loader === 'js' ? {} : { [`.${loader}`]: loader },
+    loader: loader === 'js' ? {} : { [`.${loader}`]: loader, '.woff2': 'file' },
     define,
     metafile: true,
     logLevel: 'silent',
@@ -93,7 +94,10 @@ async function bundle(entries, extension, loader = 'js', define = {}) {
   const urls = Object.fromEntries(
     Object.keys(entries).map((name) => [name, outputOf(result, extension, entries[name])]),
   );
-  return { urls, outputs: outputUrls(result, extension) };
+  const all = Object.keys(result.metafile.outputs)
+    .map((file) => toUrl(path.resolve(root, file)))
+    .sort();
+  return { urls, outputs: outputUrls(result, extension), all };
 }
 
 /** Version of the build: hash of every source file plus the optional label. */
@@ -141,6 +145,8 @@ async function main() {
   const css = await bundle({ styles: 'styles.css' }, '.css', 'css', define);
   const jsUrl = js.urls.main;
   const cssUrl = css.urls.styles;
+  // Fonts and other url() assets of the stylesheet (emitted next to it).
+  const cssAssets = css.all.filter((url) => !url.endsWith('.css'));
 
   const jsPath = path.join(distDir, jsUrl);
   const cssPath = path.join(distDir, cssUrl);
@@ -186,6 +192,7 @@ async function main() {
     jsUrl,
     ...chunks,
     cssUrl,
+    ...cssAssets,
     './manifest.webmanifest',
     ...icons.map((name) => `./icons/${name}`),
   ];

@@ -457,6 +457,21 @@ a { color: inherit; }
 
 /* ── chalk layer ───────────────────────────────────────────── */
 
+/* Bundled handwriting face (Zhi Mang Xing, SIL OFL 1.1; see
+   src/assets/fonts/OFL-ZhiMangXing.txt). esbuild copies the subset next to the
+   stylesheet, so it loads from the same origin — never from a font CDN. The
+   unicode-range lists only the caption characters, so it can never apply to
+   body copy. */
+@font-face {
+  font-family: 'ChalkHand';
+  src: url('./assets/fonts/zmx-sub3.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+  font-style: normal;
+  unicode-range: U+0020-007E, U+4F4D, U+51FB, U+52A8, U+53EF, U+5728, U+5BF9, U+5E94,
+    U+64AD, U+653E, U+70B9, U+7684, U+79FB, U+7F6E;
+}
+
 /* Decorative notes drawn over the deck. The layer is a sibling of the tonearm
    SVG and paints above it, but it takes no pointer events and no accessibility
    tree, so the arm base, the arm head and the stage keep every gesture. */
@@ -471,16 +486,18 @@ a { color: inherit; }
 }
 .chalk-layer text {
   font-family:
-    'Bradley Hand', 'Segoe Script', 'Snell Roundhand', 'Snell Roundhand Script',
-    'Comic Sans MS', cursive;
+    'ChalkHand', 'Bradley Hand', 'Segoe Script', 'Snell Roundhand', 'Comic Sans MS',
+    cursive;
 }
-.chalk-title {
-  font-weight: 600;
-  letter-spacing: 0.02em;
+.chalk-ink {
+  fill: none;
+  stroke: #f2f5f3;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
-.chalk-body {
-  font-style: italic;
-  letter-spacing: 0.01em;
+.chalk-head {
+  stroke: none;
 }
 .chalk-spring {
   transform-box: fill-box;
@@ -495,8 +512,7 @@ a { color: inherit; }
   opacity: 0.85;
   animation: chalk-breathe 7.5s ease-in-out infinite;
 }
-.chalk-anno[data-phase='1'] .chalk-arrow { animation-delay: 1.2s; }
-.chalk-anno[data-phase='2'] .chalk-arrow { animation-delay: 2.4s; }
+.chalk-anno[data-phase='1'] .chalk-arrow { animation-delay: 1.6s; }
 @keyframes chalk-breathe {
   0%, 100% { opacity: 0.85; }
   50% { opacity: 1; }

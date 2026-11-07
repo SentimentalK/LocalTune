@@ -308,18 +308,9 @@ export default {
   'player.statusPaused': 'En pause',
   'player.statusStopped': 'Arrêté',
 
-  'chalk.play': 'Play',
-  'chalk.seek': 'Seek',
-  'chalk.swipe': 'Swipe',
-  'chalk.playTitle': 'Play / Pause',
-  'chalk.playBody1': 'tap the arm base',
-  'chalk.playBody2': 'to play or pause',
-  'chalk.seekTitle': 'Drag arm',
-  'chalk.seekBody1': 'hold and slide',
-  'chalk.seekBody2': 'to seek',
-  'chalk.swipeTitle': 'Swipe',
-  'chalk.swipeBody1': 'left or right',
-  'chalk.swipeBody2': 'to skip',
+  'chalk.play': 'Tap to play',
+  'chalk.seekPlace': 'Drag the arm',
+  'chalk.seekMove': 'to move playback',
 
   'error.db.writeStats': 'Échec de l’écriture des statistiques de lecture',
 
