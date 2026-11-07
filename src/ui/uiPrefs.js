@@ -4,6 +4,10 @@ const THEME_KEY = 'localtune-theme';
 const PANEL_KEY = 'localtune-panel';
 const PANEL_OPEN_KEY = 'localtune-panel-open';
 const TAB_KEY = 'localtune-library-tab';
+const GDRIVE_BETA_ACK_KEY = 'localtune:gdriveBetaAck';
+
+/** Bumping this re-asks every browser once after the beta copy changes. */
+export const GDRIVE_BETA_ACK_VALUE = 'v1';
 
 export const THEMES = ['blue', 'burgundy', 'forest'];
 export const THEME_NAMES = {
@@ -62,4 +66,34 @@ export function loadLibraryTab() {
 
 export function saveLibraryTab(tab) {
   write(TAB_KEY, tab);
+}
+
+/**
+ * Whether this browser already accepted the Google Drive beta notice. The
+ * stored value is versioned so a copy rewrite can ask once again.
+ * @param {{ getItem: (key: string) => string|null }} [storage]
+ */
+export function loadGdriveBetaAck(storage = safeStorage()) {
+  try {
+    return storage?.getItem(GDRIVE_BETA_ACK_KEY) === GDRIVE_BETA_ACK_VALUE;
+  } catch {
+    return false;
+  }
+}
+
+/** Remember the beta notice; a blocked storage simply asks again next time. */
+export function saveGdriveBetaAck(storage = safeStorage()) {
+  try {
+    storage?.setItem(GDRIVE_BETA_ACK_KEY, GDRIVE_BETA_ACK_VALUE);
+  } catch {
+    // Private mode or a blocked storage partition: the flow still proceeds.
+  }
+}
+
+function safeStorage() {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
 }

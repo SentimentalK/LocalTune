@@ -249,6 +249,14 @@ function errorMessage(error) {
   return error.message ? String(error.message) : String(error);
 }
 
+/** Errors with dedicated UI copy; everything else leaves the code null. */
+const SOURCE_ERROR_CODES = new Set(['notInTestList']);
+
+function sourceErrorCode(error) {
+  const code = typeof error?.code === 'string' ? error.code : null;
+  return code && SOURCE_ERROR_CODES.has(code) ? code : null;
+}
+
 function emptyRow(kind, adapter) {
   const permission = adapter.permission();
   return {
@@ -261,6 +269,7 @@ function emptyRow(kind, adapter) {
     scanning: false,
     progress: { done: 0, total: 0 },
     error: null,
+    errorCode: null,
     errorStage: null,
     sync: null,
     cacheFailed: 0,
@@ -908,6 +917,8 @@ export class Store extends EventTarget {
   _refreshSource(kind, patch = {}) {
     const adapter = this.sources[kind];
     const permission = adapter.permission();
+    // A cleared error must not leave a stale dedicated-copy code behind.
+    const clearing = patch.error === null && !('errorCode' in patch);
     this._patchSource(kind, {
       kind: adapter.kind,
       name: adapter.name ?? '',
@@ -918,6 +929,7 @@ export class Store extends EventTarget {
       configured: typeof adapter.configured === 'function' ? adapter.configured() : true,
       needsReconnect: RECONNECT_KINDS.has(kind) && permission === 'prompt',
       ...(kind === 'local' ? { mode: this.localMode } : {}),
+      ...(clearing ? { errorCode: null } : {}),
       ...patch,
     });
   }
@@ -1160,7 +1172,14 @@ export class Store extends EventTarget {
       await this.browseSource('gdrive', '');
       return true;
     } catch (error) {
-      this._refreshSource('gdrive', { error: errorMessage(error) });
+      const errorCode = sourceErrorCode(error);
+      this._refreshSource('gdrive', {
+        error: errorMessage(error),
+        errorCode,
+        // The row owns the actionable update; the raw GIS sentence in the
+        // global alert would only duplicate it.
+        errorStage: errorCode ? 'gdrive' : null,
+      });
       this._emit();
       return false;
     }
@@ -1283,7 +1302,12 @@ export class Store extends EventTarget {
       await this.browseSource('gdrive', '');
       return true;
     } catch (error) {
-      this._refreshSource('gdrive', { error: errorMessage(error) });
+      const errorCode = sourceErrorCode(error);
+      this._refreshSource('gdrive', {
+        error: errorMessage(error),
+        errorCode,
+        errorStage: errorCode ? 'gdrive' : null,
+      });
       this._emit();
       return false;
     }

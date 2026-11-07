@@ -21,6 +21,7 @@ import {
   t,
 } from '../i18n/index.js';
 import { el, icon, setHidden, setText } from './dom.js';
+import { loadGdriveBetaAck, saveGdriveBetaAck } from './uiPrefs.js';
 
 function run(result) {
   if (result && typeof result.catch === 'function') result.catch(() => {});
@@ -65,6 +66,12 @@ export function createSettingsView(store, sw) {
 
   const REPO_URL = 'https://github.com/SentimentalK/LocalTune';
   const OAUTH_SETUP_URL = `${REPO_URL}/blob/main/docs/oauth-setup.md`;
+  /**
+   * Google Drive stays in OAuth "Testing" until verification finishes, so the
+   * fix for an unknown account is "ask to be added to Test users". This is the
+   * only address the beta copy points at.
+   */
+  const AUTHOR_CONTACT = 'kevinxu.senti@gmail.com';
 
   const CONNECT_LABELS = {
     local: 'settings.source.connectLocal',
@@ -116,8 +123,84 @@ export function createSettingsView(store, sw) {
       class: 'source-subtitle',
       text: t(kind === 'gdrive' ? 'settings.gdrive.betaNote' : SOURCE_HINTS[kind]),
     });
+    // The whole line is the mailto link, so the contact address is both
+    // readable and clickable without splitting the sentence per locale.
+    const betaWarning =
+      kind === 'gdrive'
+        ? el('a', {
+            class: 'source-beta-warning',
+            href: `mailto:${AUTHOR_CONTACT}`,
+            'data-testid': 'gdrive-beta-warning',
+            text: t('settings.gdrive.betaWarning', { contact: AUTHOR_CONTACT }),
+            'aria-label': t('settings.gdrive.betaWarning', { contact: AUTHOR_CONTACT }),
+          })
+        : null;
+    // One-time confirmation before the very first GIS popup. Amber, inline:
+    // no modal infrastructure is introduced for a single sentence.
+    const betaConfirm =
+      kind === 'gdrive'
+        ? el(
+            'div',
+            {
+              class: 'gdrive-beta-confirm',
+              'data-testid': 'gdrive-beta-confirm',
+              role: 'group',
+              'aria-label': t('settings.gdrive.betaConfirmTitle'),
+            },
+            [
+              el('p', {
+                class: 'gdrive-beta-confirm-text',
+                text: t('settings.gdrive.betaConfirmBody'),
+              }),
+              el('div', { class: 'gdrive-beta-confirm-actions' }, [
+                el('button', {
+                  class: 'btn-pill',
+                  type: 'button',
+                  'data-testid': 'gdrive-beta-confirm-yes',
+                  text: t('settings.gdrive.betaConfirmContinue'),
+                  onclick: () => {
+                    saveGdriveBetaAck();
+                    setConfirmOpen(view, false);
+                    startGdriveConnect();
+                  },
+                }),
+                el('button', {
+                  class: 'btn-pill ghost',
+                  type: 'button',
+                  'data-testid': 'gdrive-beta-confirm-no',
+                  text: t('settings.gdrive.betaConfirmCancel'),
+                  onclick: () => {
+                    setConfirmOpen(view, false);
+                    view.connectButton.focus();
+                  },
+                }),
+              ]),
+            ],
+          )
+        : null;
+    if (betaConfirm) setHidden(betaConfirm, true);
     const rowError = el('p', { class: 'settings-error muted', role: 'alert' });
     setHidden(rowError, true);
+    // `notInTestList` cannot be fixed by retrying: the actionable step is
+    // writing to the address, so the block carries a copy button.
+    const copyContact =
+      kind === 'gdrive'
+        ? el('button', {
+            class: 'btn-pill ghost settings-error-copy',
+            type: 'button',
+            'data-testid': 'gdrive-copy-account',
+            text: t('settings.gdrive.copyContact'),
+            'aria-label': t('settings.gdrive.copyContact'),
+            onclick: async () => {
+              if (await copyText(AUTHOR_CONTACT)) {
+                toast(t('settings.gdrive.copied', { contact: AUTHOR_CONTACT }));
+              }
+            },
+          })
+        : null;
+    if (copyContact) setHidden(copyContact, true);
+    const errorBlock = el('div', { class: 'settings-error-block' }, [rowError]);
+    setHidden(errorBlock, true);
     // Distinct from `.settings-error`: existing specs target that class to
     // probe the sync failure, and a second match would break them.
     const progressLabel = el('span');
@@ -133,6 +216,11 @@ export function createSettingsView(store, sw) {
       count,
       subtitle,
       error: rowError,
+      errorBlock,
+      copyContact,
+      betaWarning,
+      betaConfirm,
+      confirmOpen: false,
       progress,
       progressLabel,
       progressBar,
@@ -265,9 +353,10 @@ export function createSettingsView(store, sw) {
         ]),
         view.actions,
       ]),
+      ...(betaWarning ? [betaWarning] : []),
       progress,
       ...(view.hint ? [view.hint] : []),
-      rowError,
+      errorBlock,
     ]);
 
     sourceViews.set(kind, view);
@@ -283,6 +372,30 @@ export function createSettingsView(store, sw) {
     setHidden(view.iconGroup, !connected);
   }
 
+  /** Start the first Drive connect; the caller has already shown its notice. */
+  function startGdriveConnect() {
+    run(store.connectGdrive());
+  }
+
+  /**
+   * The notice is only in the DOM while it is open: a disabled/connected row
+   * must not carry two invisible buttons.
+   */
+  function setConfirmOpen(view, open) {
+    if (!view?.betaConfirm) return;
+    view.confirmOpen = open;
+    const attached = view.betaConfirm.parentElement === view.node;
+    if (open && !attached) {
+      view.betaWarning.insertAdjacentElement('afterend', view.betaConfirm);
+      setHidden(view.betaConfirm, false);
+      view.betaConfirm
+        .querySelector('[data-testid="gdrive-beta-confirm-yes"]')
+        ?.focus();
+      return;
+    }
+    if (!open && attached) view.betaConfirm.remove();
+  }
+
   function changeSource(kind) {
     const row = (store.state.sources ?? []).find((item) => item.id === kind) ?? {
       permission: 'none',
@@ -294,9 +407,22 @@ export function createSettingsView(store, sw) {
     if (kind === 'gdrive') {
       // `prompt` means the short-lived token is gone: reconnect keeps the root,
       // the index and the cache instead of asking for a folder again.
-      if (row.permission === 'prompt') run(store.reconnectGdrive());
-      else if (row.permission === 'none') run(store.connectGdrive());
-      else run(store.browseSource('gdrive', ''));
+      if (row.permission === 'prompt') {
+        run(store.reconnectGdrive());
+        return;
+      }
+      if (row.permission === 'none') {
+        const view = sourceViews.get('gdrive');
+        // A reconnect never re-asks; only the first connect shows the notice,
+        // once per browser.
+        if (loadGdriveBetaAck() || !view) {
+          startGdriveConnect();
+          return;
+        }
+        setConfirmOpen(view, true);
+        return;
+      }
+      run(store.browseSource('gdrive', ''));
       return;
     }
     if (kind === 'dropbox') {
@@ -1048,6 +1174,9 @@ export function createSettingsView(store, sw) {
         trackCount > 0 ? `· ${t('settings.source.trackCount', { count: trackCount })}` : '',
       );
       setHidden(view.count, trackCount === 0);
+      // The beta notice is only useful before a working connection exists.
+      if (view.betaWarning) setHidden(view.betaWarning, connected);
+      if (view.betaConfirm && !view.confirmOpen) view.betaConfirm.remove();
       syncActions(view, connected);
 
       const configured = row.configured !== false;
@@ -1112,9 +1241,30 @@ export function createSettingsView(store, sw) {
       // A dead token is the actionable fact; the provider's raw 401 text adds
       // nothing on top of it.
       const reconnectMessage = needsReconnect ? t(`settings.${kind}.authFailed`) : '';
-      const message = reconnectMessage || row.error || warning;
+      // `notInTestList` replaces the raw GIS sentence with the fix: the
+      // account must be added to Test users, then reconnect.
+      const notInTestList = row.errorCode === 'notInTestList' && !needsReconnect;
+      const failureMessage = notInTestList
+        ? t('settings.gdrive.notInTestList', { contact: AUTHOR_CONTACT })
+        : '';
+      const message = reconnectMessage || failureMessage || row.error || warning;
+      setHidden(view.errorBlock, !message);
       setHidden(view.error, !message);
       if (message) setText(view.error, message);
+      view.error.classList.toggle('muted', !notInTestList);
+      view.error.classList.toggle('is-danger', notInTestList);
+      view.errorBlock.classList.toggle('is-failure', notInTestList);
+      // The copy button exists only while the failure needs it: a disconnected
+      // row stays one-button-wide in the DOM, not just visually.
+      if (view.copyContact) {
+        const attached = view.copyContact.parentElement === view.errorBlock;
+        if (notInTestList && !attached) {
+          view.errorBlock.append(view.copyContact);
+          setHidden(view.copyContact, false);
+        } else if (!notInTestList && attached) {
+          view.copyContact.remove();
+        }
+      }
     }
 
     if (!desktopOnly) {

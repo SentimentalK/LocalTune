@@ -62,6 +62,18 @@ function isAudioName(name) {
   return AUDIO_EXTENSIONS.has(extensionOf(name));
 }
 
+/**
+ * Classify a failed GIS exchange. The OAuth app is still in Testing, so
+ * `access_denied` is almost always "this account is not a Test user" rather
+ * than a refusal by the user; every other reason (popup closed, script load,
+ * network) keeps its generic copy.
+ * @param {unknown} error
+ * @returns {'notInTestList'|null}
+ */
+export function classifyAuthFailure(error) {
+  return error?.code === 'access_denied' ? 'notInTestList' : null;
+}
+
 export class GdriveSource {
   kind = 'gdrive';
   trackSource = 'gdrive';
@@ -123,11 +135,18 @@ export class GdriveSource {
     if (!this.configured()) {
       throw new GdriveAuthError('Google client ID is not configured', 'not_configured');
     }
-    const token = await requestToken({
-      clientId: this.clientId,
-      getGis: this.getGis,
-      now: this.now,
-    });
+    let token;
+    try {
+      token = await requestToken({
+        clientId: this.clientId,
+        getGis: this.getGis,
+        now: this.now,
+      });
+    } catch (error) {
+      const code = classifyAuthFailure(error);
+      if (code) throw new GdriveAuthError(String(error?.message ?? error), code);
+      throw error;
+    }
     this._token = token;
     await this._setMeta('gdriveToken', token);
     await this._setMeta('gdriveAuthAt', this.now());

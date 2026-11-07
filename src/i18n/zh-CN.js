@@ -122,6 +122,16 @@ export default {
   'settings.gdrive.unconfigured': 'Google Drive 尚未配置客户端 ID，无法连接。',
   'settings.gdrive.setupLink': '配置指南',
   'settings.gdrive.betaNote': '想连接请联系作者',
+  'settings.gdrive.betaWarning': 'Beta：只有测试名单里的账号能连接（联系 {contact} 加入）',
+  'settings.gdrive.betaConfirmTitle': 'Google Drive Beta',
+  'settings.gdrive.betaConfirmBody':
+    'Google Drive 仍是 Beta：只有测试名单里的账号能完成连接。继续吗？',
+  'settings.gdrive.betaConfirmContinue': '继续',
+  'settings.gdrive.betaConfirmCancel': '取消',
+  'settings.gdrive.notInTestList':
+    '这个 Google 账号不在测试名单里。把你的 Google 账号邮箱发到 {contact} 加入后，再点「重新连接」。',
+  'settings.gdrive.copyContact': '复制联系地址',
+  'settings.gdrive.copied': '已复制 {contact}',
   'settings.gdrive.authFailed': 'Google Drive 登录已过期，请重新连接。',
   'settings.onedrive.connectedHint': '已连接 OneDrive，选择音乐文件夹',
   'settings.onedrive.authFailed': 'OneDrive 登录未完成，请重试',

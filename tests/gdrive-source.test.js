@@ -293,6 +293,47 @@ test('an unconfigured source fails all entry points without any network call', a
   assert.equal(fetches, 0);
 });
 
+/** GIS stand-in that answers `callback` with a fixed token response. */
+function gisAnswering(response) {
+  return {
+    initTokenClient: ({ callback }) => ({
+      requestAccessToken: () => queueMicrotask(() => callback(response)),
+    }),
+  };
+}
+
+test('connect maps access_denied to notInTestList and stores nothing', async () => {
+  const meta = memoryMeta();
+  const source = makeSource({ meta, getGis: async () => gisAnswering({ error: 'access_denied' }) });
+
+  await assert.rejects(
+    source.connect(),
+    (error) => error instanceof GdriveAuthError && error.code === 'notInTestList',
+  );
+  assert.equal(source.permission(), 'none');
+  assert.equal(meta.map.has('gdriveToken'), false);
+});
+
+test('connect keeps popup_closed and network failures generic', async () => {
+  const popup = makeSource({
+    getGis: async () => gisAnswering({ error: 'popup_closed' }),
+  });
+  await assert.rejects(
+    popup.connect(),
+    (error) => error instanceof GdriveAuthError && error.code === 'popup_closed',
+  );
+
+  const offline = makeSource({
+    getGis: async () => {
+      throw new Error('Failed to fetch');
+    },
+  });
+  await assert.rejects(
+    offline.connect(),
+    (error) => error.code !== 'notInTestList' && error.message === 'Failed to fetch',
+  );
+});
+
 test('getFile serves a cached blob before authorization even with an expired token', async () => {
   const cached = new Blob([new Uint8Array([1, 2, 3])]);
   const reads = [];

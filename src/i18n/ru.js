@@ -125,6 +125,17 @@ export default {
   'settings.gdrive.unconfigured': 'Для подключения Google Drive нужен идентификатор клиента.',
   'settings.gdrive.setupLink': 'Инструкция по настройке',
   'settings.gdrive.betaNote': 'Свяжитесь с автором, чтобы подключиться',
+  'settings.gdrive.betaWarning':
+    'Beta: подключаться могут только аккаунты из списка тестировщиков (напишите на {contact}, чтобы вас добавили)',
+  'settings.gdrive.betaConfirmTitle': 'Google Drive Beta',
+  'settings.gdrive.betaConfirmBody':
+    'Google Drive всё ещё в бете: завершить подключение могут только аккаунты Google из списка тестировщиков. Продолжить?',
+  'settings.gdrive.betaConfirmContinue': 'Продолжить',
+  'settings.gdrive.betaConfirmCancel': 'Отмена',
+  'settings.gdrive.notInTestList':
+    'Этот аккаунт Google отсутствует в списке тестировщиков. Отправьте адрес своей учётной записи Google на {contact}, чтобы вас добавили, затем нажмите «Подключить снова».',
+  'settings.gdrive.copyContact': 'Скопировать адрес',
+  'settings.gdrive.copied': '{contact} скопирован',
   'settings.gdrive.authFailed': 'Сеанс Google Drive истёк. Подключитесь снова.',
   'settings.onedrive.connectedHint': 'OneDrive подключён — выберите папку с музыкой',
   'settings.onedrive.authFailed': 'Вход в OneDrive не завершился. Повторите попытку.',

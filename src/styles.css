@@ -1160,8 +1160,49 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
   transition: width 0.2s;
 }
 .settings-error { padding: 0 0 10px; margin: 0; color: var(--danger); font-size: 10.5px; }
+.settings-error.is-danger { color: var(--danger); }
 .settings-hint { padding: 0 0 10px; margin: 0; color: var(--muted); font-size: 10.5px; }
 .settings-hint a { color: var(--accent); }
+/* Google Drive beta: one amber line, indented to the row's text column. The
+   whole line is the mailto link, so the contact stays clickable. */
+.source-beta-warning {
+  display: block;
+  margin: -2px 0 10px 52px;
+  color: var(--warn);
+  font-size: 10.5px;
+  line-height: 1.5;
+  text-decoration: none;
+}
+.source-beta-warning:hover,
+.source-beta-warning:focus-visible { text-decoration: underline; }
+/* Inline one-time confirmation: amber like the notice, never a modal. */
+.gdrive-beta-confirm {
+  margin: 0 0 10px 52px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--warn) 42%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gdrive-beta-confirm-text { margin: 0; color: var(--warn); font-size: 10.5px; line-height: 1.55; }
+.gdrive-beta-confirm-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.gdrive-beta-confirm-actions .btn-pill { min-height: 28px; padding: 5px 11px; font-size: 10.5px; }
+/* Red block for failures the user can act on: the fix is "write to this
+   address", so it carries the contact copy button. */
+.settings-error-block.is-failure {
+  margin: 0 0 10px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-error-block.is-failure .settings-error { padding: 0; color: var(--danger); }
+.settings-error-copy { align-self: flex-start; min-height: 28px; padding: 5px 11px; font-size: 10.5px; }
 .settings-view .muted { color: var(--muted); }
 .background-copy { display: flex; flex-direction: column; gap: 4px; }
 .background-copy p { color: var(--muted); font-size: 11px; line-height: 1.5; }
