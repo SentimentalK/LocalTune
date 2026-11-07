@@ -200,7 +200,7 @@ export function createOnboarding({ onFinish = () => {} } = {}) {
         'aria-label': t('onboarding.title'),
         'data-testid': 'onboarding',
       },
-      [svgEl(), caption, el('div', { class: 'onboarding-actions' }, [skipButton, nextButton])],
+      [svgEl(), caption, skipButton, el('div', { class: 'onboarding-actions' }, [nextButton])],
     );
     overlay.addEventListener('click', onClick);
     window.addEventListener('keydown', onKeyDown, true);
