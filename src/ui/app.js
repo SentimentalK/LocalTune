@@ -834,6 +834,8 @@ export function mountUi(root, store, sw) {
 
   let panelView = 'library';
   let panelOpen = false;
+  let panelTransitionArmed = false;
+  let panelSignature = null;
   let swapTimer = 0;
   let lastPlaying = false;
   let lastTrackId = null;
@@ -926,6 +928,10 @@ export function mountUi(root, store, sw) {
   // list's nodes are replaced, because the controller owns the rows it built.
   let virtualLists = [];
   let virtualRaf = 0;
+  let virtualRetry = 0;
+  let virtualAttempts = 0;
+  const VIRTUAL_RETRY_MS = 100;
+  const VIRTUAL_RETRY_LIMIT = 20;
 
   /** Row height in px, gap excluded (the gap comes from the list's CSS). */
   const estimateStride = () => (isMobile() ? 60 : 64);
@@ -950,10 +956,14 @@ export function mountUi(root, store, sw) {
       count,
       estimateStride: estimateStride(),
       getViewport: () => listViewport(container),
+      scrollParent: ui.listScroll,
       renderRow,
       releaseCover: (id) => store.releaseCover(id),
     });
     virtualLists.push(list);
+    // A list mounted into a hidden panel cannot measure yet; retry until the
+    // panel gives it a height.
+    if (!list.viewportReady) scheduleVirtual();
     return list;
   }
 
@@ -961,15 +971,50 @@ export function mountUi(root, store, sw) {
     const lists = virtualLists;
     for (const list of lists) list.dispose();
     virtualLists = [];
+    if (virtualRaf) {
+      cancelAnimationFrame(virtualRaf);
+      virtualRaf = 0;
+    }
+    clearTimeout(virtualRetry);
+    virtualRetry = 0;
+    virtualAttempts = 0;
   }
 
+  /**
+   * Refresh every list on the next frame. Lists that still cannot measure keep
+   * the cycle alive for a bounded number of attempts, so a panel opening later
+   * re-paints without waiting for a scroll event.
+   */
   function scheduleVirtual() {
     // Nothing to refresh means nothing to schedule: an idle app must stay
     // completely frame-free (the deck's idle-raf budget counts every request).
-    if (virtualRaf || !virtualLists.length) return;
+    if (!virtualLists.length) return;
+    if (virtualRaf) return;
     virtualRaf = requestAnimationFrame(() => {
       virtualRaf = 0;
-      for (const list of virtualLists) list.refresh();
+      let pending = false;
+      for (const list of virtualLists) {
+        list.refresh();
+        if (!list.viewportReady) pending = true;
+      }
+      if (!pending) {
+        virtualAttempts = 0;
+        clearTimeout(virtualRetry);
+        virtualRetry = 0;
+        return;
+      }
+      if (virtualAttempts >= VIRTUAL_RETRY_LIMIT) {
+        clearTimeout(virtualRetry);
+        virtualRetry = 0;
+        return;
+      }
+      virtualAttempts += 1;
+      scheduleVirtual();
+      if (virtualRetry) return;
+      virtualRetry = setTimeout(() => {
+        virtualRetry = 0;
+        scheduleVirtual();
+      }, VIRTUAL_RETRY_MS);
     });
   }
 
@@ -978,28 +1023,13 @@ export function mountUi(root, store, sw) {
   window.addEventListener('resize', scheduleVirtual);
   window.addEventListener('orientationchange', scheduleVirtual);
   window.visualViewport?.addEventListener('resize', scheduleVirtual);
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) scheduleVirtual();
+  });
 
   /** Per-shell scroll sources; rebinding happens when the shell is remounted. */
-  let listObserver = null;
-
   function bindVirtualSources() {
     ui.listScroll.addEventListener('scroll', scheduleVirtual, { passive: true });
-    listObserver?.disconnect();
-    listObserver = null;
-    if (typeof ResizeObserver === 'function') {
-      let primed = false;
-      listObserver = new ResizeObserver(() => {
-        // The first callback only reports the box the virtualizer already
-        // measured at mount; acting on it would request a frame on an idle
-        // deck, so swallow it and wait for a real size change.
-        if (!primed) {
-          primed = true;
-          return;
-        }
-        scheduleVirtual();
-      });
-      listObserver.observe(ui.listScroll);
-    }
   }
 
   /** Attach a freshly built list and hand the previous list's covers back. */
@@ -1014,11 +1044,14 @@ export function mountUi(root, store, sw) {
     ui.trackList.replaceChildren(...children);
     renderedCoverIds = buildingCoverIds;
     buildingCoverIds = [];
-    if (scrollTop > 0) {
-      queueMicrotask(() => {
-        if (ui.listScroll.scrollTop !== scrollTop) ui.listScroll.scrollTop = scrollTop;
-      });
-    }
+    queueMicrotask(() => {
+      if (!(scrollTop > 0)) return;
+      if (ui.listScroll.scrollTop !== scrollTop) ui.listScroll.scrollTop = scrollTop;
+      // The new list's first window was painted at the clamped offset, and the
+      // restored offset fires no scroll event: always re-anchor it, even when
+      // the browser already kept the original offset.
+      scheduleVirtual();
+    });
   }
 
   function showToast(text) {
@@ -1097,6 +1130,7 @@ export function mountUi(root, store, sw) {
       savePanel('library');
       if (!isMobile()) savePanelOpen(true);
       document.body.classList.remove('overlay-open');
+      panelTransitionArmed = true;
       applyPanel();
       store.setView(libraryTab);
       return;
@@ -1105,6 +1139,7 @@ export function mountUi(root, store, sw) {
     if (isMobile()) panelView = 'library';
     else savePanelOpen(false);
     document.body.classList.remove('overlay-open');
+    panelTransitionArmed = true;
     applyPanel();
     store.setView(libraryTab);
   }
@@ -1134,6 +1169,7 @@ export function mountUi(root, store, sw) {
       savePanelOpen(true);
     }
     store.setView(view === 'library' ? libraryTab : view);
+    panelTransitionArmed = true;
     applyPanel();
     render(store.state);
   }
@@ -1174,10 +1210,28 @@ export function mountUi(root, store, sw) {
     ui.settingsButton.setAttribute('aria-expanded', String(panelOpen && panelView === 'settings'));
     ui.vipButton.setAttribute('aria-expanded', String(panelOpen && panelView === 'vip'));
     ui.panelButton.classList.toggle('is-open', expanded);
+
+    // The panel showing or hiding changes what the lists can measure. Only a
+    // real change repaints: the first call just records, so an idle deck stays
+    // frame-free.
+    const signature = `${visible}|${ui.libraryView.hidden}|${overlay}`;
+    if (panelSignature !== null && panelSignature !== signature) scheduleVirtual();
+    panelSignature = signature;
   }
 
   function bindShellEvents() {
     bindVirtualSources();
+    // The lists can only measure once the panel has its final width; the
+    // transitionend is the signal that the animation is over. Only arming in
+    // openPanel/closePanel keeps the page-load auto-expand frame-free.
+    ui.panel.addEventListener('transitionend', (event) => {
+      if (!panelTransitionArmed) return;
+      if (event.target !== ui.panel) return;
+      const property = event.propertyName;
+      if (property !== 'width' && property !== 'opacity' && property !== 'transform') return;
+      panelTransitionArmed = false;
+      scheduleVirtual();
+    });
     ui.shuffleButton.addEventListener('click', () => store.toggleShuffle());
     ui.repeatButton.addEventListener('click', () => store.cycleRepeat());
     ui.settingsButton.addEventListener('click', () => openPanel('settings'));
@@ -1228,6 +1282,7 @@ export function mountUi(root, store, sw) {
         }
         store.setView(libraryTab);
         render(store.state);
+        scheduleVirtual();
       });
     }
   }
@@ -1461,6 +1516,7 @@ export function mountUi(root, store, sw) {
     const query = searchQuery.trim() ? searchQuery : '';
     if (!query) {
       render(store.state);
+      scheduleVirtual();
       return;
     }
     run(
@@ -1468,6 +1524,7 @@ export function mountUi(root, store, sw) {
         if (token !== searchToken) return;
         searchResult = { query, items: result.items, total: result.total };
         render(store.state);
+        scheduleVirtual();
       }),
     );
     render(store.state);
@@ -1582,6 +1639,7 @@ export function mountUi(root, store, sw) {
             folder = { source: kind, dir: cut < 0 ? '' : dir.slice(0, cut) };
           }
           render(store.state);
+          scheduleVirtual();
         },
       },
       [el('span', { class: 'back-arrow', 'aria-hidden': 'true', text: '←' })],
@@ -1636,6 +1694,7 @@ export function mountUi(root, store, sw) {
             onOpen: () => {
               folder = { source: row.id, dir: '' };
               render(store.state);
+              scheduleVirtual();
             },
           }),
         );
@@ -1680,6 +1739,7 @@ export function mountUi(root, store, sw) {
         dirRow(subs[index], () => {
           folder = { source: kind, dir: subs[index].dir };
           render(store.state);
+          scheduleVirtual();
         }),
       );
     }
@@ -2196,6 +2256,7 @@ export function mountUi(root, store, sw) {
     }
     // Store changes were dropped while hidden; paint the current state once.
     render(store.state);
+    scheduleVirtual();
     watchAudio();
     if (!store.state.current.playing) {
       syncArm();

@@ -15,6 +15,13 @@ function clamp(value, low, high) {
 const EMPTY_WINDOW = { start: 0, end: 0, padTop: 0, padBottom: 0 };
 
 /**
+ * Viewport height used when the list's scroller has no measurable height yet
+ * (hidden panel, closed overlay). A concrete height keeps the first window
+ * paintable, so a freshly mounted list is never empty.
+ */
+const FALLBACK_VIEWPORT_HEIGHT = 600;
+
+/**
  * Rows that fit in the viewport plus its overscan, rounded up so a partially
  * visible row still counts. Invalid inputs yield 0.
  */
@@ -77,6 +84,7 @@ export function createVirtualizer({
   count,
   estimateStride,
   getViewport,
+  scrollParent = null,
   renderRow,
   releaseCover = () => {},
 }) {
@@ -89,11 +97,11 @@ export function createVirtualizer({
   const gap = rowGap();
   let stride = strideEstimate > 0 ? strideEstimate + gap : 0;
   let virtual = false;
-  let hidden = false;
   let coverIds = [];
   let range = { start: 0, end: 0 };
   let measured = false;
   let disposed = false;
+  let viewportReady = false;
 
   function releaseCoverIds() {
     // Swap the array out first: a release that throws must not leave the same
@@ -139,13 +147,11 @@ export function createVirtualizer({
 
   function paintAll() {
     virtual = false;
-    hidden = false;
     paint({ start: 0, end: count, padTop: 0, padBottom: 0 });
   }
 
   function paintWindow(viewport) {
     virtual = true;
-    hidden = false;
     paint(
       computeWindow({
         count,
@@ -157,19 +163,14 @@ export function createVirtualizer({
   }
 
   /**
-   * The list is inside a hidden panel (desktop settings view, closed mobile
-   * overlay): it has no measurable viewport, so render no rows at all and let
-   * padding hold the scroll height until a resize brings a real height back.
+   * A hidden list (desktop settings view, closed overlay) measures a zero
+   * height. Painting from a zero height would either render nothing or anchor
+   * the window at row 0, so measure capacity against a concrete fallback and
+   * paint the first window from the top instead of going blank.
    */
-  function paintHidden() {
-    virtual = true;
-    hidden = true;
-    paint({
-      start: 0,
-      end: 0,
-      padTop: 0,
-      padBottom: stride > 0 ? count * stride : 0,
-    });
+  function effectiveViewport(viewport) {
+    if (viewport && viewport.height > 0) return viewport;
+    return { top: 0, height: FALLBACK_VIEWPORT_HEIGHT };
   }
 
   /** Adopt the real row height when it differs from the estimate. */
@@ -188,73 +189,115 @@ export function createVirtualizer({
     return shouldVirtualize({ count, viewportHeight: viewport.height, stride });
   }
 
+  /**
+   * Re-read the viewport. Returns true only when the DOM was rebuilt.
+   *
+   * An unmeasured viewport (hidden panel) no longer drops the rows: capacity is
+   * judged against the fallback height and the first window is painted from the
+   * top, so the list is never blank while it cannot be measured.
+   */
+  function refresh() {
+    if (disposed) return false;
+    if (stride <= 0) return false;
+    const viewport = getViewport();
+    viewportReady = viewport.height > 0;
+    const effective = effectiveViewport(viewport);
+    if (!virtual) {
+      if (!wantsWindow(effective)) return false;
+      paintWindow(effective);
+      if (measureStride()) paintWindow(effective);
+      return true;
+    }
+    if (!wantsWindow(effective)) {
+      paintAll();
+      return true;
+    }
+    const remeasured = measureStride();
+    const window = computeWindow({
+      count,
+      stride,
+      viewportTop: effective.top,
+      viewportHeight: effective.height,
+    });
+    if (!remeasured && window.start === range.start && window.end === range.end) {
+      return false;
+    }
+    paint(window);
+    return true;
+  }
+
   // ---- initial paint -------------------------------------------------------
   const initialViewport = getViewport();
-  if (!(initialViewport.height > 0)) {
-    // Hidden panel: nothing may be measured or rendered whole.
-    paintHidden();
-  } else if (wantsWindow(initialViewport) && stride > 0) {
-    paintWindow(initialViewport);
+  viewportReady = initialViewport.height > 0;
+  const initial = effectiveViewport(initialViewport);
+  if (wantsWindow(initial) && stride > 0) {
+    paintWindow(initial);
     if (!measured) {
       measured = true;
       // One corrective pass only; `measured` keeps a re-measure loop out.
-      if (measureStride()) paintWindow(initialViewport);
+      if (measureStride()) paintWindow(initial);
     }
   } else {
     paintAll();
   }
 
-  return {
-    /**
-     * Re-read the viewport. Returns true only when the DOM was rebuilt.
-     */
-    refresh() {
-      if (disposed) return false;
-      if (stride <= 0) return false;
-      const viewport = getViewport();
-      if (!(viewport.height > 0)) {
-        if (hidden) return false;
-        paintHidden();
-        return true;
+  // ---- size tracking -------------------------------------------------------
+  // The panel animating open and viewport resizes both change the boxes this
+  // list measures; repaint from the new size instead of waiting for a scroll.
+  // `scrollParent` is observed too because the panel can change the scroller's
+  // height without the list itself changing size.
+  let resizeRaf = 0;
+  let resizeObserver = null;
+  const observedSizes = new Map();
+  if (typeof ResizeObserver === 'function') {
+    resizeObserver = new ResizeObserver((entries) => {
+      let changed = false;
+      for (const entry of entries) {
+        const size = `${entry.contentRect.width}x${entry.contentRect.height}`;
+        const previous = observedSizes.get(entry.target);
+        observedSizes.set(entry.target, size);
+        // The first report per target only primes the record: the initial
+        // paint already used that size, so acting on it would request a frame
+        // on an idle deck.
+        if (previous !== undefined && previous !== size) changed = true;
       }
-      hidden = false;
-      if (!virtual) {
-        if (!wantsWindow(viewport)) return false;
-        paintWindow(viewport);
-        if (measureStride()) paintWindow(viewport);
-        return true;
-      }
-      if (!wantsWindow(viewport)) {
-        paintAll();
-        return true;
-      }
-      const remeasured = measureStride();
-      const window = computeWindow({
-        count,
-        stride,
-        viewportTop: viewport.top,
-        viewportHeight: viewport.height,
+      if (!changed || resizeRaf) return;
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = 0;
+        refresh();
       });
-      if (!remeasured && window.start === range.start && window.end === range.end) {
-        return false;
-      }
-      paint(window);
-      return true;
-    },
+    });
+    resizeObserver.observe(container);
+    if (scrollParent) resizeObserver.observe(scrollParent);
+  }
+
+  return {
+    refresh,
 
     dispose() {
       if (disposed) return;
       disposed = true;
+      if (resizeRaf) {
+        cancelAnimationFrame(resizeRaf);
+        resizeRaf = 0;
+      }
+      resizeObserver?.disconnect();
+      resizeObserver = null;
+      observedSizes.clear();
       releaseCoverIds();
       container.style.paddingTop = '';
       container.style.paddingBottom = '';
       virtual = false;
-      hidden = false;
       range = { start: 0, end: 0 };
     },
 
     get range() {
       return { start: range.start, end: range.end };
+    },
+
+    /** Whether the last `getViewport()` measured a real (non-zero) height. */
+    get viewportReady() {
+      return viewportReady;
     },
   };
 }
