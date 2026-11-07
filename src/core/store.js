@@ -322,6 +322,7 @@ export class Store extends EventTarget {
     this._mediaToken = 0;
     this._levelingStreaming = false;
     this._levelingTags = null;
+    this._lowPower = false;
 
     this._state = {
       ready: false,
@@ -1543,6 +1544,7 @@ export class Store extends EventTarget {
       }
       done += 1;
       report({ done, total, phase: 'cache' });
+      await yieldToMain(this._lowPower ? 200 : 0);
       if (adapter.permission() !== 'granted') {
         // Auth died mid-pass; retrying the rest would only storm the network.
         for (const rest of entries.slice(done)) uncached.push(rest.path);
@@ -1564,6 +1566,14 @@ export class Store extends EventTarget {
     if (!VIEWS.has(view)) return;
     this._state.view = view;
     this._emit();
+  }
+
+  /**
+   * UI hint for background work: while low-power playback is on, the cache
+   * warm-up pass yields longer between files. Session-only, never emits.
+   */
+  setLowPower(active) {
+    this._lowPower = Boolean(active);
   }
 
   /**

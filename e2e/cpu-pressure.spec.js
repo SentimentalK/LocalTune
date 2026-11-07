@@ -1,0 +1,100 @@
+import { expect, test } from '@playwright/test';
+
+// CPU pressure on the deck: the arm used to write a transform every frame, and
+// playback had no fallback when the main thread kept stalling. These specs hold
+// the per-frame write budget and the low-power enter/exit path.
+test.use({
+  launchOptions: { args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] },
+});
+
+async function startPlayback(page) {
+  await page.goto('/');
+  await expect(page.locator('.deck')).toBeVisible();
+  await page.locator('.arm-head-hit').click();
+  await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'true');
+  await page.waitForFunction(() => (document.querySelector('audio')?.readyState ?? 0) >= 3);
+}
+
+test('playing writes the tonearm transform at most 35 times a second', async ({ page }) => {
+  await startPlayback(page);
+  await page.evaluate(() => {
+    window.__armWrites = 0;
+    const rotor = document.querySelector('#armRotor');
+    window.__armObserver = new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.attributeName === 'style') window.__armWrites += 1;
+      }
+    });
+    window.__armObserver.observe(rotor, { attributes: true, attributeFilter: ['style'] });
+  });
+
+  await page.waitForTimeout(1_000);
+  const writes = await page.evaluate(() => {
+    window.__armObserver.disconnect();
+    return window.__armWrites;
+  });
+  expect(writes).toBeLessThanOrEqual(35);
+});
+
+test('two long tasks enter low power and the class leaves after the window drains', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await startPlayback(page);
+
+  // A busy loop inside a direct evaluate runs as a CDP task the page's
+  // PerformanceObserver never sees; schedule the burn as a page timer instead.
+  for (let i = 0; i < 2; i += 1) {
+    await page.evaluate(() => {
+      setTimeout(() => {
+        const start = performance.now();
+        while (performance.now() - start < 150);
+      }, 0);
+    });
+    await page.waitForTimeout(400);
+  }
+
+  await expect(page.locator('html')).toHaveClass(/is-low-power/, { timeout: 5_000 });
+  await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'true');
+  await expect(page.locator('html')).not.toHaveClass(/is-low-power/, { timeout: 45_000 });
+  await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'true');
+});
+
+test('an audio stall alone enters low power', async ({ page }) => {
+  await startPlayback(page);
+  await page.evaluate(() => {
+    document.querySelector('audio').dispatchEvent(new Event('waiting'));
+  });
+  await expect(page.locator('html')).toHaveClass(/is-low-power/, { timeout: 5_000 });
+});
+
+test('a hidden document stops the arm frame loop until it is visible again', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__raf = 0;
+    const native = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (callback) => {
+      window.__raf += 1;
+      return native(callback);
+    };
+  });
+  await startPlayback(page);
+  await page.waitForTimeout(200);
+
+  const hiddenAt = await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    return window.__raf;
+  });
+  await page.waitForTimeout(500);
+  const whileHidden = await page.evaluate(() => window.__raf);
+  expect(whileHidden - hiddenAt).toBeLessThanOrEqual(1);
+
+  const visibleAt = await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    document.dispatchEvent(new Event('visibilitychange'));
+    return window.__raf;
+  });
+  await page.waitForTimeout(500);
+  const whileVisible = await page.evaluate(() => window.__raf);
+  expect(whileVisible).toBeGreaterThan(visibleAt);
+});

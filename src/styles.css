@@ -1430,6 +1430,17 @@ a { color: inherit; }
   .stage { justify-content: flex-start; }
 }
 
+/* Low-power playback: keep the audio, drop decorative filters and animations. */
+html.is-low-power .deck::before { filter: none; }
+html.is-low-power .tonearm-motion { filter: none !important; }
+html.is-low-power .stylus-point { filter: none; }
+html.is-low-power .arm-handle:focus-visible { filter: none; }
+html.is-low-power .modal { backdrop-filter: none; }
+html.is-low-power .app.is-overlay .panel { backdrop-filter: none; }
+html.is-low-power .disc-art { animation: none; }
+html.is-low-power .deck.swapping .disc-wrap { animation: none; }
+html.is-low-power .toast:not([hidden]) { animation: none; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;

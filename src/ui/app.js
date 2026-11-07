@@ -15,6 +15,7 @@ import { createVipView } from './vip.js';
 import { createVirtualizer } from './virtualList.js';
 import { openTagInfo } from './diagnostics.js';
 import { bindStageSwipe, bindTonearm, ARM_PARK, angleForProgress } from './tonearm.js';
+import { createLowPowerGate, LOW_POWER_WINDOW_MS } from './lowPower.js';
 import {
   THEMES,
   THEME_NAMES,
@@ -838,6 +839,26 @@ export function mountUi(root, store, sw) {
   let lastTrackId = null;
   let armEngageUntil = 0;
 
+  const ARM_INTERVAL_MS = 1000 / 30;
+  const ARM_MIN_ANGLE = 0.1;
+  const ARM_LOW_POWER_INTERVAL_MS = 1000;
+
+  let armFrame = 0;
+  let armTimer = 0;
+  let armLastPaintAt = 0;
+  let armLastAngle = null;
+  let lastFrameAt = 0;
+
+  let lowPower = false;
+  let lowPowerSince = 0;
+  let lowPowerDecay = 0;
+  let idleStop = 0;
+  let watchedAudio = null;
+  const gate = createLowPowerGate();
+  const prefersReducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)') ?? {
+    matches: false,
+  };
+
   const mobileQuery = globalThis.matchMedia?.(PANEL_BREAKPOINT) ?? { matches: false };
   const isMobile = () => Boolean(mobileQuery.matches);
 
@@ -1358,8 +1379,9 @@ export function mountUi(root, store, sw) {
     const tracking = playing && performance.now() >= armEngageUntil;
 
     if (!activeArm?.isDragging()) {
-      if (!track || !playing) ui.armRotor.style.transform = `rotate(${ARM_PARK}deg)`;
-      else ui.armRotor.style.transform = `rotate(${angleForProgress(progressOf(state)).toFixed(3)}deg)`;
+      const changed = playing !== lastPlaying || (track?.id ?? null) !== lastTrackId;
+      if (!track || !playing) applyArmAngle(ARM_PARK, changed);
+      else applyArmAngle(angleForProgress(progressOf(state)), changed);
       ui.armSvg.classList.toggle('is-tracking', tracking);
     }
     lastPlaying = playing;
@@ -2017,22 +2039,40 @@ export function mountUi(root, store, sw) {
 
   let frame = 0;
   store.addEventListener('change', () => {
-    if (frame) return;
+    if (frame || document.hidden) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
       render(store.state);
       syncArm();
+      // The Web Audio graph swaps the element, so re-attach the stall hooks.
+      watchAudio();
+      if (store.state.current.playing) {
+        clearTimeout(idleStop);
+        idleStop = 0;
+      } else if (lowPower && !idleStop) {
+        idleStop = setTimeout(() => {
+          idleStop = 0;
+          applyLowPower(false);
+          gate.clear();
+        }, 30_000);
+      }
     });
   });
 
-  let armFrame = 0;
+  function applyArmAngle(angle, force = false) {
+    if (!force && armLastAngle !== null && Math.abs(angle - armLastAngle) <= ARM_MIN_ANGLE) {
+      return;
+    }
+    ui.armRotor.style.transform = `rotate(${angle.toFixed(3)}deg)`;
+    armLastAngle = angle;
+  }
 
   /** One arm paint from the live audio clock; no self-renewal. */
-  function paintArmOnce(now = performance.now()) {
+  function paintArmOnce(now = performance.now(), { force = false } = {}) {
     if (activeArm?.isDragging()) return;
     const current = store.state.current;
     if (!current.playing) {
-      ui.armRotor.style.transform = `rotate(${ARM_PARK}deg)`;
+      if (force || armLastAngle !== ARM_PARK) applyArmAngle(ARM_PARK, true);
       ui.armSvg.classList.remove('is-tracking');
       return;
     }
@@ -2042,25 +2082,134 @@ export function mountUi(root, store, sw) {
       ? Math.min(Math.max(live, 0), duration || live)
       : current.position || 0;
     if (duration > 0) {
-      ui.armRotor.style.transform = `rotate(${angleForProgress(position / duration).toFixed(3)}deg)`;
+      applyArmAngle(angleForProgress(position / duration), force);
       if (now >= armEngageUntil) ui.armSvg.classList.add('is-tracking');
     }
   }
 
+  function armInterval() {
+    return lowPower || prefersReducedMotion.matches
+      ? ARM_LOW_POWER_INTERVAL_MS
+      : ARM_INTERVAL_MS;
+  }
+
   function armTick(now) {
     armFrame = 0;
-    paintArmOnce(now);
+    if (document.hidden || !store.state.current.playing) return;
+    if (lastFrameAt) {
+      if (gate.noteFrameGap(now - lastFrameAt, now)) {
+        react(now);
+        armDecay(now);
+      }
+    }
+    lastFrameAt = now;
+    if (now - armLastPaintAt >= armInterval()) {
+      armLastPaintAt = now;
+      paintArmOnce(now);
+    }
     scheduleArm();
   }
 
   function scheduleArm() {
-    if (!armFrame && store.state.current.playing) armFrame = requestAnimationFrame(armTick);
+    if (armFrame || armTimer) return;
+    if (!store.state.current.playing || document.hidden) return;
+    if (lowPower || prefersReducedMotion.matches) {
+      armTimer = setTimeout(() => {
+        armTimer = 0;
+        armLastPaintAt = performance.now();
+        paintArmOnce();
+        scheduleArm();
+      }, ARM_LOW_POWER_INTERVAL_MS);
+      return;
+    }
+    armFrame = requestAnimationFrame(armTick);
   }
 
   function stopArm() {
-    if (armFrame) cancelAnimationFrame(armFrame);
+    cancelAnimationFrame(armFrame);
+    clearTimeout(armTimer);
     armFrame = 0;
+    armTimer = 0;
+    armLastPaintAt = 0;
+    lastFrameAt = 0;
   }
+
+  function react(now) {
+    const decision = gate.verdict(now, lowPower, lowPowerSince);
+    if (decision === 'enter') applyLowPower(true);
+    else if (decision === 'exit') applyLowPower(false);
+  }
+
+  function applyLowPower(on) {
+    if (lowPower === on) return;
+    lowPower = on;
+    lowPowerSince = on ? performance.now() : 0;
+    document.documentElement.classList.toggle('is-low-power', on);
+    store.setLowPower(on);
+    stopArm();
+    scheduleArm();
+    paintArmOnce(performance.now(), { force: true });
+  }
+
+  /** Keep a verdict check alive until the trigger window has drained. */
+  function armDecay() {
+    clearTimeout(lowPowerDecay);
+    lowPowerDecay = setTimeout(() => {
+      const now = performance.now();
+      react(now);
+      if (lowPower) armDecay();
+    }, LOW_POWER_WINDOW_MS);
+  }
+
+  function watchAudio() {
+    const audio = store.audio;
+    if (!audio || audio === watchedAudio) return;
+    watchedAudio = audio;
+    const hit = () => {
+      // The initial `waiting` fires with the loadstart and carries no data:
+      // that is normal startup buffering, not playback pressure.
+      if (audio.readyState < 2) return;
+      const now = performance.now();
+      gate.noteAudio(now);
+      react(now);
+      armDecay();
+    };
+    audio.addEventListener('waiting', hit);
+    audio.addEventListener('stalled', hit);
+  }
+
+  try {
+    new PerformanceObserver((list) => {
+      const now = performance.now();
+      for (const entry of list.getEntries()) gate.noteLongTask(entry.duration, now);
+      react(now);
+      armDecay();
+    }).observe({ type: 'longtask', buffered: false });
+  } catch {
+    // longtask unsupported: frame gaps and audio stalls still drive the gate.
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      stopArm();
+      return;
+    }
+    // Store changes were dropped while hidden; paint the current state once.
+    render(store.state);
+    watchAudio();
+    if (!store.state.current.playing) {
+      syncArm();
+      return;
+    }
+    armLastPaintAt = 0;
+    lastFrameAt = 0;
+    paintArmOnce(performance.now(), { force: true });
+    scheduleArm();
+  });
+
+  prefersReducedMotion.addEventListener?.('change', () => {
+    if (store.state.current.playing) scheduleArm();
+  });
 
   /** Playing: keep the frame loop alive. Idle/paused: park once and stop. */
   function syncArm() {
@@ -2072,5 +2221,6 @@ export function mountUi(root, store, sw) {
     }
   }
 
+  watchAudio();
   syncArm();
 }
