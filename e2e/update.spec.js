@@ -1,6 +1,7 @@
-// End-to-end update flow: a waiting service worker must activate on demand and
-// reload the page exactly once. Two builds of the same sources with different
-// BUILD_LABELs are served from one origin, so the browser sees a real update.
+// End-to-end update flow: a waiting service worker activates on its own when
+// the page is idle, and stays behind the banner while audio plays. Two builds
+// of the same sources with different BUILD_LABELs are served from one origin,
+// so the browser sees a real update.
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, rmSync } from 'node:fs';
@@ -12,9 +13,15 @@ import { startStaticServer } from './support/static-server.js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const scratch = path.join(root, '.scratch', 'e2e-update');
 
+test.use({
+  launchOptions: { args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] },
+});
+
 test.describe.configure({ mode: 'serial' });
 
 let server;
+let v1Root;
+let v2Root;
 let v2Version;
 
 function build(label, outDir) {
@@ -32,6 +39,29 @@ function versionOf(outDir) {
   return match[1];
 }
 
+async function waitForActiveWorker(page) {
+  await page.waitForFunction(async () => {
+    const registration = await navigator.serviceWorker.ready;
+    return registration.active?.state === 'activated';
+  });
+}
+
+async function waitForVersion(page, version) {
+  await page.waitForFunction(
+    async (expected) => {
+      if (!navigator.serviceWorker.controller) return false;
+      try {
+        const text = await (await fetch('./sw.js')).text();
+        return text.includes(expected);
+      } catch {
+        return false;
+      }
+    },
+    version,
+    { timeout: 20000 },
+  );
+}
+
 test.beforeAll(async () => {
   rmSync(scratch, { recursive: true, force: true });
   const v1Dir = path.relative(root, path.join(scratch, 'v1'));
@@ -43,83 +73,80 @@ test.beforeAll(async () => {
   v2Version = versionOf(v2Dir);
   expect(v1Version).not.toBe(v2Version);
 
-  server = await startStaticServer({ root: path.join(root, v1Dir) });
-  server.v2Root = path.join(root, v2Dir);
+  v1Root = path.join(root, v1Dir);
+  v2Root = path.join(root, v2Dir);
+  server = await startStaticServer({ root: v1Root });
 });
 
 test.afterAll(async () => {
   await server?.close();
 });
 
-test('applies the waiting worker and reloads only once', async ({ page }) => {
+test('fresh load auto-activates the waiting worker and reloads once', async ({ page }) => {
+  server.setRoot(v1Root);
   await page.goto(`${server.url}/`);
-  await page.waitForFunction(async () => {
-    const registration = await navigator.serviceWorker.ready;
-    return registration.active?.state === 'activated';
-  });
+  await waitForActiveWorker(page);
 
   // One reload while online guarantees the navigation is SW-controlled.
   await page.reload();
   await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
 
-  server.setRoot(server.v2Root);
+  server.setRoot(v2Root);
+
+  const reloaded = page.waitForEvent('load', { timeout: 20000 });
+  // The auto-activation may destroy this context mid-evaluate: that is the
+  // reload we are waiting for.
+  await page
+    .evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()))
+    .catch(() => {});
+  await reloaded;
+
+  await waitForVersion(page, v2Version);
+
+  const state = await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.getRegistration();
+    return {
+      pathname: location.pathname,
+      search: location.search,
+      bannerVisible: !document.querySelector('.update-banner')?.hidden,
+      waiting: Boolean(registration?.waiting),
+      reloadFlag: sessionStorage.getItem('localtune:reloading'),
+    };
+  });
+
+  // Exactly one navigation: the version self-heal saw our own reload marker.
+  expect(state.pathname).toBe('/');
+  expect(state.search).toBe('');
+  expect(state.bannerVisible, JSON.stringify(state)).toBe(false);
+  expect(state.waiting, JSON.stringify(state)).toBe(false);
+  expect(state.reloadFlag).toBeNull();
+});
+
+test('keeps the banner while audio is playing', async ({ page }) => {
+  server.setRoot(v1Root);
+  await page.goto(`${server.url}/`);
+  await waitForActiveWorker(page);
+
+  await page.locator('.track-item.queue').first().click();
+  await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'true');
+
+  server.setRoot(v2Root);
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
 
-  const banner = page.locator('.update-banner');
-  await expect(banner).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('.update-banner')).toBeVisible({ timeout: 15000 });
+
+  // Playback must not be interrupted by an automatic reload.
+  await page.evaluate(() => {
+    window.__probe = 1;
+  });
+  await page.waitForTimeout(2000);
+  expect(await page.evaluate(() => window.__probe)).toBe(1);
 
   const reloaded = page.waitForEvent('load', { timeout: 20000 });
   await page.locator('[data-testid="update-apply"]').click({ noWaitAfter: true });
   await reloaded;
 
-  // The controller now serves v2's sw.js (network-first, so this is the build
-  // the active worker was created from).
-  await page.waitForFunction(
-    async (version) => {
-      if (!navigator.serviceWorker.controller) return false;
-      try {
-        const text = await (await fetch('./sw.js')).text();
-        return text.includes(version);
-      } catch {
-        return false;
-      }
-    },
-    v2Version,
-    { timeout: 20000 },
-  );
-
-  const state = await page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.getRegistration();
-    const scriptURL = navigator.serviceWorker.controller?.scriptURL ?? null;
-    let servedVersion = null;
-    try {
-      const text = await (await fetch('./sw.js')).text();
-      servedVersion = text.match(/const VERSION = '([0-9a-f]{10})'/)?.[1] ?? null;
-    } catch {
-      // ignore: reported as null below
-    }
-    return {
-      bannerVisible: !document.querySelector('.update-banner')?.hidden,
-      waiting: Boolean(registration?.waiting),
-      controller: scriptURL,
-      search: scriptURL ? new URL(scriptURL).search : null,
-      servedVersion,
-      reloadFlag: sessionStorage.getItem('localtune:reloading'),
-    };
-  });
-
-  // Banner must be gone after the reload that activated the new worker.
-  expect(state.bannerVisible, JSON.stringify(state)).toBe(false);
-  expect(state.waiting, JSON.stringify(state)).toBe(false);
-  expect(state.controller).not.toBeNull();
-  expect(state.search).toBe('');
-  expect(state.reloadFlag).toBeNull();
-
-  // A further reload must not resurrect it (the old loop showed it every time).
-  await page.reload();
-  await page.waitForFunction(async () => {
-    const registration = await navigator.serviceWorker.ready;
-    return registration.active?.state === 'activated' && Boolean(navigator.serviceWorker.controller);
-  });
+  await waitForVersion(page, v2Version);
   await expect(page.locator('.update-banner')).toBeHidden();
+  expect(new URL(page.url()).search).toBe('');
 });

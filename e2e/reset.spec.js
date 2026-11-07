@@ -48,12 +48,19 @@ test('clearing all data returns the app to its first launch state', async ({ pag
   // means no controller when the fresh document boots.
   await page.addInitScript(() => {
     window.__controllerAtBoot = navigator.serviceWorker.controller === null;
+    window.__cachesAtBoot = caches.keys();
   });
 
   await Promise.all([
     page.waitForNavigation(),
     page.locator('[data-testid="settings-clear-data"]').click(),
   ]);
+
+  // The reset marker is consumed at boot: the address bar is clean again.
+  const bootUrl = new URL(page.url());
+  expect(bootUrl.pathname).toBe('/');
+  expect(bootUrl.search).toBe('');
+  expect(bootUrl.hash).toBe('');
 
   await expect(page.locator('.wordmark')).toHaveText('localtune.');
   await expect(page.locator('#tab-queue')).toHaveAttribute('aria-selected', 'true');
@@ -69,8 +76,11 @@ test('clearing all data returns the app to its first launch state', async ({ pag
   ]);
   await expect(page.locator('.track-item.queue.now .track strong')).toHaveText('Baby Girl');
 
-  expect(await page.evaluate(() => localStorage.length)).toBe(0);
+  // The app's own keys are gone; only the boot-time version marker remains.
+  expect(await page.evaluate(() => Object.keys(localStorage))).toEqual(['localtune:version']);
   expect(await page.evaluate(() => window.__controllerAtBoot)).toBe(true);
+  // Sampled at document-start, before the fresh boot re-registers the SW.
+  await expect.poll(() => page.evaluate(() => window.__cachesAtBoot)).toEqual([]);
 
   const after = await page.evaluate(
     () =>

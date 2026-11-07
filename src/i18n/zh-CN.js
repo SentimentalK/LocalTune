@@ -25,7 +25,7 @@ export default {
   'common.reauthorize': '重新授权',
   'common.deniedHint': '浏览器已阻止目录访问，请在浏览器设置的网站权限中恢复后再试。',
 
-  'update.available': '有新版本可用',
+  'update.available': '新版本 — 空闲时自动更新',
   'update.apply': '立即更新',
   'migration.progress': '正在迁移标签 {done} / {total}',
   'diagnostics.title': '标签信息',

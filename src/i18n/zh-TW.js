@@ -25,7 +25,7 @@ export default {
   'common.reauthorize': '重新授權',
   'common.deniedHint': '瀏覽器已封鎖資料夾存取，請在瀏覽器設定的網站權限中還原後再試。',
 
-  'update.available': '有新版本可用',
+  'update.available': '新版本 — 閒置時自動更新',
   'update.apply': '立即更新',
   'migration.progress': '正在遷移標籤 {done} / {total}',
   'diagnostics.title': '標籤資訊',

@@ -24,7 +24,7 @@ export default {
   'common.deniedHint':
     'Le navigateur a bloqué l’accès au dossier. Rétablissez-le dans les autorisations du site, puis réessayez.',
 
-  'update.available': 'Une nouvelle version est disponible',
+  'update.available': 'Nouvelle version – mise à jour auto',
   'update.apply': 'Mettre à jour',
   'migration.progress': 'Migration des balises {done} / {total}',
   'diagnostics.title': 'Infos balises',

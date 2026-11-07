@@ -24,7 +24,7 @@ export default {
   'common.deniedHint':
     'Der Browser hat den Ordnerzugriff blockiert. Stelle ihn in den Website-Berechtigungen wieder her und versuche es erneut.',
 
-  'update.available': 'Eine neue Version ist verfügbar',
+  'update.available': 'Neue Version – Update automatisch',
   'update.apply': 'Jetzt aktualisieren',
   'migration.progress': 'Tags werden migriert: {done} / {total}',
   'diagnostics.title': 'Tag-Info',

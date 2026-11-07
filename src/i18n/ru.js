@@ -24,7 +24,7 @@ export default {
   'common.deniedHint':
     'Браузер заблокировал доступ к папке. Восстановите его в разрешениях сайта и повторите попытку.',
 
-  'update.available': 'Доступна новая версия',
+  'update.available': 'Новая версия — обновится сама',
   'update.apply': 'Обновить сейчас',
   'migration.progress': 'Перенос тегов {done} / {total}',
   'diagnostics.title': 'Сведения о тегах',

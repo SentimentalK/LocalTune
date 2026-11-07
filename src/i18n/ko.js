@@ -24,7 +24,7 @@ export default {
   'common.deniedHint':
     '브라우저가 폴더 접근을 차단했습니다. 사이트 권한에서 허용한 후 다시 시도하세요.',
 
-  'update.available': '새 버전이 있습니다',
+  'update.available': '새 버전 — 대기 중 자동 업데이트',
   'update.apply': '지금 업데이트',
   'migration.progress': '태그 이전 중 {done} / {total}',
   'diagnostics.title': '태그 정보',
