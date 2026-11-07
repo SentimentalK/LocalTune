@@ -59,7 +59,7 @@ import { initInstall } from './install.js';
 import { createPlayCounter, applyPlay, ensureAdded } from './stats.js';
 import { createSleepTimer } from './sleepTimer.js';
 import { decideGain } from './gain.js';
-import { DEMO_BY_ID, DEMO_TRACKS, isDemoTrack } from './demo.js';
+import { DEMO_BY_ID, DEMO_TRACKS, demoEndFade, isDemoTrack } from './demo.js';
 import { parseReplayGain } from './metadata/id3.js';
 import {
   loadPlayback,
@@ -313,6 +313,8 @@ export class Store extends EventTarget {
     this._pickerIndex = new Map();
     this._playCounter = createPlayCounter();
     this._sleep = null;
+    this._sleepFade = 1;
+    this._demoFade = 1;
     this._fadeFactor = 1;
     this._mediaTrackId = null;
     this._mediaUrl = undefined;
@@ -397,6 +399,9 @@ export class Store extends EventTarget {
       const duration = Number(detail.duration) || 0;
       this._state.current.position = position;
       if (duration > 0) this._state.current.duration = duration;
+      this._applyDemoFade(
+        demoEndFade(this._state.current.track, position, duration || this._state.current.duration),
+      );
       const counted = this._playCounter?.update(position);
       if (counted?.justCounted) this._recordPlay(this._playCounter.trackId);
       this._emit();
@@ -412,6 +417,8 @@ export class Store extends EventTarget {
     });
 
     player.addEventListener('ended', () => {
+      // The fade must never leak into the next track or a replay.
+      this._applyDemoFade(1);
       // Log before advancing so the row order shows ended → trackchange.
       note('ended');
       void this._handleEnded();
@@ -2193,10 +2200,20 @@ export class Store extends EventTarget {
   }
 
   _applyFade(factor) {
-    const value = Number.isFinite(factor) ? clamp(factor, 0, 1) : 1;
-    this._fadeFactor = value;
+    this._sleepFade = Number.isFinite(factor) ? clamp(factor, 0, 1) : 1;
+    this._syncFade();
+  }
+
+  _applyDemoFade(factor) {
+    this._demoFade = Number.isFinite(factor) ? clamp(factor, 0, 1) : 1;
+    this._syncFade();
+  }
+
+  _syncFade() {
+    const factor = Math.min(this._sleepFade, this._demoFade);
+    this._fadeFactor = factor;
     try {
-      this.player?.setVolume(clamp(this._state.current.volume * value, 0, 1));
+      this.player?.setVolume(clamp(this._state.current.volume * factor, 0, 1));
     } catch {
       // Volume writes are best-effort.
     }
@@ -2344,6 +2361,7 @@ export class Store extends EventTarget {
     { play = true, position = 0, source = 'user', allowRecovery = true } = {},
   ) {
     if (!track || !this.player) return false;
+    this._applyDemoFade(1);
     this._loading = true;
     this._pauseAfterLoad = false;
     this._state.current.playing = Boolean(play);

@@ -58,14 +58,16 @@ test('clearing all data returns the app to its first launch state', async ({ pag
   await expect(page.locator('.wordmark')).toHaveText('localtune.');
   await expect(page.locator('#tab-queue')).toHaveAttribute('aria-selected', 'true');
   // Demo tracks live only in the queue (they are never indexed), and queue rows
-  // carry no `track-row` test id, so the three demo titles are the identity.
+  // carry no `track-row` test id, so the four demo titles are the identity.
   const queueRows = page.locator('.track-item.queue');
-  await expect(queueRows).toHaveCount(3);
+  await expect(queueRows).toHaveCount(4);
   expect(await queueRows.locator('.track strong').allTextContents()).toEqual([
-    '晴天',
-    'ハチミツ',
+    'Baby Girl',
     'JUST COMMUNICATION',
+    'ハチミツ',
+    '自由的你',
   ]);
+  await expect(page.locator('.track-item.queue.now .track strong')).toHaveText('Baby Girl');
 
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
   expect(await page.evaluate(() => window.__controllerAtBoot)).toBe(true);
