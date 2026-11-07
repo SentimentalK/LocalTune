@@ -528,7 +528,24 @@ a { color: inherit; }
   z-index: 12;
   overflow: visible;
   pointer-events: none;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 240ms ease, visibility 0s linear 0s;
 }
+/* The hint yields to playback. The class is the only switch, so the deck
+   layout, the idle rAF budget and the chalk geometry stay untouched. */
+.chalk-layer.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 240ms ease, visibility 0s linear 240ms;
+}
+.chalk-layer.is-hidden * { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .chalk-layer,
+  .chalk-layer.is-hidden { transition: none; }
+}
+html.is-low-power .chalk-layer,
+html.is-low-power .chalk-layer.is-hidden { transition: none; }
 /* Latin locales (en, de, es, fr, pt-BR) use Caveat; other scripts override. */
 .chalk-layer text {
   font-family: 'ChalkLat', 'Bradley Hand', 'Segoe Script', 'Snell Roundhand', cursive;

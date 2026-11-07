@@ -16,7 +16,8 @@ import { createVirtualizer } from './virtualList.js';
 import { openTagInfo } from './diagnostics.js';
 import { bindStageSwipe, bindTonearm, ARM_PARK, angleForProgress } from './tonearm.js';
 import { createLowPowerGate, LOW_POWER_WINDOW_MS } from './lowPower.js';
-import { mountChalkLayer } from './chalkLayer.js';
+import { mountChalkLayer, shouldShowChalk } from './chalkLayer.js';
+import { isDemoTrack } from '../core/demo.js';
 import {
   THEMES,
   THEME_NAMES,
@@ -610,7 +611,7 @@ function createShell(store, sw) {
   const discWrap = el('div', { class: 'disc-wrap' }, [vinyl]);
   const deck = el('div', { class: 'deck', id: 'deck' }, [discWrap]);
   deck.insertAdjacentHTML('beforeend', TONEARM);
-  mountChalkLayer(deck);
+  const chalk = mountChalkLayer(deck);
 
   const armSvg = deck.querySelector('#armSvg');
   const armRotor = deck.querySelector('#armRotor');
@@ -772,6 +773,7 @@ function createShell(store, sw) {
     errorBox,
     cover,
     deck,
+    chalk,
     stage,
     armSvg,
     armRotor,
@@ -1413,6 +1415,13 @@ export function mountUi(root, store, sw) {
     const duration = current.duration || track?.duration || 0;
     const position = Math.min(Math.max(current.position || 0, 0), duration || 0);
     const playing = Boolean(track) && current.playing;
+
+    ui.chalk.setVisible(
+      shouldShowChalk({
+        hasDemo: state.queue.tracks.some(isDemoTrack),
+        playing,
+      }),
+    );
 
     ui.deck.classList.toggle('is-playing', playing);
     ui.stage.classList.toggle('playing', playing);
