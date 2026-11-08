@@ -43,7 +43,7 @@ test.describe('tonearm transport at 390x844', () => {
     await page.screenshot({ path: 'test-results/transport-390.png' });
   });
 
-  test('dragging the arm seeks and resumes, swiping changes tracks', async ({ page }) => {
+  test('dragging the arm seeks and starts playback, swiping changes tracks', async ({ page }) => {
     await openPlaying(page);
     const arm = page.locator('#armRotor');
 
@@ -61,6 +61,8 @@ test.describe('tonearm transport at 390x844', () => {
     await page.mouse.move(startX - 26, startY + 26, { steps: 12 });
     await page.mouse.up();
 
+    // Dropping the arm onto the record starts playback, even when the drag
+    // began paused (real deck semantics).
     await expect(arm).toHaveAttribute('data-playing', 'true');
     await expect
       .poll(async () => Number(await arm.getAttribute('aria-valuenow')), { timeout: 5_000 })
