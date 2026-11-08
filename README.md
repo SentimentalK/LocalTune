@@ -1,4 +1,4 @@
-# I Built a Music Player with DeepSeek Flash for About $2
+# I Built a Music Player with DeepSeek V4.1 Flash for $3
 
 *An experiment in how far a cheap AI model can go.* · [简体中文](README.zh-CN.md)
 
@@ -26,7 +26,7 @@ At this point, I mostly just use it on my phone, complain when something doesn't
 
 For example, the library would sometimes jump back to the top after syncing, or certain interactions just felt awkward. At one point, it built an onboarding guide that covered the interface. I found it annoying, so I had it replaced with chalk annotations in the background.
 
-None of these details were in my original requirements, because I hadn't thought that far ahead myself. Now I basically use the app, find things I don't like, and give feedback. The agent keeps working on them. It was still iterating this way on November 7.
+None of these details were in my original requirements, because I hadn't thought that far ahead myself. Now I basically use the app, find things I don't like, and give feedback. The agent keeps working on them. By November 7, development was complete.
 
 ## What did I actually give it?
 
@@ -41,14 +41,15 @@ Tasks and execution records live in a separate Markdown-based memory repository.
 I also set up automatic daily resumption. Every morning, after my computer wakes up, Orca starts a fresh Conductor session, reads the previous day's handoff, and picks up where it left off.
 
 So I wasn't sitting at my computer for most of those three days. I'd check the results in the evening, give some feedback, and let it continue the next day.
-
-There are still issues, of course. Auto-advancing to the next track in the background is unreliable on Android, and iOS has its own background playback limitations. Passing automated tests doesn't mean everything works perfectly on a real phone.
-
-## What $2 Made Me Rethink
+## What $3 Made Me Rethink
 
 The biggest surprise was the cost.
 
-Over those few days, Flash used 22% of my monthly OpenCode Go quota, which works out to about **$2**.
+Over those few days, Flash used 29% of my monthly OpenCode Go quota, which works out to about **$3**.
+
+<p align="center">
+  <img src="docs/screenshots/opencode-go-usage.webp" width="100%" alt="OpenCode Go dashboard: monthly quota 29% used, 19,156 requests" />
+</p>
 
 That obviously doesn't include my time, the earlier design work, or the servers I already had. But the model usage really was that cheap.
 
@@ -66,7 +67,7 @@ I used to think that when a model wasn't good enough, the answer was to use a st
 
 It's only one project, and I still want to try this on other projects before drawing bigger conclusions. But it's already changed how I think about small models.
 
-**Two bucks. What more could I ask for?**
+**Three bucks. What more could I ask for?**
 
 ---
 
