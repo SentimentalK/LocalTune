@@ -36,17 +36,11 @@ export default {
   'tabs.folders': 'Ordner',
   'tabs.queue': 'Warteschlange',
   'vip.open': 'VIP',
-  'vip.title': 'VIP',
   'vip.subtitle': 'Bessere Downloads in Arbeit',
   'vip.downtify.temporary': 'Nutze vorerst Downtify.',
-  'vip.downtify.title': 'Musik mit Downtify herunterladen',
   'vip.downtify.about':
     'LocalTune spielt nur Audiodateien ab, die du bereits hast. Es lädt keine Musik herunter und greift keine ab.',
-  'vip.downtify.intro':
-    'Downtify ist ein selbst gehosteter Open-Source-Downloader: Spotify- oder YouTube-Music-Link einfügen und getaggte Audiodateien erhalten.',
   'vip.downtify.independent': 'Downtify ist ein eigenständiges Projekt und nicht Teil von LocalTune.',
-  'vip.downtify.hint':
-    'Richte LocalTune auf den Ordner, in den Downtify speichert (lokaler Ordner oder OneDrive), und die Musik ist abspielbereit.',
   'vip.downtify.github': 'Downtify auf GitHub öffnen',
   'vip.downtify.docs': 'Downtify-Dokumentation',
 
