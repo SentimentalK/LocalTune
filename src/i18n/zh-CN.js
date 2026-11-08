@@ -309,6 +309,7 @@ export default {
   'chalk.play': '点击播放',
   'chalk.seekPlace': '放在对应的位置',
   'chalk.seekMove': '可移动播放',
+  'chalk.scratch': '搓碟',
 
   'error.db.writeStats': '写入播放统计失败',
 

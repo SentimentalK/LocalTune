@@ -322,6 +322,7 @@ export default {
   'chalk.play': 'Touchez pour lire',
   'chalk.seekPlace': 'Placez-le ici',
   'chalk.seekMove': 'et déplacez',
+  'chalk.scratch': 'Gratte',
 
   'error.db.writeStats': 'Échec de l’écriture des statistiques de lecture',
 

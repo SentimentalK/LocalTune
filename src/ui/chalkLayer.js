@@ -1,14 +1,17 @@
 /**
- * Background chalk notes. Two hand-drawn captions sit over the deck: "tap to
- * play" curls into the arm base, and the two-line "put it where you want"
- * caption hooks up to the arm head. The layer is decoration only: it takes no
- * pointer events, is hidden from assistive tech, and never tracks input or
- * playback.
+ * Background chalk notes. Three hand-drawn captions sit over the deck: "tap to
+ * play" curls into the arm base, the two-line "put it where you want" caption
+ * hooks up to the arm head, and a short "scratch" label sits outside a
+ * concentric arc that hugs the record's lower-left rim. The layer is decoration
+ * only: it takes no pointer events, is hidden from assistive tech, and never
+ * tracks input or playback.
  *
  * Every coordinate is a deck user unit (640 x 550), so the drawing follows the
  * deck's CSS size on its own. The two anchors that depend on layout (the arm
  * base and the arm head) are measured from the live DOM, which keeps each
- * arrow tip exactly 8 px off its target at any window size.
+ * arrow tip exactly 8 px off its target at any window size. The scratch arc is
+ * built from the record's own box: its radius is 1.06 x the record radius and
+ * its label is right-aligned against the arc's left branch.
  *
  * The handwriting faces are bundled instead of fetched: esbuild copies the
  * per-script subsets under `src/assets/fonts/` (all SIL OFL 1.1) into
@@ -65,6 +68,25 @@ function arrowHeadPath(tip, direction, { length = 15, half = 6.4 } = {}) {
     `Q${pt(notch)} ${pt({ x: back.x - normal.x * half, y: back.y - normal.y * half })}`,
     'Z',
   ].join(' ');
+}
+
+/**
+ * Hand-wobbled arc concentric with the record, in deck units. `from`/`to` are
+ * screen angles (y grows down), so 95° is straight down and 165° is left: the
+ * lower-left quadrant. The radius jitters by a fraction of a unit, which keeps
+ * the stroke chalky without moving it off the record's edge.
+ */
+function arcPath({ cx, cy, radius, from, to, steps = 72, seed = 13, wobble = 0.45 }) {
+  const rand = seeded(seed);
+  const points = [];
+  for (let index = 0; index <= steps; index += 1) {
+    const at = index / steps;
+    const angle = rad(from + (to - from) * at);
+    const jitter = index === 0 || index === steps ? 0 : (rand() * 2 - 1) * wobble;
+    const r = radius + jitter;
+    points.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
+  }
+  return points.map((spot, index) => `${index === 0 ? 'M' : 'L'}${pt(spot)}`).join('');
 }
 
 /** Hand-wobbled wave: the caption underline. */
@@ -176,11 +198,38 @@ export function mountChalkLayer(deck) {
   seekAnno.append(seekArrows, seekCaption);
   layer.append(seekAnno);
 
+  // ── scratch: a concentric arc on the record's lower-left, with a label ──
+  const scratchAnno = make('g', { class: 'chalk-anno', 'data-anno': 'scratch', 'data-phase': '2' });
+  const scratchMotion = make('g', { class: 'chalk-arrow' });
+  const scratchArc = make('path', {
+    class: 'chalk-ink',
+    'vector-effect': 'non-scaling-stroke',
+  });
+  const scratchHeadStart = make('path', { class: 'chalk-head', fill: INK });
+  const scratchHeadEnd = make('path', { class: 'chalk-head', fill: INK });
+  const scratchSlashes = make('path', {
+    class: 'chalk-ink',
+    'vector-effect': 'non-scaling-stroke',
+  });
+  scratchMotion.append(scratchArc, scratchHeadStart, scratchHeadEnd);
+
+  const scratchCaption = make('g', { class: 'chalk-caption' });
+  const scratchTitle = make('text', {
+    class: 'chalk-label',
+    'text-anchor': 'end',
+    'font-size': 30,
+    fill: INK,
+  });
+  scratchCaption.append(scratchSlashes, scratchTitle);
+  scratchAnno.append(scratchMotion, scratchCaption);
+  layer.append(scratchAnno);
+
   deck.append(layer);
 
   playTitle.textContent = label('chalk.play');
   seekTextTop.textContent = label('chalk.seekPlace');
   seekTextBottom.textContent = label('chalk.seekMove');
+  scratchTitle.textContent = label('chalk.scratch');
 
   let visible = false;
 
@@ -287,6 +336,84 @@ export function mountChalkLayer(deck) {
         seekHead.setAttribute('d', arrowHeadPath(tip, { x: tip.x - c2.x, y: tip.y - c2.y }));
         seekTip.setAttribute('cx', fmt(tip.x));
         seekTip.setAttribute('cy', fmt(tip.y));
+      }
+
+      // 3. scratch: a short arc concentric with the record, 0.13 R outside the
+      // rim, sweeping 46° across the lower-left with a hand-drawn head at each
+      // end. The caption sits in the whitespace outside the arc, at least 18
+      // units off the stroke, never on the artwork.
+      const art = toUnits(deck.querySelector('.vinyl'));
+      if (art) {
+        const artCx = (art.x0 + art.x1) / 2;
+        const artCy = (art.y0 + art.y1) / 2;
+        const artR = (art.x1 - art.x0) / 2;
+        const arcR = artR * 1.1;
+        const START = 108;
+        const END = 154;
+        scratchArc.setAttribute(
+          'd',
+          arcPath({ cx: artCx, cy: artCy, radius: arcR, from: START, to: END }),
+        );
+        const at = (deg) => ({
+          x: artCx + arcR * Math.cos(rad(deg)),
+          y: artCy + arcR * Math.sin(rad(deg)),
+        });
+        scratchHeadStart.setAttribute(
+          'd',
+          arrowHeadPath(at(START), { x: Math.sin(rad(START)), y: -Math.cos(rad(START)) }, {
+            length: 14,
+            half: 6,
+          }),
+        );
+        scratchHeadEnd.setAttribute(
+          'd',
+          arrowHeadPath(at(END), { x: -Math.sin(rad(END)), y: Math.cos(rad(END)) }, {
+            length: 14,
+            half: 6,
+          }),
+        );
+
+        // The label sits in the whitespace outside the arc's left branch. It
+        // is pinned above the 33⅓ chip (9 CSS px of clearance), sized like the
+        // other two captions, and never shrunk. Its right edge is pulled back
+        // until the nearest corner of the box is 18 units off the stroke; wide
+        // translations may start left of the deck, which is transparent.
+        const chip = toUnits(deck.querySelector('.rpm-switch'));
+        const limitBottom = (chip ? chip.y0 : VIEW_H) - 9 / scale;
+        const SIZE = 30;
+        placeLabel(scratchTitle, { x: 320, y: limitBottom, size: SIZE });
+        const probe = toUnits(scratchTitle);
+        const descent = probe ? Math.max(0, probe.y1 - limitBottom) : 0;
+        const labelY = limitBottom - descent;
+        // The box top does not depend on x, so measuring it once gives the
+        // exact right edge that keeps the nearest corner 18 units off the arc.
+        const boxTop = probe ? probe.y0 - descent : labelY - SIZE * 0.72;
+        const clearX =
+          artCx - Math.sqrt(Math.max(0, (arcR + 19) ** 2 - (boxTop - artCy) ** 2));
+        let labelRight = clearX;
+        let labelWidth = placeLabel(scratchTitle, { x: labelRight, y: labelY, size: SIZE });
+        // The ink may overhang the end anchor by a side bearing, which would
+        // eat into the 18-unit gap; pull the anchor back by that overhang.
+        const placed = toUnits(scratchTitle);
+        if (placed && placed.x1 > labelRight) {
+          labelRight -= placed.x1 - labelRight;
+          labelWidth = placeLabel(scratchTitle, { x: labelRight, y: labelY, size: SIZE });
+        }
+        // Never let the block run off the screen: keep 8 px to the viewport.
+        const screenFloor = (8 - deckRect.left) / scale;
+        if (labelRight - labelWidth < screenFloor) {
+          labelRight = screenFloor + labelWidth;
+          placeLabel(scratchTitle, { x: labelRight, y: labelY, size: SIZE });
+        }
+        // Three slashes above the word, kept at least 10 units off the ink.
+        const slashX = labelRight - labelWidth + 2;
+        const slashY = labelY - SIZE * 0.72 - 30;
+        scratchSlashes.setAttribute(
+          'd',
+          `M${fmt(slashX)} ${fmt(slashY)}l5 12M${fmt(slashX + 12)} ${fmt(slashY - 4)}l5 12M${fmt(
+            slashX + 24,
+          )} ${fmt(slashY)}l5 12`,
+        );
       }
     } finally {
       measuring = false;

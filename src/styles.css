@@ -656,8 +656,8 @@ a { color: inherit; }
   font-display: swap;
   font-weight: 400;
   font-style: normal;
-  unicode-range: U+0020, U+4F4D, U+51FB, U+52A8, U+53EF, U+5728, U+5BF9, U+5E94, U+64AD, U+653E,
-    U+70B9, U+7684, U+79FB, U+7F6E;
+  unicode-range: U+0020, U+4F4D, U+51FB, U+52A8, U+53EF, U+5728, U+5BF9, U+5E94, U+64AD, U+6413,
+    U+653E, U+70B9, U+7684, U+789F, U+79FB, U+7F6E;
 }
 @font-face {
   font-family: 'ChalkTw';
@@ -665,8 +665,8 @@ a { color: inherit; }
   font-display: swap;
   font-weight: 400;
   font-style: normal;
-  unicode-range: U+0020, U+4F4D, U+52D5, U+53EF, U+5728, U+5C0D, U+61C9, U+64AD, U+64CA, U+653E,
-    U+7684, U+79FB, U+7F6E, U+9EDE;
+  unicode-range: U+0020, U+4F4D, U+52D5, U+53EF, U+5728, U+5C0D, U+61C9, U+64AD, U+64CA, U+6413,
+    U+653E, U+7684, U+789F, U+79FB, U+7F6E, U+9EDE;
 }
 @font-face {
   font-family: 'ChalkJa';
@@ -674,8 +674,8 @@ a { color: inherit; }
   font-display: swap;
   font-weight: 400;
   font-style: normal;
-  unicode-range: U+0020, U+304B, U+3053, U+3059, U+305B, U+3066-3067, U+306B, U+308F, U+30BF, U+30C3,
-    U+30D7, U+518D, U+52D5, U+5408, U+751F;
+  unicode-range: U+0020, U+304B, U+3053, U+3059, U+305B, U+3066-3067, U+306B, U+308B, U+308F, U+30BF,
+    U+30C3, U+30D7, U+518D, U+52D5, U+5408, U+64E6, U+751F;
 }
 @font-face {
   font-family: 'ChalkKo';
@@ -683,8 +683,8 @@ a { color: inherit; }
   font-display: swap;
   font-weight: 400;
   font-style: normal;
-  unicode-range: U+0020, U+AE30, U+B3D9, U+B9DE, U+C0DD, U+C5D0, U+C5EC, U+C774, U+C7AC, U+CDB0,
-    U+D0ED, U+D558;
+  unicode-range: U+0020, U+AE30, U+AE41, U+B3D9, U+B9DE, U+C0DD, U+C5D0, U+C5EC, U+C774, U+C7AC,
+    U+CDB0, U+D0ED, U+D558;
 }
 @font-face {
   font-family: 'ChalkRu';
@@ -692,8 +692,8 @@ a { color: inherit; }
   font-display: swap;
   font-weight: 400;
   font-style: normal;
-  unicode-range: U+0020, U+00B7, U+041D, U+041F, U+0430, U+0432-0436, U+0438-0439, U+043E,
-    U+0440-0442, U+044C, U+044E;
+  unicode-range: U+0020, U+00B7, U+041D, U+041F, U+0430, U+0432-0436, U+0438-0439, U+043A, U+043E,
+    U+0440-0442, U+0447, U+044C, U+044E;
 }
 @font-face {
   font-family: 'ChalkLat';
@@ -701,8 +701,8 @@ a { color: inherit; }
   font-display: swap;
   font-weight: 400;
   font-style: normal;
-  unicode-range: U+0020, U+002D, U+0041, U+0043, U+0048, U+0050, U+0054, U+0061-0065, U+0067-0069,
-    U+006C-0077, U+0079-007A, U+00E9, U+00ED, U+00F3;
+  unicode-range: U+0020, U+002D, U+0041, U+0043, U+0047, U+0048, U+004B, U+0050, U+0052, U+0053,
+    U+0054, U+0061-0065, U+0067-0069, U+006C-0077, U+0079-007A, U+00E9, U+00ED, U+00F3;
 }
 
 /* Decorative notes drawn over the deck. The layer is a sibling of the tonearm
@@ -767,6 +767,7 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
   animation: chalk-breathe 7.5s ease-in-out infinite;
 }
 .chalk-anno[data-phase='1'] .chalk-arrow { animation-delay: 1.6s; }
+.chalk-anno[data-phase='2'] .chalk-arrow { animation-delay: 3.2s; }
 @keyframes chalk-breathe {
   0%, 100% { opacity: 0.85; }
   50% { opacity: 1; }

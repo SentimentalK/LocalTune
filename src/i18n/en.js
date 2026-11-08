@@ -322,6 +322,7 @@ export default {
   'chalk.play': 'Tap to play',
   'chalk.seekPlace': 'Place it here',
   'chalk.seekMove': 'move to play',
+  'chalk.scratch': 'Scratch',
 
   'error.db.writeStats': 'Writing play statistics failed',
 
