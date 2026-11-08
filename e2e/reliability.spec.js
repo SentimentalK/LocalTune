@@ -272,8 +272,11 @@ test('manifest ships two any and two maskable icons with matching PNG sizes', as
   expect(response.status()).toBe(200);
   const manifest = await response.json();
 
-  expect(manifest.theme_color).toBe('#101921');
-  expect(manifest.background_color).toBe('#101921');
+  // Install-time only: the system bakes these in and never follows a theme
+  // switch. Both take the deepest palette (Obsidian) so every theme sits as
+  // close as possible to the system chrome.
+  expect(manifest.theme_color).toBe('#0a0a0b');
+  expect(manifest.background_color).toBe('#0a0a0b');
   expect(manifest.icons).toHaveLength(4);
   expect(manifest.icons.filter((icon) => icon.purpose === 'any')).toHaveLength(2);
   expect(manifest.icons.filter((icon) => icon.purpose === 'maskable')).toHaveLength(2);

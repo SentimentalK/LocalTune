@@ -408,4 +408,4 @@
 ## Android 安装态（PWA standalone）
 
 - 底部手势区：卸载后重装一次再进（WebAPK 在安装时烘入 manifest 的 `background_color`，改 manifest 不重装不生效）。手机深色模式 + 手势导航，看最底部是否有白色/异色横条，应与页面底色同色系。
-- 切主题（blue → burgundy → forest）后看底部：手势条后面的底色属于系统/WebAPK，静态取默认蓝 `#101921`，不保证跟随主题；页面自身与手势条颜色应当跟随。
+- 切主题（blue → burgundy → forest → obsidian → aubergine）后看底部：手势条后面的底色属于系统/WebAPK，安装期固定为中性近黑 `#0a0a0b`（manifest 的 `background_color` / `theme_color`），不跟随主题；页面自身与 `meta[name="theme-color"]` 应当跟随。manifest 改过后，已安装的 App 需要一次更新/重启（最保险是重装）才会用上新值。

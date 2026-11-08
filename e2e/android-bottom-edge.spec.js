@@ -9,6 +9,8 @@ const THEMES = {
   blue: { hex: '#101921', rgb: 'rgb(16, 25, 33)' },
   burgundy: { hex: '#211519', rgb: 'rgb(33, 21, 25)' },
   forest: { hex: '#111e1b', rgb: 'rgb(17, 30, 27)' },
+  obsidian: { hex: '#0a0a0b', rgb: 'rgb(10, 10, 11)' },
+  aubergine: { hex: '#100e14', rgb: 'rgb(16, 14, 20)' },
 };
 const INSETS = [24, 48];
 const SHOT_DIR = process.env.AD_SHOT_DIR ?? '';
