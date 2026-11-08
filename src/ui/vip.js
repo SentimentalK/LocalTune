@@ -1,30 +1,28 @@
 /**
- * VIP view: a placeholder header plus one card pointing at Downtify, the
- * external downloader. LocalTune only plays files the user already has, so the
- * view explains the split instead of capturing music itself.
+ * VIP view: the panel shell already draws the kicker and the "VIP" title, so
+ * this view opens on the statement itself — better downloads are in progress.
+ * It then says what LocalTune does with music (nothing but play what you have)
+ * and points at Downtify, the external downloader, in a single card.
  */
 
 import { t } from '../i18n/index.js';
-import { el, icon } from './dom.js';
+import { el } from './dom.js';
 
 const GITHUB_URL = 'https://github.com/henriquesebastiao/downtify';
 const DOCS_URL = 'https://downtify.henriquesebastiao.com/';
 
 export function createVipView() {
-  const head = el('div', { class: 'vip-head card', 'data-testid': 'vip-head' }, [
-    el('div', { class: 'vip-crown' }, icon('crown')),
-    el('div', {}, [
-      el('h2', { text: t('vip.title') }),
-      el('p', { class: 'muted', 'data-testid': 'vip-placeholder', text: t('vip.subtitle') }),
-      el('p', { class: 'muted', 'data-testid': 'vip-temporary', text: t('vip.downtify.temporary') }),
-    ]),
+  const lead = el('div', { class: 'vip-lead' }, [
+    el('h2', { 'data-testid': 'vip-lead', text: t('vip.subtitle') }),
+    el('p', {
+      class: 'vip-note muted',
+      'data-testid': 'vip-note',
+      text: t('vip.downtify.about'),
+    }),
   ]);
   const card = el('section', { class: 'card vip-card', 'data-testid': 'vip-downtify' }, [
-    el('h3', { text: t('vip.downtify.title') }),
-    el('p', { text: t('vip.downtify.about') }),
-    el('p', { text: t('vip.downtify.intro') }),
+    el('h3', { text: t('vip.downtify.temporary') }),
     el('p', { class: 'muted', text: t('vip.downtify.independent') }),
-    el('p', { class: 'muted', text: t('vip.downtify.hint') }),
     el('div', { class: 'vip-actions' }, [
       el('a', {
         class: 'btn-pill',
@@ -44,7 +42,7 @@ export function createVipView() {
       }),
     ]),
   ]);
-  const node = el('section', { class: 'vip-view', 'data-testid': 'vip-view' }, [head, card]);
+  const node = el('section', { class: 'vip-view', 'data-testid': 'vip-view' }, [lead, card]);
 
   return {
     node,

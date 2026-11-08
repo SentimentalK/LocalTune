@@ -36,17 +36,11 @@ export default {
   'tabs.folders': '폴더',
   'tabs.queue': '대기열',
   'vip.open': 'VIP',
-  'vip.title': 'VIP',
   'vip.subtitle': '더 나은 다운로드를 개발 중',
   'vip.downtify.temporary': '지금은 Downtify를 사용하세요.',
-  'vip.downtify.title': 'Downtify로 음악 다운로드',
   'vip.downtify.about':
     'LocalTune은 이미 가지고 있는 오디오 파일만 재생합니다. 음악을 다운로드하거나 캡처하지 않습니다.',
-  'vip.downtify.intro':
-    'Downtify는 셀프 호스팅 오픈 소스 다운로더입니다. Spotify 또는 YouTube Music 링크를 붙여 넣으면 태그가 있는 오디오 파일을 얻을 수 있습니다.',
   'vip.downtify.independent': 'Downtify는 LocalTune과 별개의 독립 프로젝트입니다.',
-  'vip.downtify.hint':
-    'Downtify가 저장하는 폴더(로컬 폴더 또는 OneDrive)를 LocalTune에 지정하면 바로 재생할 수 있습니다.',
   'vip.downtify.github': 'GitHub에서 Downtify 열기',
   'vip.downtify.docs': 'Downtify 문서',
 

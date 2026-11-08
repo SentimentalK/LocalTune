@@ -38,17 +38,11 @@ export default {
   'tabs.folders': 'フォルダ',
   'tabs.queue': 'キュー',
   'vip.open': 'VIP',
-  'vip.title': 'VIP',
   'vip.subtitle': 'より良いダウンロードを開発中',
   'vip.downtify.temporary': '今は Downtify を使いましょう。',
-  'vip.downtify.title': 'Downtify で音楽をダウンロード',
   'vip.downtify.about':
     'LocalTune は手持ちの音声ファイルを再生するだけで、ダウンロードや取り込みは行いません。',
-  'vip.downtify.intro':
-    'Downtify はセルフホスト可能なオープンソースのダウンローダーです。Spotify や YouTube Music のリンクを貼ると、タグ付きの音声ファイルを出力します。',
   'vip.downtify.independent': 'Downtify は独立したプロジェクトで、LocalTune の一部ではありません。',
-  'vip.downtify.hint':
-    'Downtify の保存先（ローカルフォルダーまたは OneDrive）を LocalTune に指定すれば、そのまま再生できます。',
   'vip.downtify.github': 'GitHub で Downtify を開く',
   'vip.downtify.docs': 'Downtify のドキュメント',
 

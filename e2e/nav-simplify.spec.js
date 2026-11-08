@@ -46,16 +46,34 @@ test('the top bar settings button switches the desktop panel', async ({ page }) 
   await expect(page.locator('[data-testid="settings-open"]')).toBeVisible();
 });
 
-test('the VIP panel offers a single Downtify download card', async ({ page }) => {
+test('the VIP panel opens on the statement and hands off to Downtify', async ({ page }) => {
   await page.goto('/');
   await page.locator('[data-testid="vip-open"]').click();
 
-  await expect(page.locator('[data-testid="vip-view"]')).toBeVisible();
-  await expect(page.locator('[data-testid="vip-head"]')).toBeVisible();
-  await expect(page.locator('[data-testid="vip-head"] h2')).toHaveText('VIP');
-  await expect(page.locator('[data-testid="vip-placeholder"]')).toHaveText('更好的下载正在开发中');
-  await expect(page.locator('[data-testid="vip-temporary"]')).toHaveText('暂时先用 Downtify。');
+  const view = page.locator('[data-testid="vip-view"]');
+  await expect(view).toBeVisible();
+  // The panel header already says VIP, so the view must not repeat it.
+  await expect(page.locator('[data-testid="vip-head"]')).toHaveCount(0);
+  await expect(view.getByText('VIP', { exact: true })).toHaveCount(0);
+
+  const lead = page.locator('[data-testid="vip-lead"]');
+  await expect(lead).toHaveText('更好的下载，开发中。');
+  await expect(page.locator('[data-testid="vip-note"]')).toHaveText(
+    'LocalTune 只播放你已有的音频文件，不下载、也不抓取音乐。',
+  );
+
+  // The statement is the first thing in the pane, the card follows it.
+  const order = await page.evaluate(() => {
+    const leadTop = document.querySelector('[data-testid="vip-lead"]').getBoundingClientRect().top;
+    const cardTop = document
+      .querySelector('[data-testid="vip-downtify"]')
+      .getBoundingClientRect().top;
+    return { leadTop, cardTop };
+  });
+  expect(order.leadTop).toBeLessThan(order.cardTop);
+
   await expect(page.locator('[data-testid="vip-downtify"]')).toBeVisible();
+  await expect(page.locator('[data-testid="vip-downtify"] h3')).toHaveText('暂时先用 Downtify。');
 
   await expect(page.locator('[data-testid="playlist-view"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="import-open"]')).toHaveCount(0);
