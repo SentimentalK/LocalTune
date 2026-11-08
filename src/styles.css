@@ -343,10 +343,7 @@ a { color: inherit; }
   aspect-ratio: 640 / 550;
   flex: none;
   transform: translateX(5.9%);
-  /* Prototype: 45 rpm is 1.35x the 33⅓ speed, i.e. a shorter keyframe loop. */
-  --platter-spin: 14s;
 }
-.deck[data-rpm="45"] { --platter-spin: 10.37s; }
 .deck::before {
   content: "";
   position: absolute;
@@ -408,7 +405,7 @@ a { color: inherit; }
   clip-path: circle(50%);
   display: block;
   filter: saturate(0.87) contrast(1.06) brightness(0.87);
-  animation: spin var(--platter-spin, 14s) linear infinite;
+  animation: spin 14s linear infinite;
   animation-play-state: paused;
   will-change: transform;
   -webkit-user-drag: none;
@@ -448,8 +445,8 @@ a { color: inherit; }
 .scrub-hud.is-back .scrub-hud-delta { color: var(--warn); }
 .scrub-hud-time { color: var(--dim); }
 
-/* Visual-only 33⅓ / 45 rpm switch. */
-.rpm-switch {
+/* Static 33⅓ plate: decoration only, never a control. */
+.rpm-tag {
   position: absolute;
   left: 3%;
   bottom: 2.5%;
@@ -464,13 +461,10 @@ a { color: inherit; }
   line-height: 1;
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
-  transition: color 0.15s, border-color 0.15s;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
 }
-.rpm-switch:hover {
-  color: var(--text);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--stroke));
-}
-.deck[data-rpm="45"] .rpm-switch { color: var(--accent); }
 
 .vinyl::before {
   content: "";

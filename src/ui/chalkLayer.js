@@ -374,12 +374,12 @@ export function mountChalkLayer(deck) {
         );
 
         // The label sits in the whitespace outside the arc's left branch. It
-        // is pinned above the 33⅓ chip (9 CSS px of clearance), sized like the
+        // is pinned above the 33⅓ plate (9 CSS px of clearance), sized like the
         // other two captions, and never shrunk. Its right edge is pulled back
         // until the nearest corner of the box is 18 units off the stroke; wide
         // translations may start left of the deck, which is transparent.
-        const chip = toUnits(deck.querySelector('.rpm-switch'));
-        const limitBottom = (chip ? chip.y0 : VIEW_H) - 9 / scale;
+        const plate = toUnits(deck.querySelector('.rpm-tag'));
+        const limitBottom = (plate ? plate.y0 : VIEW_H) - 9 / scale;
         const SIZE = 30;
         placeLabel(scratchTitle, { x: 320, y: limitBottom, size: SIZE });
         const probe = toUnits(scratchTitle);

@@ -20,6 +20,15 @@ test('the vinyl shell has one transport surface and no button row', async ({ pag
   await expect(page.locator('#armRotor')).toHaveAttribute('role', 'slider');
   await expect(page.locator('#armRotor')).toHaveAttribute('data-playing', 'false');
 
+  // The 33⅓ plate is decoration: one fixed speed, no switch, no 45 state.
+  const plate = page.locator('.rpm-tag');
+  await expect(plate).toHaveCount(1);
+  await expect(plate).toHaveText('33⅓');
+  await expect(plate).toHaveAttribute('aria-hidden', 'true');
+  await expect(page.locator('[data-testid="rpm-switch"]')).toHaveCount(0);
+  await expect(page.locator('.deck')).not.toHaveAttribute('data-rpm', /.*/);
+  expect(await plate.evaluate((node) => node.tagName)).toBe('SPAN');
+
   const tabs = page.locator('.tabs [role="tab"]');
   await expect(tabs).toHaveCount(2);
   await expect(tabs).toHaveText(['队列', '文件夹']);

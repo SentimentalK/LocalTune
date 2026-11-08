@@ -57,18 +57,18 @@ function desktopSequence() {
   return steps;
 }
 
-test('desktop toggles move the single close glyph and close back to the library', () => {
+test('desktop toggles move the single close glyph and each key closes itself', () => {
   const steps = desktopSequence();
 
   assert.deepEqual(steps[0], { panelView: 'vip', panelOpen: true });
   assert.deepEqual(steps[1], { panelView: 'settings', panelOpen: true });
-  assert.deepEqual(steps[2], { panelView: 'library', panelOpen: true });
-  assert.deepEqual(steps[3], { panelView: 'library', panelOpen: false });
+  assert.deepEqual(steps[2], { panelView: 'library', panelOpen: false });
+  assert.deepEqual(steps[3], { panelView: 'library', panelOpen: true });
 
-  assert.deepEqual(steps.map((state) => closeKeys(state).length), [1, 1, 1, 0]);
+  assert.deepEqual(steps.map((state) => closeKeys(state).length), [1, 1, 0, 1]);
   assert.deepEqual(closeKeys(steps[1]), ['settings']);
-  assert.deepEqual(closeKeys(steps[2]), ['library']);
-  assert.deepEqual(closeKeys(steps[3]), []);
+  assert.deepEqual(closeKeys(steps[2]), []);
+  assert.deepEqual(closeKeys(steps[3]), ['library']);
   assert.deepEqual(derivePanelState(steps[1]).vip.icon, 'own');
 });
 
@@ -105,16 +105,13 @@ test('mobile library toggle collapses instead of opening the panel', () => {
 
 // --- panelAfterClose ----------------------------------------------------
 
-test('panelAfterClose lands on the library view and keeps it open on desktop only', () => {
-  assert.deepEqual(panelAfterClose({ panelView: 'settings', panelOpen: true }, false), {
-    panelView: 'library',
-    panelOpen: true,
-  });
-  assert.deepEqual(panelAfterClose({ panelView: 'library', panelOpen: true }, false), {
+test('panelAfterClose always collapses to the closed library view', () => {
+  assert.deepEqual(panelAfterClose(), { panelView: 'library', panelOpen: false });
+  assert.deepEqual(panelAfterClose({ panelView: 'settings', panelOpen: true }), {
     panelView: 'library',
     panelOpen: false,
   });
-  assert.deepEqual(panelAfterClose({ panelView: 'settings', panelOpen: true }, true), {
+  assert.deepEqual(panelAfterClose({ panelView: 'vip', panelOpen: true }), {
     panelView: 'library',
     panelOpen: false,
   });
