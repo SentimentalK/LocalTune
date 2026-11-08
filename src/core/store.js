@@ -2078,6 +2078,21 @@ export class Store extends EventTarget {
     this._syncMediaSession(true);
   }
 
+  /**
+   * Drag preview: move the element and the position cursor without emitting or
+   * persisting. Gestures call this at ~10 Hz while the finger moves and commit
+   * the final value through `seek()`, so a scrub never writes localStorage or
+   * repaints the whole shell per pointer event.
+   */
+  seekPreview(seconds) {
+    const duration = this._state.current.duration || this._state.current.track?.duration || 0;
+    const value = Math.max(Number(seconds) || 0, 0);
+    const target = duration > 0 ? Math.min(value, duration) : value;
+    this._state.current.position = target;
+    this.player?.seek(target);
+    return target;
+  }
+
   setVolume(value) {
     const volume = clamp(Number(value) || 0, 0, 1);
     this._state.current.volume = volume;
