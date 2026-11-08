@@ -45,7 +45,7 @@ UI 设计我用 Claude 和 ChatGPT 探索过几版，最后选了自己喜欢的
 这几天 Flash 用掉了 OpenCode Go 月度额度的 29%，折算下来大概 **3 美元**。当然，这不算我自己的时间、前期的设计投入和已有的服务器成本，但模型用量确实就这么多。
 
 <p align="center">
-  <img src="docs/screenshots/opencode-go-usage.webp" width="100%" alt="OpenCode Go 面板：月度额度已用 29%，累计请求 19,156 次" />
+  <img src="docs/screenshots/opencode-go-usage.png" width="100%" alt="OpenCode Go 面板：月度额度已用 29%，累计请求 19,156 次" />
 </p>
 
 我之前一直觉得，复杂一点的 Agent 工作流，尤其是 Master 和技术设计，最好还是用 Opus 这种强模型。Worker 可以便宜一点，但负责思考和 Review 的模型总得足够强吧？

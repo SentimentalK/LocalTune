@@ -48,7 +48,7 @@ The biggest surprise was the cost.
 Over those few days, Flash used 29% of my monthly OpenCode Go quota, which works out to about **$3**.
 
 <p align="center">
-  <img src="docs/screenshots/opencode-go-usage.webp" width="100%" alt="OpenCode Go dashboard: monthly quota 29% used, 19,156 requests" />
+  <img src="docs/screenshots/opencode-go-usage.png" width="100%" alt="OpenCode Go dashboard: monthly quota 29% used, 19,156 requests" />
 </p>
 
 That obviously doesn't include my time, the earlier design work, or the servers I already had. But the model usage really was that cheap.
