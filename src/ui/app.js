@@ -2395,8 +2395,11 @@ export function mountUi(root, store, sw) {
     });
   }
 
-  // Cold start: nothing has been loaded into the element yet. A release opens
-  // the queue head, waits for metadata, lands the scrub target and plays.
+  // Cold start: nothing has been loaded into the element yet. `playQueue`
+  // runs in the pointerdown task so the browser sees a user gesture; the
+  // demo/remote URL branch of the loader reaches loadUrl()+play() before its
+  // first await, so that path is fully synchronous. Local files finish when
+  // their File handle resolves and play as soon as it does.
   let coldLoad = null;
   let coldTarget = 0;
 
@@ -2426,6 +2429,13 @@ export function mountUi(root, store, sw) {
         coldLoad = null;
       });
     return coldLoad;
+  }
+
+  /** First contact with the platter: open the song before the hand moves. */
+  function primeColdScratch() {
+    if (hasAudioSource() || coldLoad) return;
+    coldTarget = Math.max(Number(store.state.current.position) || 0, 0);
+    beginColdLoad();
   }
 
   function startFromColdGesture(seconds) {
@@ -2495,6 +2505,9 @@ export function mountUi(root, store, sw) {
 
   function platterPress() {
     beginGesture();
+    // Reduced motion must not start a scratch voice; the release still opens
+    // the queue through commitScrub and plays normally.
+    if (!prefersReducedMotion.matches) primeColdScratch();
     scratchPress();
   }
 
