@@ -902,6 +902,8 @@ export function mountUi(root, store, sw) {
   let lowPowerDecay = 0;
   let idleStop = 0;
   let watchedAudio = null;
+  let coverSpinForced = false;
+  let coverSpinWarned = false;
   const gate = createLowPowerGate();
   const prefersReducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)') ?? {
     matches: false,
@@ -1522,6 +1524,36 @@ export function mountUi(root, store, sw) {
     }
   }
 
+  /**
+   * Last line of defence for the record: while a track plays, the cover must
+   * keep spinning unless the user asked for reduced motion. A future CSS rule
+   * that pauses the animation would otherwise freeze the disc for good; force
+   * the inline play state back and warn once so the regression is visible.
+   * The inline override is dropped as soon as playback stops so the paused
+   * state still applies.
+   */
+  function guardCoverSpin(playing) {
+    if (!playing || prefersReducedMotion.matches) {
+      if (coverSpinForced) {
+        ui.cover.style.removeProperty('animation-play-state');
+        coverSpinForced = false;
+      }
+      return;
+    }
+    if (coverSpinForced) return;
+    const style = getComputedStyle(ui.cover);
+    if (style.animationPlayState === 'running') return;
+    ui.cover.style.setProperty('animation-play-state', 'running', 'important');
+    coverSpinForced = true;
+    if (!coverSpinWarned) {
+      coverSpinWarned = true;
+      console.warn(
+        '[localtune] disc spin was paused while playing; forced animation-play-state: running',
+        { animationName: style.animationName, animationPlayState: style.animationPlayState },
+      );
+    }
+  }
+
   function renderTabs() {
     ui.tabButtons.forEach((button) => {
       const selected = button.dataset.tab === libraryTab;
@@ -2031,6 +2063,7 @@ export function mountUi(root, store, sw) {
 
     renderHeader(state);
     renderStage(state);
+    guardCoverSpin(Boolean(state.current.track) && state.current.playing);
     renderTabs();
     renderPanelMeta(state);
     renderLibrary(state);
@@ -2394,6 +2427,7 @@ export function mountUi(root, store, sw) {
   });
 
   prefersReducedMotion.addEventListener?.('change', () => {
+    guardCoverSpin(Boolean(store.state.current.track) && store.state.current.playing);
     if (store.state.current.playing) scheduleArm();
   });
 

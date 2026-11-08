@@ -1795,14 +1795,16 @@ a.source-subtitle.is-beta:focus-visible { text-decoration: underline; }
   .stage { justify-content: flex-start; }
 }
 
-/* Low-power playback: keep the audio, drop decorative filters and animations. */
+/* Low-power playback: keep the audio and the rotating disc, drop decorative
+   filters and the remaining animations. The spin is compositor-only, so it
+   stays and merely halves its speed instead of freezing the record. */
 html.is-low-power .deck::before { filter: none; }
 html.is-low-power .tonearm-motion { filter: none !important; }
 html.is-low-power .stylus-point { filter: none; }
 html.is-low-power .arm-handle:focus-visible { filter: none; }
 html.is-low-power .modal { backdrop-filter: none; }
 html.is-low-power .app.is-overlay .panel { backdrop-filter: none; }
-html.is-low-power .disc-art { animation: none; }
+html.is-low-power .disc-art { animation-duration: 26s; }
 html.is-low-power .deck.swapping .disc-wrap { animation: none; }
 html.is-low-power .toast:not([hidden]) { animation: none; }
 html.is-low-power .chalk-layer * { animation: none !important; }
