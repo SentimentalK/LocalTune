@@ -343,7 +343,10 @@ a { color: inherit; }
   aspect-ratio: 640 / 550;
   flex: none;
   transform: translateX(5.9%);
+  /* Prototype: 45 rpm is 1.35x the 33⅓ speed, i.e. a shorter keyframe loop. */
+  --platter-spin: 14s;
 }
+.deck[data-rpm="45"] { --platter-spin: 10.37s; }
 .deck::before {
   content: "";
   position: absolute;
@@ -377,6 +380,9 @@ a { color: inherit; }
   border-radius: 50%;
   overflow: hidden;
   isolation: isolate;
+  /* The disc owns its pointer stream: a grab must not turn into a page pan. */
+  touch-action: none;
+  cursor: grab;
   background: #091016;
   border: 4px solid #0b1319;
   box-shadow:
@@ -385,6 +391,16 @@ a { color: inherit; }
     0 1px 1px rgba(245, 252, 255, 0.16) inset;
   transform: translateZ(0);
 }
+.deck.is-disc-scrub .vinyl { cursor: grabbing; }
+
+/* Manual platter angle during a scrub. The cover keeps its own `spin`
+   animation, so the two transforms compose instead of overwriting. */
+.platter-rotor {
+  position: absolute;
+  inset: 0;
+}
+.deck.is-disc-scrub .platter-rotor { will-change: transform; }
+
 .disc-art {
   width: 100%;
   height: 100%;
@@ -392,14 +408,69 @@ a { color: inherit; }
   clip-path: circle(50%);
   display: block;
   filter: saturate(0.87) contrast(1.06) brightness(0.87);
-  animation: spin 14s linear infinite;
+  animation: spin var(--platter-spin, 14s) linear infinite;
   animation-play-state: paused;
   will-change: transform;
   -webkit-user-drag: none;
   user-select: none;
 }
 .deck.is-playing .disc-art { animation-play-state: running; }
+/* Exception: a record that was already turning keeps turning while the arm
+   is lifted and moved. A drag that starts paused stays paused. */
+.deck.is-arm-seek .disc-art { animation-play-state: running; }
+/* A hand on the record pauses the keyframes through an inline
+   animation-play-state set by the scrub code, never through this class: a
+   stranded .is-disc-scrub must not be able to stop the platter forever. */
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Scrub HUD: target time, signed delta, visible only while a drag is live. */
+.scrub-hud {
+  position: absolute;
+  left: 50%;
+  bottom: 1.5%;
+  z-index: 13;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: color-mix(in srgb, var(--overlay) 84%, transparent);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.scrub-hud-delta { color: var(--accent); font-weight: 600; }
+.scrub-hud.is-back .scrub-hud-delta { color: var(--warn); }
+.scrub-hud-time { color: var(--dim); }
+
+/* Visual-only 33⅓ / 45 rpm switch. */
+.rpm-switch {
+  position: absolute;
+  left: 3%;
+  bottom: 2.5%;
+  z-index: 13;
+  min-width: 46px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.15s, border-color 0.15s;
+}
+.rpm-switch:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--stroke));
+}
+.deck[data-rpm="45"] .rpm-switch { color: var(--accent); }
 
 .vinyl::before {
   content: "";
@@ -512,6 +583,9 @@ a { color: inherit; }
   overflow: visible;
   user-select: none;
   -webkit-user-select: none;
+  /* Chrome does not inherit touch-action to SVG children; the shapes carry it
+     themselves so an arm drag is never cancelled by the page scroller. */
+  touch-action: none;
 }
 .tonearm-motion {
   transform-box: view-box;
@@ -554,8 +628,14 @@ a { color: inherit; }
   stroke-linejoin: round;
   pointer-events: stroke;
   cursor: grab;
+  touch-action: none;
 }
-.arm-head-hit { fill: transparent; pointer-events: all; cursor: grab; }
+.arm-head-hit {
+  fill: transparent;
+  pointer-events: all;
+  cursor: grab;
+  touch-action: none;
+}
 .tonearm-svg.grabbing .arm-hit,
 .tonearm-svg.grabbing .arm-head-hit { cursor: grabbing; }
 .hub-hit { fill: transparent; pointer-events: all; cursor: pointer; touch-action: none; outline: none; }
@@ -1804,6 +1884,9 @@ html.is-low-power .stylus-point { filter: none; }
 html.is-low-power .arm-handle:focus-visible { filter: none; }
 html.is-low-power .modal { backdrop-filter: none; }
 html.is-low-power .app.is-overlay .panel { backdrop-filter: none; }
+/* Low power keeps the platter turning, only slower. Stopping it entirely made
+   a battery optimisation look like a broken deck ("切歌也不恢复"). The only
+   place that stops the record is `prefers-reduced-motion`. */
 html.is-low-power .disc-art { animation-duration: 26s; }
 html.is-low-power .deck.swapping .disc-wrap { animation: none; }
 html.is-low-power .toast:not([hidden]) { animation: none; }
@@ -1816,5 +1899,5 @@ html.is-low-power .chalk-layer * { animation: none !important; }
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
-  .disc-art { animation: none !important; }
+  .disc-art { animation: none !important; animation-play-state: paused !important; }
 }

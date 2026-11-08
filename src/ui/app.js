@@ -14,9 +14,10 @@ import { createSettingsView } from './settings.js';
 import { createVipView } from './vip.js';
 import { createVirtualizer } from './virtualList.js';
 import { openTagInfo } from './diagnostics.js';
-import { bindStageSwipe, bindTonearm, ARM_PARK, angleForProgress } from './tonearm.js';
+import { bindPlatterScrub, bindStageSwipe, bindTonearm, ARM_PARK, angleForProgress } from './tonearm.js';
 import { createLowPowerGate, LOW_POWER_WINDOW_MS } from './lowPower.js';
 import { mountChalkLayer, shouldShowChalk } from './chalkLayer.js';
+import { createScratchAudio } from './scratch.js';
 import { isDemoTrack } from '../core/demo.js';
 import {
   THEMES,
@@ -68,10 +69,14 @@ const SEARCH_GROUPS = [
 
 const SEARCH_DEBOUNCE_MS = 150;
 const PANEL_BREAKPOINT = '(max-width: 900px)';
+const RPM_LABELS = { 33: '33⅓', 45: '45' };
 
 let installPromptSeen = false;
 let activeArm = null;
 let activeSwipe = null;
+let activePlatter = null;
+// Prototype turntable speed: 33⅓ or 45 rpm. Visual only, per session.
+let platterRpm = '33';
 
 function isInstalled() {
   if (typeof window === 'undefined') return false;
@@ -602,16 +607,47 @@ function createShell(store, sw) {
 
   // ---- stage ----
   const cover = el('img', { class: 'disc-art', id: 'cover', alt: '', draggable: 'false' });
+  // Two rotations stack: the CSS `spin` animation (audio playing) and the
+  // manual angle the finger applies while scrubbing. Keeping them on separate
+  // elements lets the animation pause without dropping the hand angle.
+  const platterRot = el('div', { class: 'platter-rotor' }, [cover]);
   const vinyl = el('div', { class: 'vinyl' }, [
-    cover,
+    platterRot,
     el('span', { class: 'reflection', 'aria-hidden': 'true' }),
     el('span', { class: 'rim', 'aria-hidden': 'true' }),
     el('span', { class: 'spindle', 'aria-hidden': 'true' }),
   ]);
   const discWrap = el('div', { class: 'disc-wrap' }, [vinyl]);
-  const deck = el('div', { class: 'deck', id: 'deck' }, [discWrap]);
+  const deck = el('div', { class: 'deck', id: 'deck', 'data-rpm': platterRpm }, [discWrap]);
   deck.insertAdjacentHTML('beforeend', TONEARM);
   const chalk = mountChalkLayer(deck);
+
+  // Scrub HUD: the target time and the signed delta from where the drag began.
+  const scrubHudTime = el('span', { class: 'scrub-hud-time' });
+  const scrubHudDelta = el('span', { class: 'scrub-hud-delta' });
+  const scrubHud = el(
+    'div',
+    { class: 'scrub-hud', 'data-testid': 'scrub-hud', hidden: true, 'aria-hidden': 'true' },
+    [scrubHudDelta, scrubHudTime],
+  );
+  const rpmLabel = el('span', { class: 'rpm-value', text: RPM_LABELS[platterRpm] });
+  const rpmSwitch = el(
+    'button',
+    {
+      class: 'rpm-switch',
+      type: 'button',
+      'data-testid': 'rpm-switch',
+      'aria-label': '33⅓ / 45 RPM',
+      title: '33⅓ / 45 RPM',
+    },
+    [rpmLabel],
+  );
+  rpmSwitch.addEventListener('click', () => {
+    platterRpm = platterRpm === '33' ? '45' : '33';
+    deck.dataset.rpm = platterRpm;
+    rpmLabel.textContent = RPM_LABELS[platterRpm];
+  });
+  deck.append(scrubHud, rpmSwitch);
 
   const armSvg = deck.querySelector('#armSvg');
   const armRotor = deck.querySelector('#armRotor');
@@ -774,6 +810,12 @@ function createShell(store, sw) {
     cover,
     deck,
     chalk,
+    vinyl,
+    platterRot,
+    scrubHud,
+    scrubHudTime,
+    scrubHudDelta,
+    rpmSwitch,
     stage,
     armSvg,
     armRotor,
@@ -863,6 +905,60 @@ export function mountUi(root, store, sw) {
   let toastTimer = null;
   let renderedSignature = null;
   let ui = createShell(store, sw);
+
+  // Back-scratch sound: one engine per app mount, no context until a press.
+  // Reuses the player's Web Audio graph when levelling has built one.
+  const scratch = createScratchAudio({ getContext: () => store.player?.context ?? null });
+  // Prototype-only hook so the sound self-test can read the node/gain state.
+  window.__scratch = scratch;
+
+  // Platter wrapper angle carried between scrubs, and the arm angle while it
+  // follows a large scrub. Both are reset when a gesture ends/re-mounts.
+  let platterAngle = 0;
+  let armFollowAngle = null;
+  let warnedPlatterStall = false;
+  // A deck gesture (platter scrub or arm drag) hides the chalk hint even when
+  // the audio happens to be paused, and keeps it hidden for a beat after the
+  // release so a resuming play event cannot flash it back on.
+  let gestureActive = false;
+  let chalkSyncTimer = 0;
+
+  function isGestureActive() {
+    return gestureActive || Boolean(activeArm?.isDragging() || activePlatter?.isScrubbing());
+  }
+
+  function syncChalk() {
+    const state = store.state;
+    ui.chalk.setVisible(
+      shouldShowChalk({
+        hasDemo: state.queue.tracks.some(isDemoTrack),
+        playing: Boolean(state.current.playing),
+        gesture: isGestureActive(),
+      }),
+    );
+  }
+
+  function beginGesture() {
+    gestureActive = true;
+    clearTimeout(chalkSyncTimer);
+    chalkSyncTimer = 0;
+    syncChalk();
+  }
+
+  /**
+   * The only switch for the platter keyframes. A scrub temporarily pauses them
+   * with an inline style; this restores the state-driven value afterwards (and
+   * on every render), so a stranded gesture class can never stop the record.
+   * Only `prefers-reduced-motion` may stop it; low power just slows it down
+   * through CSS, because a stopped platter read as a bug.
+   */
+  function setCoverSpin(playing) {
+    if (prefersReducedMotion.matches) {
+      ui.cover.style.removeProperty('animation-play-state');
+      return;
+    }
+    ui.cover.style.animationPlayState = playing ? 'running' : 'paused';
+  }
 
   function handlePermissionSettings(kind) {
     show('settings');
@@ -1427,12 +1523,36 @@ export function mountUi(root, store, sw) {
       shouldShowChalk({
         hasDemo: state.queue.tracks.some(isDemoTrack),
         playing,
+        gesture: isGestureActive(),
       }),
     );
 
     ui.deck.classList.toggle('is-playing', playing);
     ui.stage.classList.toggle('playing', playing);
     ui.armRotor.dataset.playing = String(playing);
+
+    // Belt and braces: no gesture may hold the platter hostage across a
+    // playback change. If a scrub class survived an exit path, drop it and
+    // leave a breadcrumb; the animation itself is controlled in setCoverSpin.
+    if (!activePlatter?.isScrubbing() && !activeArm?.isDragging()) {
+      if (playing && ui.deck.classList.contains('is-disc-scrub')) {
+        console.assert(false, 'stale is-disc-scrub cleared while playing');
+        ui.deck.classList.remove('is-disc-scrub');
+      }
+      setCoverSpin(playing);
+      // Watchdog: a playing record must never sit still. If anything (a CSS
+      // rule, a stale inline style) paused it, force it back and say so once.
+      if (playing && !prefersReducedMotion.matches) {
+        const spin = getComputedStyle(ui.cover).animationPlayState;
+        if (spin !== 'running') {
+          ui.cover.style.animationPlayState = 'running';
+          if (!warnedPlatterStall) {
+            warnedPlatterStall = true;
+            console.warn('platter was not running while playing; forced running');
+          }
+        }
+      }
+    }
 
     const nextId = track && track.hasCover && !track.coverSrc ? track.id : null;
     if (nextId !== stageCoverId) {
@@ -1500,7 +1620,7 @@ export function mountUi(root, store, sw) {
     }
     const tracking = playing && performance.now() >= armEngageUntil;
 
-    if (!activeArm?.isDragging()) {
+    if (!activeArm?.isDragging() && !activePlatter?.isScrubbing()) {
       const changed = playing !== lastPlaying || (track?.id ?? null) !== lastTrackId;
       if (!track || !playing) applyArmAngle(ARM_PARK, changed);
       else applyArmAngle(angleForProgress(progressOf(state)), changed);
@@ -2097,8 +2217,10 @@ export function mountUi(root, store, sw) {
     toastTimer = null;
     activeArm?.destroy();
     activeSwipe?.destroy();
+    activePlatter?.destroy();
     activeArm = null;
     activeSwipe = null;
+    activePlatter = null;
     // Tear the old dialog down first: it owns a document keydown listener and
     // the body scroll lock, and the replacement shell builds a fresh one.
     ui.permissionModal.sync(null);
@@ -2107,6 +2229,7 @@ export function mountUi(root, store, sw) {
     resetCache();
     bindShellEvents();
     bindArm();
+    bindPlatter();
     bindSwipe();
     root.replaceChildren(ui.app);
     syncTheme();
@@ -2131,26 +2254,308 @@ export function mountUi(root, store, sw) {
     store.toggle();
   }
 
+  function durationOf() {
+    return store.state.current.duration || store.state.current.track?.duration || 0;
+  }
+
+  function pausePlayback() {
+    if (store.state.current.playing) store.pause();
+  }
+
+  // Forward scratch: an <audio> element cannot reverse, so a forward grab
+  // rides the real audio at a variable playbackRate; a backward grab is muted
+  // and voiced by the friction synth in ./scratch.js.
+  const SCRATCH_RATE_REF = 0.15; // deg/ms that maps to 1x
+  const SCRATCH_RATE_MIN = 0.6;
+  const SCRATCH_RATE_MAX = 2.5;
+
+  function scratchPress() {
+    // The synth only exists while the hand is down (one noise source and one
+    // short-lived oscillator), so low power keeps it: only reduced motion may
+    // opt out, and even then the HUD still shows the target.
+    if (prefersReducedMotion.matches) return;
+    scratch.press();
+  }
+
+  function beginScrubVisual() {
+    // Inline pause, not a class: the platter follows the hand, and the class
+    // is never what decides the animation state.
+    ui.cover.style.animationPlayState = 'paused';
+  }
+
+  function scratchMove({ direction, speed }) {
+    const audio = store.audio;
+    if (!audio) return;
+    if (direction < 0) {
+      // No reversed audio exists: silence the element, stop the transport and
+      // voice the backward friction instead.
+      audio.playbackRate = 1;
+      audio.muted = true;
+      if (store.state.current.playing) store.pause();
+      if (!prefersReducedMotion.matches) scratch.friction(speed);
+      return;
+    }
+    scratch.silence();
+    audio.muted = false;
+    // A scratch should pitch-bend like tape, not time-stretch.
+    audio.preservesPitch = false;
+    audio.webkitPreservesPitch = false;
+    const rate = speed / SCRATCH_RATE_REF;
+    audio.playbackRate = Math.min(Math.max(rate, SCRATCH_RATE_MIN), SCRATCH_RATE_MAX);
+    if (!store.state.current.playing && hasAudioSource()) store.resume();
+  }
+
+  function endScratch() {
+    scratch.silence();
+    const audio = store.audio;
+    if (audio) {
+      audio.muted = false;
+      audio.playbackRate = 1;
+      audio.preservesPitch = true;
+      audio.webkitPreservesPitch = true;
+    }
+    setCoverSpin(store.state.current.playing);
+  }
+
+  /**
+   * Dropping the needle / releasing the record starts playback. `resume()`
+   * calls `audio.play()` inside the current pointer task: iOS only grants the
+   * play permission during the user gesture itself, never from a later timer.
+   */
+  function startPlayback() {
+    // Cold start: no source is attached yet, commitScrub opens the queue.
+    if (!hasAudioSource()) return;
+    store.resume();
+    syncArm();
+  }
+
+  /** True once the media element has an actual source (cold start has none). */
+  function hasAudioSource() {
+    return Boolean(store.audio?.currentSrc);
+  }
+
+  /** Resolve when the element knows its duration, or after `timeoutMs`. */
+  function waitForMetadata(audio, timeoutMs = 4000) {
+    if (!audio) return Promise.resolve(false);
+    if (Number.isFinite(audio.duration) && audio.duration > 0) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      let timer = 0;
+      let settled = false;
+      const done = (ok) => {
+        if (settled) return;
+        settled = true;
+        audio.removeEventListener('loadedmetadata', onReady);
+        audio.removeEventListener('canplay', onReady);
+        clearTimeout(timer);
+        resolve(ok);
+      };
+      const onReady = () => done(true);
+      audio.addEventListener('loadedmetadata', onReady);
+      audio.addEventListener('canplay', onReady);
+      timer = setTimeout(() => done(false), timeoutMs);
+    });
+  }
+
+  // Cold start: nothing has been loaded into the element yet. A gesture opens
+  // the queue head, waits for metadata, lands the scrub target and plays there.
+  let coldLoad = null;
+  let coldTarget = 0;
+
+  function startFromColdGesture(seconds) {
+    coldTarget = seconds;
+    if (coldLoad) return;
+    const state = store.state;
+    const tracks = state.queue.tracks;
+    // Empty queue: the gesture is a silent no-op.
+    if (!tracks.length) return;
+    const currentId = state.current.track?.id;
+    const id = tracks.some((track) => track.id === currentId) ? currentId : tracks[0].id;
+    coldLoad = (async () => {
+      await store.playQueue(tracks, id, 'gesture');
+      const audio = store.audio;
+      await waitForMetadata(audio);
+      const duration = Number(audio?.duration);
+      const target =
+        Number.isFinite(duration) && duration > 0
+          ? Math.min(Math.max(coldTarget, 0), duration)
+          : Math.max(coldTarget, 0);
+      run(store.seek(target));
+      syncArm();
+    })()
+      .catch(() => {})
+      .finally(() => {
+        coldLoad = null;
+      });
+  }
+
+  /** Seek committed by a gesture (or the keyboard): open the track if needed. */
+  function commitScrub(seconds) {
+    clearSeekPreview();
+    if (coldLoad) {
+      // The in-flight load lands the latest target once metadata arrives.
+      coldTarget = seconds;
+      return;
+    }
+    if (!hasAudioSource()) {
+      startFromColdGesture(seconds);
+      return;
+    }
+    run(store.seek(seconds));
+    syncArm();
+  }
+
+  /** pointercancel: restore the pre-gesture position without cold-loading. */
+  function restoreScrub(seconds) {
+    clearSeekPreview();
+    if (hasAudioSource()) run(store.seek(seconds));
+    else if (store.state.current.track) store.seekPreview(seconds);
+    syncArm();
+  }
+
+  // The HUD paints on every pointer event, but the audio seek is rAF-throttled
+  // to 10 Hz: each `currentTime` write costs a decode/range request on iOS
+  // Safari, and the shell does not need a full render per pointer sample.
+  const PREVIEW_INTERVAL_MS = 90;
+  let previewFrame = 0;
+  let previewTarget = null;
+  let previewAt = 0;
+
+  function signedTime(delta) {
+    const total = Math.round(Math.abs(delta));
+    const sign = delta < 0 ? '-' : '+';
+    return `${sign}${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  }
+
+  function showScrubHud(seconds, delta) {
+    if (!(durationOf() > 0)) return;
+    setText(ui.scrubHudDelta, signedTime(delta));
+    setText(ui.scrubHudTime, `${formatTime(seconds)} / ${formatTime(durationOf())}`);
+    ui.scrubHud.classList.toggle('is-back', delta < -0.5);
+    setHidden(ui.scrubHud, false);
+  }
+
+  function hideScrubHud() {
+    clearSeekPreview();
+    armFollowAngle = null;
+    setHidden(ui.scrubHud, true);
+    // The gesture is over, but keep the flag for a beat: a release that starts
+    // playback must not let a render in between flash the hint back on.
+    clearTimeout(chalkSyncTimer);
+    chalkSyncTimer = setTimeout(() => {
+      chalkSyncTimer = 0;
+      gestureActive = false;
+      syncChalk();
+    }, 80);
+  }
+
+  function platterPress() {
+    beginGesture();
+    scratchPress();
+  }
+
+  /**
+   * Visual feedback every event. The arm stays exactly where it was during a
+   * platter scrub; it only eases toward the target once the scrub moved more
+   * than `ARM_FOLLOW_SECONDS`, and snaps into place on commit via syncArm().
+   * During an arm drag the binding drives the arm itself.
+   */
+  const ARM_FOLLOW_SECONDS = 2;
+  const ARM_FOLLOW_EASE = 0.25;
+
+  function currentArmAngle() {
+    const match = /rotate\((-?[\d.]+)deg\)/.exec(ui.armRotor.style.transform || '');
+    if (match) return Number(match[1]);
+    return armLastAngle ?? ARM_PARK;
+  }
+
+  function paintScrub(seconds, delta) {
+    const duration = durationOf();
+    if (!(duration > 0)) return;
+    showScrubHud(seconds, delta);
+    if (activeArm?.isDragging()) return;
+    if (Math.abs(delta) < ARM_FOLLOW_SECONDS) {
+      armFollowAngle = null;
+      return;
+    }
+    if (armFollowAngle === null) armFollowAngle = currentArmAngle();
+    const target = angleForProgress(Math.min(Math.max(seconds / duration, 0), 1));
+    armFollowAngle += (target - armFollowAngle) * ARM_FOLLOW_EASE;
+    activeArm?.setAngle(armFollowAngle, true);
+  }
+
+  function queueSeekPreview(seconds) {
+    previewTarget = seconds;
+    if (previewFrame) return;
+    const schedule = () => {
+      previewFrame = requestAnimationFrame((now) => {
+        previewFrame = 0;
+        if (previewTarget === null) return;
+        if (now - previewAt < PREVIEW_INTERVAL_MS) {
+          schedule();
+          return;
+        }
+        previewAt = now;
+        const value = previewTarget;
+        previewTarget = null;
+        store.seekPreview(value);
+      });
+    };
+    schedule();
+  }
+
+  function clearSeekPreview() {
+    previewTarget = null;
+    if (previewFrame) {
+      cancelAnimationFrame(previewFrame);
+      previewFrame = 0;
+    }
+  }
+
   function bindArm() {
     activeArm = bindTonearm({
       svg: ui.armSvg,
       rotor: ui.armRotor,
       handle: ui.armHandle,
       getProgress: () => progressOf(store.state),
-      getDuration: () => store.state.current.duration || store.state.current.track?.duration || 0,
+      getDuration: durationOf,
       getPosition: () => store.state.current.position || 0,
+      getPlaying: () => store.state.current.playing,
       onToggle: togglePlayback,
-      onSeek: (seconds) => {
-        run(store.seek(seconds));
-        syncArm();
+      onSeek: commitScrub,
+      onRestore: restoreScrub,
+      onSeekPreview: (seconds, delta) => {
+        paintScrub(seconds, delta);
+        queueSeekPreview(seconds);
       },
-      onPause: () => {
-        if (store.state.current.playing) store.pause();
+      onScrubEnd: hideScrubHud,
+      onPause: pausePlayback,
+      onResume: startPlayback,
+      onPress: beginGesture,
+    });
+  }
+
+  function bindPlatter() {
+    // A fresh wrapper has no rotation; the carried angle belongs to the old one.
+    platterAngle = 0;
+    activePlatter = bindPlatterScrub(ui.vinyl, {
+      getDuration: durationOf,
+      getPosition: () => store.state.current.position || 0,
+      getPlaying: () => store.state.current.playing,
+      onResume: startPlayback,
+      onPaint: paintScrub,
+      onPreview: queueSeekPreview,
+      onCommit: commitScrub,
+      onRestore: restoreScrub,
+      onPress: platterPress,
+      onScrubStart: beginScrubVisual,
+      onScratchMove: scratchMove,
+      onScratchEnd: endScratch,
+      readRotation: () => platterAngle,
+      onRotate: (degrees) => {
+        platterAngle = degrees;
+        ui.platterRot.style.transform = `rotate(${degrees.toFixed(2)}deg)`;
       },
-      onResume: () => {
-        if (!store.state.current.playing) store.toggle();
-        syncArm();
-      },
+      onEnd: hideScrubHud,
     });
   }
 
@@ -2242,6 +2647,7 @@ export function mountUi(root, store, sw) {
 
   bindShellEvents();
   bindArm();
+  bindPlatter();
   bindSwipe();
   root.replaceChildren(ui.app);
   syncTheme();
@@ -2287,7 +2693,7 @@ export function mountUi(root, store, sw) {
 
   /** One arm paint from the live audio clock; no self-renewal. */
   function paintArmOnce(now = performance.now(), { force = false } = {}) {
-    if (activeArm?.isDragging()) return;
+    if (activeArm?.isDragging() || activePlatter?.isScrubbing()) return;
     const current = store.state.current;
     if (!current.playing) {
       if (force || armLastAngle !== ARM_PARK) applyArmAngle(ARM_PARK, true);
@@ -2364,6 +2770,7 @@ export function mountUi(root, store, sw) {
     lowPowerSince = on ? performance.now() : 0;
     document.documentElement.classList.toggle('is-low-power', on);
     store.setLowPower(on);
+    setCoverSpin(store.state.current.playing);
     stopArm();
     scheduleArm();
     paintArmOnce(performance.now(), { force: true });
