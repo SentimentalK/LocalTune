@@ -198,6 +198,36 @@ for (const viewport of VIEWPORTS) {
   });
 }
 
+// The scratch arc sweeps around the record's lower-left; the 33⅓ chip is a
+// real control in the same corner. The arc's bounding box covers the chip's
+// box even though the ink never does, so this samples the path points.
+for (const viewport of VIEWPORTS) {
+  test(`the scratch hint stays off the rpm chip at ${viewport.width}x${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await openDemo(page);
+    const gap = await page.evaluate(() => {
+      const deck = document.querySelector('.deck').getBoundingClientRect();
+      const scale = deck.width / 640;
+      const rpm = document.querySelector('.rpm-switch').getBoundingClientRect();
+      const toPx = (x, y) => ({ x: deck.left + x * scale, y: deck.top + y * scale });
+      let closest = Infinity;
+      for (const node of document.querySelectorAll('.chalk-anno[data-anno="scratch"] path')) {
+        const numbers = (node.getAttribute('d') ?? '').match(/-?\d+(?:\.\d+)?/g) ?? [];
+        for (let index = 0; index + 1 < numbers.length; index += 2) {
+          const point = toPx(Number(numbers[index]), Number(numbers[index + 1]));
+          const dx = Math.max(rpm.left - point.x, 0, point.x - rpm.right);
+          const dy = Math.max(rpm.top - point.y, 0, point.y - rpm.bottom);
+          closest = Math.min(closest, Math.hypot(dx, dy));
+        }
+      }
+      return closest / scale;
+    });
+    expect(gap).toBeGreaterThanOrEqual(2);
+  });
+}
+
 test('no locale lets a caption touch the record artwork', async ({ browser }) => {
   for (const locale of LOCALES) {
     const context = await browser.newContext({
@@ -231,19 +261,31 @@ test('every locale shares one caption size', async ({ browser }) => {
     const measured = await page.evaluate(() => {
       const deck = document.querySelector('.deck').getBoundingClientRect();
       const scale = deck.width / 640;
-      return [...document.querySelectorAll('.chalk-layer text')].map(
-        (node) => parseFloat(getComputedStyle(node).fontSize) / scale,
-      );
+      const groups = {};
+      for (const node of document.querySelectorAll('.chalk-layer text')) {
+        const anno = node.closest('.chalk-anno')?.getAttribute('data-anno') ?? 'other';
+        (groups[anno] ??= []).push(parseFloat(getComputedStyle(node).fontSize) / scale);
+      }
+      return groups;
     });
-    sizes.push({ code: locale.code, play: measured[0], seek: measured.slice(1) });
+    sizes.push({ code: locale.code, groups: measured });
     await context.close();
   }
-  const plays = sizes.map((row) => row.play);
-  const seeks = sizes.flatMap((row) => row.seek);
-  expect(Math.min(...plays)).toBeGreaterThanOrEqual(28);
-  expect(Math.max(...plays) - Math.min(...plays)).toBeLessThanOrEqual(2);
-  expect(Math.min(...seeks)).toBeGreaterThanOrEqual(28);
-  expect(Math.max(...seeks) - Math.min(...seeks)).toBeLessThanOrEqual(2);
+  // One size per annotation, identical for every locale: a translation may
+  // never shrink its caption (or the hint starts looking like a bug).
+  const byAnno = {};
+  for (const row of sizes) {
+    for (const [anno, list] of Object.entries(row.groups)) {
+      byAnno[anno] = [...(byAnno[anno] ?? []), ...list];
+    }
+  }
+  expect(Object.keys(byAnno).sort()).toEqual(['play', 'scratch', 'seek']);
+  for (const [anno, list] of Object.entries(byAnno)) {
+    expect(Math.max(...list) - Math.min(...list), anno).toBeLessThanOrEqual(2);
+  }
+  expect(Math.min(...byAnno.play)).toBeGreaterThanOrEqual(28);
+  expect(Math.min(...byAnno.seek)).toBeGreaterThanOrEqual(28);
+  expect(Math.min(...byAnno.scratch)).toBeGreaterThanOrEqual(22);
   expect(sizes.map((row) => row.code)).toEqual(LOCALES.map((locale) => locale.code));
 });
 
@@ -255,7 +297,7 @@ test('every locale renders its caption in the bundled face', async ({ browser })
     });
     const page = await context.newPage();
     await page.goto(`${ORIGIN}/`);
-    await expect(page.locator('.chalk-layer text')).toHaveCount(3);
+    await expect(page.locator('.chalk-layer text')).toHaveCount(4);
     await page.evaluate(() => document.fonts.ready);
 
     const seen = await page.evaluate(() => {
@@ -271,7 +313,14 @@ test('every locale renders its caption in the bundled face', async ({ browser })
         loaded: [...document.fonts]
           .filter((face) => face.status === 'loaded')
           .map((face) => face.family.replace(/["']/g, '')),
-        check: document.fonts.check(`30px "${family}"`, nodes[0].textContent ?? ''),
+        // Every caption, not just the first: a glyph missing from the subset
+        // silently falls back to the system cursive face.
+        checks: nodes.map((node) =>
+          document.fonts.check(
+            `${getComputedStyle(node).fontSize} "${family}"`,
+            node.textContent ?? '',
+          ),
+        ),
       };
     });
 
@@ -279,7 +328,7 @@ test('every locale renders its caption in the bundled face', async ({ browser })
     expect(seen.family, locale.code).toBe(locale.family);
     expect(seen.texts.every((text) => text.length > 0), locale.code).toBe(true);
     expect(seen.loaded, locale.code).toContain(locale.family);
-    expect(seen.check, locale.code).toBe(true);
+    expect(seen.checks.every(Boolean), `${locale.code} ${seen.texts.join(' | ')}`).toBe(true);
     await context.close();
   }
 });
