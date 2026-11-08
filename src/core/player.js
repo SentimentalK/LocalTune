@@ -316,6 +316,14 @@ export class AudioPlayer extends EventTarget {
     return this.#gainNode !== null;
   }
 
+  /**
+   * The Web Audio context once levelling has built the graph, or null. The
+   * scratch sound reuses it so the effect lands on the same destination.
+   */
+  get context() {
+    return this.#ctx;
+  }
+
   /** @returns {'full'|'gain-only'|'off'} */
   get levelingMode() {
     if (this.#wired === 'full') return 'full';
