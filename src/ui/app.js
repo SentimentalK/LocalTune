@@ -70,14 +70,13 @@ const SEARCH_GROUPS = [
 
 const SEARCH_DEBOUNCE_MS = 150;
 const PANEL_BREAKPOINT = '(max-width: 900px)';
-const RPM_LABELS = { 33: '33⅓', 45: '45' };
+/** Static speed plate beside the record; the deck only ever runs at this speed. */
+const RPM_TAG = '33⅓';
 
 let installPromptSeen = false;
 let activeArm = null;
 let activeSwipe = null;
 let activePlatter = null;
-// Prototype turntable speed: 33⅓ or 45 rpm. Visual only, per session.
-let platterRpm = '33';
 
 function isInstalled() {
   if (typeof window === 'undefined') return false;
@@ -634,7 +633,7 @@ function createShell(store, sw) {
     el('span', { class: 'spindle', 'aria-hidden': 'true' }),
   ]);
   const discWrap = el('div', { class: 'disc-wrap' }, [vinyl]);
-  const deck = el('div', { class: 'deck', id: 'deck', 'data-rpm': platterRpm }, [discWrap]);
+  const deck = el('div', { class: 'deck', id: 'deck' }, [discWrap]);
   deck.insertAdjacentHTML('beforeend', TONEARM);
   const chalk = mountChalkLayer(deck);
 
@@ -646,24 +645,10 @@ function createShell(store, sw) {
     { class: 'scrub-hud', 'data-testid': 'scrub-hud', hidden: true, 'aria-hidden': 'true' },
     [scrubHudDelta, scrubHudTime],
   );
-  const rpmLabel = el('span', { class: 'rpm-value', text: RPM_LABELS[platterRpm] });
-  const rpmSwitch = el(
-    'button',
-    {
-      class: 'rpm-switch',
-      type: 'button',
-      'data-testid': 'rpm-switch',
-      'aria-label': '33⅓ / 45 RPM',
-      title: '33⅓ / 45 RPM',
-    },
-    [rpmLabel],
-  );
-  rpmSwitch.addEventListener('click', () => {
-    platterRpm = platterRpm === '33' ? '45' : '33';
-    deck.dataset.rpm = platterRpm;
-    rpmLabel.textContent = RPM_LABELS[platterRpm];
-  });
-  deck.append(scrubHud, rpmSwitch);
+  // Speed plate. Decorative only: the deck has one speed, so this is plain
+  // text — no button, no click target, nothing for a keyboard to land on.
+  const rpmTag = el('span', { class: 'rpm-tag', 'aria-hidden': 'true', text: RPM_TAG });
+  deck.append(scrubHud, rpmTag);
 
   const armSvg = deck.querySelector('#armSvg');
   const armRotor = deck.querySelector('#armRotor');
@@ -831,7 +816,7 @@ function createShell(store, sw) {
     scrubHud,
     scrubHudTime,
     scrubHudDelta,
-    rpmSwitch,
+    rpmTag,
     stage,
     armSvg,
     armRotor,
@@ -894,18 +879,16 @@ export function derivePanelState({ panelView, panelOpen }) {
 
 /** Next panel state after clicking one of the three toggles. */
 export function panelAfterToggle({ panelView, panelOpen }, view, mobile) {
-  if (panelOpen && panelView === view) {
-    return { panelView: 'library', panelOpen: view === 'library' ? false : !mobile };
-  }
+  // Every key is its own switch: clicking the active one closes the panel
+  // instead of handing the slot to the library. Same on phones and desktop.
+  if (panelOpen && panelView === view) return { panelView: 'library', panelOpen: false };
   if (mobile && view === 'library') return { panelView: 'library', panelOpen: false };
   return { panelView: view, panelOpen: true };
 }
 
 /** Next panel state after Esc, an outside click, or the ✕ on the active view. */
-export function panelAfterClose({ panelView }, mobile) {
-  return panelView === 'library'
-    ? { panelView: 'library', panelOpen: false }
-    : { panelView: 'library', panelOpen: !mobile };
+export function panelAfterClose() {
+  return { panelView: 'library', panelOpen: false };
 }
 
 export function mountUi(root, store, sw) {
@@ -1333,7 +1316,7 @@ export function mountUi(root, store, sw) {
   }
 
   function closePanel() {
-    commitPanelState(panelAfterClose({ panelView, panelOpen }, isMobile()), { render: false });
+    commitPanelState(panelAfterClose(), { render: false });
   }
 
   function show(view) {

@@ -198,11 +198,11 @@ for (const viewport of VIEWPORTS) {
   });
 }
 
-// The scratch arc sweeps around the record's lower-left; the 33⅓ chip is a
-// real control in the same corner. The arc's bounding box covers the chip's
-// box even though the ink never does, so this samples the path points.
+// The scratch arc sweeps around the record's lower-left; the 33⅓ plate sits in
+// the same corner. The arc's bounding box covers the plate's box even though
+// the ink never does, so this samples the path points.
 for (const viewport of VIEWPORTS) {
-  test(`the scratch hint stays off the rpm chip at ${viewport.width}x${viewport.height}`, async ({
+  test(`the scratch hint stays off the rpm plate at ${viewport.width}x${viewport.height}`, async ({
     page,
   }) => {
     await page.setViewportSize(viewport);
@@ -210,7 +210,7 @@ for (const viewport of VIEWPORTS) {
     const gap = await page.evaluate(() => {
       const deck = document.querySelector('.deck').getBoundingClientRect();
       const scale = deck.width / 640;
-      const rpm = document.querySelector('.rpm-switch').getBoundingClientRect();
+      const rpm = document.querySelector('.rpm-tag').getBoundingClientRect();
       const toPx = (x, y) => ({ x: deck.left + x * scale, y: deck.top + y * scale });
       let closest = Infinity;
       for (const node of document.querySelectorAll('.chalk-anno[data-anno="scratch"] path')) {
