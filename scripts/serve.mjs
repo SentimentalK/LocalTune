@@ -67,11 +67,30 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  response.writeHead(200, {
-    'Content-Type': MIME[path.extname(found.file)] ?? 'application/octet-stream',
-    'Content-Length': found.size,
-    'Cache-Control': 'no-cache',
-  });
+  const type = MIME[path.extname(found.file)] ?? 'application/octet-stream';
+  const headers = { 'Content-Type': type, 'Cache-Control': 'no-cache', 'Accept-Ranges': 'bytes' };
+
+  // Byte ranges: without them Chromium cannot seek an <audio> element, so a
+  // local trial of the tonearm / platter scrub would always snap back to 0.
+  const range = request.headers.range;
+  if (range) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(String(range).trim());
+    if (match) {
+      const start = match[1] === '' ? Math.max(found.size - Number(match[2]), 0) : Number(match[1]);
+      const end = match[1] !== '' && match[2] !== '' ? Math.min(Number(match[2]), found.size - 1) : found.size - 1;
+      if (start <= end && start < found.size) {
+        response.writeHead(206, {
+          ...headers,
+          'Content-Range': `bytes ${start}-${end}/${found.size}`,
+          'Content-Length': end - start + 1,
+        });
+        createReadStream(found.file, { start, end }).pipe(response);
+        return;
+      }
+    }
+  }
+
+  response.writeHead(200, { ...headers, 'Content-Length': found.size });
   createReadStream(found.file).pipe(response);
 });
 
