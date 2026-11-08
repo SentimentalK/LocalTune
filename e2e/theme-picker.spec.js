@@ -63,6 +63,37 @@ test('the header palette button keeps cycling, in sync with the swatches', async
   );
 });
 
+test('the status-bar colour follows the canvas on every theme switch', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openAppearance(page);
+
+  // The manifest values are frozen at install time; only this meta tag can
+  // track the palette at runtime, so it must change in the same frame as the
+  // canvas and match it exactly (no tolerance).
+  for (const [theme, hex] of [
+    ['obsidian', '#0a0a0b'],
+    ['aubergine', '#100e14'],
+  ]) {
+    await page.locator(`[data-testid="theme-${theme}"]`).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+
+    const state = await page.evaluate(() => {
+      const [r, g, b] = getComputedStyle(document.documentElement)
+        .backgroundColor.match(/\d+/g)
+        .slice(0, 3)
+        .map(Number);
+      const channel = (value) => value.toString(16).padStart(2, '0');
+      return {
+        meta: document.querySelector('meta[name="theme-color"]')?.content ?? null,
+        canvas: `#${channel(r)}${channel(g)}${channel(b)}`,
+      };
+    });
+
+    expect(state.canvas).toBe(hex);
+    expect(state.meta).toBe(state.canvas);
+  }
+});
+
 test('the swatch grid is one tab stop and arrows select', async ({ page }) => {
   await openAppearance(page);
 

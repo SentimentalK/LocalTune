@@ -30,6 +30,8 @@ Dockerfile, nginx.conf, .github/workflows/image.yaml   # Build Worker
 
 `dist/` 不进 git。
 
+`src/manifest.webmanifest` 的 `background_color` 与 `theme_color` 是**安装期固定值**：WebAPK 在安装时读取并烘焙它们，用于启动画面和 standalone 的窗口/系统条底色；运行中的主题切换改不了，也无法让 manifest 动态化（一次安装只有一份）。两者统一取中性近黑 `#0a0a0b`（与最深的 Obsidian 同色），让全部主题下系统条与页面底色的差异最小。运行时的 `meta[name="theme-color"]` 仍由 `src/index.html` 首屏脚本与 `app.js` 的 `syncTheme()` 跟随当前 `--bg` 更新，页面内不受影响。
+
 ## 数据模型
 
 ```js
