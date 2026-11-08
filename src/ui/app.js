@@ -70,8 +70,6 @@ const SEARCH_GROUPS = [
 
 const SEARCH_DEBOUNCE_MS = 150;
 const PANEL_BREAKPOINT = '(max-width: 900px)';
-/** Static speed plate beside the record; the deck only ever runs at this speed. */
-const RPM_TAG = '33⅓';
 
 let installPromptSeen = false;
 let activeArm = null;
@@ -645,10 +643,7 @@ function createShell(store, sw) {
     { class: 'scrub-hud', 'data-testid': 'scrub-hud', hidden: true, 'aria-hidden': 'true' },
     [scrubHudDelta, scrubHudTime],
   );
-  // Speed plate. Decorative only: the deck has one speed, so this is plain
-  // text — no button, no click target, nothing for a keyboard to land on.
-  const rpmTag = el('span', { class: 'rpm-tag', 'aria-hidden': 'true', text: RPM_TAG });
-  deck.append(scrubHud, rpmTag);
+  deck.append(scrubHud);
 
   const armSvg = deck.querySelector('#armSvg');
   const armRotor = deck.querySelector('#armRotor');
@@ -816,7 +811,6 @@ function createShell(store, sw) {
     scrubHud,
     scrubHudTime,
     scrubHudDelta,
-    rpmTag,
     stage,
     armSvg,
     armRotor,
