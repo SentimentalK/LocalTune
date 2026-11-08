@@ -38,16 +38,14 @@ test('demo queue leads with Baby Girl and a 30 s demo fades into the next track'
         .evaluateAll((images) => images.filter((img) => img.complete && img.naturalWidth > 0).length),
     )
     .toBe(4);
-  expect(
-    await rows
-      .locator('img.track-cover')
-      .evaluateAll((images) => images.map((img) => new URL(img.src).pathname)),
-  ).toEqual([
-    '/demo/baby-girl.jpg',
-    '/demo/just-communication.jpg',
-    '/demo/hachimitsu.jpg',
-    '/demo/ziyou-de-ni.jpg',
-  ]);
+  // Rows use the content-addressed 96 px thumbnails, not the stage covers.
+  const coverPaths = await rows
+    .locator('img.track-cover')
+    .evaluateAll((images) => images.map((img) => new URL(img.src).pathname));
+  expect(coverPaths).toHaveLength(4);
+  for (const [index, slug] of ['baby-girl', 'just-communication', 'hachimitsu', 'ziyou-de-ni'].entries()) {
+    expect(coverPaths[index]).toMatch(new RegExp(`^/demo/${slug}\\.[0-9a-f]{8}-96\\.webp$`));
+  }
 
   // Play the 30 s trim fast (the dev server sends no ranges, so a forward seek
   // would be clamped to 0). Sample from inside the page: the fade window is

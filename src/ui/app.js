@@ -122,8 +122,11 @@ function coverNode(track, className = 'track-cover', coverIds = buildingCoverIds
     loading: 'lazy',
     decoding: 'async',
   });
-  if (track?.coverSrc) {
-    img.src = track.coverSrc;
+  // Rows paint the 96 px variant when a track ships one (demo covers); the
+  // stage keeps the full-size coverSrc.
+  const src = track?.coverThumb ?? track?.coverSrc;
+  if (src) {
+    img.src = src;
     return img;
   }
   if (track?.hasCover && track.id) {
@@ -606,7 +609,19 @@ function createShell(store, sw) {
   ]);
 
   // ---- stage ----
-  const cover = el('img', { class: 'disc-art', id: 'cover', alt: '', draggable: 'false' });
+  // The stage cover is the LCP element on first load: fetch it high, decode
+  // off the main thread, and reserve its 640×640 box so the swap never shifts
+  // the disc (layout size still comes from CSS).
+  const cover = el('img', {
+    class: 'disc-art',
+    id: 'cover',
+    alt: '',
+    draggable: 'false',
+    width: '640',
+    height: '640',
+    fetchpriority: 'high',
+    decoding: 'async',
+  });
   // Two rotations stack: the CSS `spin` animation (audio playing) and the
   // manual angle the finger applies while scrubbing. Keeping them on separate
   // elements lets the animation pause without dropping the hand angle.
@@ -2042,6 +2057,7 @@ export function mountUi(root, store, sw) {
     'duration',
     'hasCover',
     'coverSrc',
+    'coverThumb',
     'source',
   ];
 

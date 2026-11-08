@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { DEMO_BY_ID, DEMO_FADE_SECONDS, DEMO_TRACKS, demoEndFade } from '../src/core/demo.js';
+
+const srcDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src');
 
 test('the demo queue is the four requested tracks in order', () => {
   assert.deepEqual(
@@ -12,15 +17,13 @@ test('the demo queue is the four requested tracks in order', () => {
     DEMO_TRACKS.map((track) => track.path),
     ['demo/baby-girl.mp3', 'demo/just-communication.mp3', 'demo/hachimitsu.mp3', 'demo/ziyou-de-ni.mp3'],
   );
-  assert.deepEqual(
-    DEMO_TRACKS.map((track) => track.coverSrc),
-    [
-      './demo/baby-girl.jpg',
-      './demo/just-communication.jpg',
-      './demo/hachimitsu.jpg',
-      './demo/ziyou-de-ni.jpg',
-    ],
-  );
+  for (const track of DEMO_TRACKS) {
+    // The stage cover is content-addressed; the row thumbnail is its -96 twin.
+    assert.match(track.coverSrc, /^\.\/demo\/[a-z-]+\.[0-9a-f]{8}\.webp$/);
+    assert.match(track.coverThumb, /^\.\/demo\/[a-z-]+\.[0-9a-f]{8}-96\.webp$/);
+    assert.ok(existsSync(path.join(srcDir, track.coverSrc)), `missing ${track.coverSrc}`);
+    assert.ok(existsSync(path.join(srcDir, track.coverThumb)), `missing ${track.coverThumb}`);
+  }
   assert.deepEqual(
     DEMO_TRACKS.map((track) => track.duration),
     [273, 30, 30, 30],

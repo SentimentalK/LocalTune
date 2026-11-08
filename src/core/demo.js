@@ -2,7 +2,13 @@
  * Demo queue. The tracks live in `src/demo/` and are copied to `dist/demo/`
  * by the build. They are never indexed into the library, so they only appear
  * in the queue until the user plays or clears their own music.
+ *
+ * Covers are generated WebPs: `coverSrc` is the 640 px stage variant and
+ * `coverThumb` the 96 px list variant (see design/demo-covers/ and
+ * scripts/demo-covers.mjs). Content-addressed names make /demo/ immutable.
  */
+
+import { DEMO_COVERS } from './demoCovers.generated.js';
 
 export const DEMO_TRACKS = [
   {
@@ -17,7 +23,8 @@ export const DEMO_TRACKS = [
     mtime: 0,
     size: 0,
     cover: null,
-    coverSrc: './demo/baby-girl.jpg',
+    coverSrc: DEMO_COVERS['baby-girl'].src,
+    coverThumb: DEMO_COVERS['baby-girl'].thumb,
     source: 'demo',
     demoUrl: './demo/baby-girl.mp3',
     externalIds: {},
@@ -34,7 +41,8 @@ export const DEMO_TRACKS = [
     mtime: 0,
     size: 0,
     cover: null,
-    coverSrc: './demo/just-communication.jpg',
+    coverSrc: DEMO_COVERS['just-communication'].src,
+    coverThumb: DEMO_COVERS['just-communication'].thumb,
     source: 'demo',
     demoUrl: './demo/just-communication.mp3',
     externalIds: {},
@@ -51,7 +59,8 @@ export const DEMO_TRACKS = [
     mtime: 0,
     size: 0,
     cover: null,
-    coverSrc: './demo/hachimitsu.jpg',
+    coverSrc: DEMO_COVERS['hachimitsu'].src,
+    coverThumb: DEMO_COVERS['hachimitsu'].thumb,
     source: 'demo',
     demoUrl: './demo/hachimitsu.mp3',
     externalIds: {},
@@ -68,7 +77,8 @@ export const DEMO_TRACKS = [
     mtime: 0,
     size: 0,
     cover: null,
-    coverSrc: './demo/ziyou-de-ni.jpg',
+    coverSrc: DEMO_COVERS['ziyou-de-ni'].src,
+    coverThumb: DEMO_COVERS['ziyou-de-ni'].thumb,
     source: 'demo',
     demoUrl: './demo/ziyou-de-ni.mp3',
     externalIds: {},

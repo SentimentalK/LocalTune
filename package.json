@@ -12,6 +12,7 @@
     "size": "node scripts/size.mjs",
     "test": "node --test tests/*.test.js",
     "e2e": "playwright test",
+    "covers": "node scripts/demo-covers.mjs",
     "theme:check": "node scripts/theme-contrast.mjs"
   },
   "devDependencies": {
