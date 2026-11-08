@@ -4,7 +4,7 @@ test('the vinyl shell has one transport surface and no button row', async ({ pag
   await page.goto('/');
   await expect(page.locator('.wordmark')).toHaveText('localtune.');
 
-  for (const testid of ['vip-open', 'settings-open', 'theme-toggle', 'panel-open']) {
+  for (const testid of ['settings-open', 'theme-toggle', 'panel-open']) {
     await expect(page.locator(`[data-testid="${testid}"]`)).toHaveCount(1);
   }
   await expect(page.locator('[data-testid="search-open"]')).toHaveCount(0);
@@ -51,83 +51,6 @@ test('the top bar settings button switches the desktop panel', async ({ page }) 
   await expect(page.locator('[data-testid="settings-open"]')).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('[data-testid="settings-open"]')).toBeVisible();
 });
-
-test('the VIP panel opens on the statement and hands off to Downtify', async ({ page }) => {
-  await page.goto('/');
-  await page.locator('[data-testid="vip-open"]').click();
-
-  const view = page.locator('[data-testid="vip-view"]');
-  await expect(view).toBeVisible();
-  // The panel header already says VIP, so the view must not repeat it.
-  await expect(page.locator('[data-testid="vip-head"]')).toHaveCount(0);
-  await expect(view.getByText('VIP', { exact: true })).toHaveCount(0);
-
-  const lead = page.locator('[data-testid="vip-lead"]');
-  await expect(lead).toHaveText('更好的下载，开发中。');
-  await expect(page.locator('[data-testid="vip-note"]')).toHaveText(
-    'LocalTune 只播放你已有的音频文件，不下载、也不抓取音乐。',
-  );
-
-  // The statement is the first thing in the pane, the card follows it.
-  const order = await page.evaluate(() => {
-    const leadTop = document.querySelector('[data-testid="vip-lead"]').getBoundingClientRect().top;
-    const cardTop = document
-      .querySelector('[data-testid="vip-downtify"]')
-      .getBoundingClientRect().top;
-    return { leadTop, cardTop };
-  });
-  expect(order.leadTop).toBeLessThan(order.cardTop);
-
-  await expect(page.locator('[data-testid="vip-downtify"]')).toBeVisible();
-  await expect(page.locator('[data-testid="vip-downtify"] h3')).toHaveText('暂时先用 Downtify。');
-
-  await expect(page.locator('[data-testid="playlist-view"]')).toHaveCount(0);
-  await expect(page.locator('[data-testid="import-open"]')).toHaveCount(0);
-  await expect(page.locator('[data-testid="vip-playlist-settings"]')).toHaveCount(0);
-
-  const github = page.locator('[data-testid="vip-downtify-github"]');
-  await expect(github).toHaveAttribute('href', 'https://github.com/henriquesebastiao/downtify');
-  await expect(github).toHaveAttribute('target', '_blank');
-  await expect(github).toHaveAttribute('rel', /noreferrer/);
-  await expect(github).toHaveAttribute('rel', /noopener/);
-  await expect(github).toBeVisible();
-
-  const docs = page.locator('[data-testid="vip-downtify-docs"]');
-  await expect(docs).toHaveAttribute('href', 'https://downtify.henriquesebastiao.com/');
-  await expect(docs).toBeVisible();
-
-  await page.locator('[data-testid="panel-open"]').click();
-  await expect(page.locator('#tab-folders')).toBeVisible();
-});
-
-for (const width of [360, 390]) {
-  test.describe(`${width}px viewport`, () => {
-    test.use({ viewport: { width, height: 780 } });
-
-    test('the Downtify card fits inside the viewport', async ({ page }) => {
-      await page.goto('/');
-      await page.locator('[data-testid="vip-open"]').click();
-
-      const card = page.locator('[data-testid="vip-downtify"]');
-      await expect(card).toBeVisible();
-      await card.scrollIntoViewIfNeeded();
-
-      const overflow = await page.evaluate(
-        () => document.documentElement.scrollWidth - window.innerWidth,
-      );
-      expect(overflow, 'the page does not scroll horizontally').toBeLessThanOrEqual(0);
-
-      const box = await card.boundingBox();
-      expect(box, 'the card has a box').not.toBeNull();
-      expect(box.x).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width).toBeLessThanOrEqual(width);
-      expect(box.y).toBeGreaterThanOrEqual(-1);
-      expect(box.y + box.height).toBeLessThanOrEqual(781);
-
-      await page.screenshot({ path: `test-results/vip-downtify-${width}.png` });
-    });
-  });
-}
 
 test.describe('360px viewport', () => {
   test.use({ viewport: { width: 360, height: 780 } });

@@ -35,14 +35,6 @@ export default {
 
   'tabs.folders': 'Pastas',
   'tabs.queue': 'Fila',
-  'vip.open': 'VIP',
-  'vip.subtitle': 'Downloads melhores, em desenvolvimento',
-  'vip.downtify.temporary': 'Por enquanto, use o Downtify.',
-  'vip.downtify.about':
-    'O LocalTune só reproduz arquivos de áudio que você já tem. Ele nunca baixa nem captura música.',
-  'vip.downtify.independent': 'O Downtify é um projeto independente, não faz parte do LocalTune.',
-  'vip.downtify.github': 'Abrir o Downtify no GitHub',
-  'vip.downtify.docs': 'Documentação do Downtify',
 
   'folders.subfolders': 'Pastas',
   'folders.tracks': 'Faixas',
@@ -298,9 +290,7 @@ export default {
 
   'panel.libraryTitle': 'Seus discos.',
   'panel.settingsTitle': 'Configurações.',
-  'panel.vipTitle': 'VIP.',
   'panel.libraryKicker': 'SUA MÚSICA / {count} FAIXAS',
-  'panel.vipKicker': 'VIP / EM ANDAMENTO',
   'panel.close': 'Fechar painel',
   'theme.switch': 'Mudar tema de cor, atual {name}',
   'aria.tonearm': 'Braço: {state}. Toque para {action}, arraste para buscar',

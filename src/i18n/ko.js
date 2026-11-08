@@ -35,14 +35,6 @@ export default {
 
   'tabs.folders': '폴더',
   'tabs.queue': '대기열',
-  'vip.open': 'VIP',
-  'vip.subtitle': '더 나은 다운로드를 개발 중',
-  'vip.downtify.temporary': '지금은 Downtify를 사용하세요.',
-  'vip.downtify.about':
-    'LocalTune은 이미 가지고 있는 오디오 파일만 재생합니다. 음악을 다운로드하거나 캡처하지 않습니다.',
-  'vip.downtify.independent': 'Downtify는 LocalTune과 별개의 독립 프로젝트입니다.',
-  'vip.downtify.github': 'GitHub에서 Downtify 열기',
-  'vip.downtify.docs': 'Downtify 문서',
 
   'folders.subfolders': '폴더',
   'folders.tracks': '곡',
@@ -297,9 +289,7 @@ export default {
 
   'panel.libraryTitle': '당신의 레코드.',
   'panel.settingsTitle': '설정.',
-  'panel.vipTitle': 'VIP.',
   'panel.libraryKicker': '당신의 음악 / {count}곡',
-  'panel.vipKicker': 'VIP / 개발 중',
   'panel.close': '패널 닫기',
   'theme.switch': '테마 색상 변경, 현재 {name}',
   'aria.tonearm': '톤암: {state}. 탭하여 {action}, 드래그하여 탐색',

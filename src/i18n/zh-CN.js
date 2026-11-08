@@ -36,13 +36,6 @@ export default {
 
   'tabs.folders': '文件夹',
   'tabs.queue': '队列',
-  'vip.open': 'VIP',
-  'vip.subtitle': '更好的下载，开发中。',
-  'vip.downtify.temporary': '暂时先用 Downtify。',
-  'vip.downtify.about': 'LocalTune 只播放你已有的音频文件，不下载、也不抓取音乐。',
-  'vip.downtify.independent': 'Downtify 是独立项目，不属于 LocalTune。',
-  'vip.downtify.github': '在 GitHub 打开 Downtify',
-  'vip.downtify.docs': 'Downtify 文档',
 
   'folders.subfolders': '子文件夹',
   'folders.tracks': '曲目',
@@ -290,9 +283,7 @@ export default {
 
   'panel.libraryTitle': '你的唱片。',
   'panel.settingsTitle': '设置。',
-  'panel.vipTitle': 'VIP。',
   'panel.libraryKicker': '你的音乐 / {count} 首',
-  'panel.vipKicker': 'VIP / 开发中',
   'panel.close': '关闭面板',
   'theme.switch': '切换主题颜色，当前 {name}',
   'aria.tonearm': '唱臂：{state}。点击{action}，拖动定位进度',

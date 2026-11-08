@@ -65,7 +65,7 @@ export function saveTheme(theme) {
 
 export function loadPanel() {
   const view = read(PANEL_KEY, 'library');
-  return ['library', 'settings', 'vip'].includes(view) ? view : 'library';
+  return ['library', 'settings'].includes(view) ? view : 'library';
 }
 
 export function savePanel(view) {

@@ -11,7 +11,6 @@ import { runSearch } from '../core/search.js';
 import { libraryVisible, visibleSources } from '../core/library.js';
 import { el, icon, symbolIcon, setIcon, setText, setHidden } from './dom.js';
 import { createSettingsView } from './settings.js';
-import { createVipView } from './vip.js';
 import { createVirtualizer } from './virtualList.js';
 import { openTagInfo } from './diagnostics.js';
 import { bindPlatterScrub, bindStageSwipe, bindTonearm, ARM_PARK, angleForProgress } from './tonearm.js';
@@ -343,7 +342,6 @@ const SPRITE = `
 <svg class="sr-only" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
   <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 12h16M4 6h16M4 18h16"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
-  <symbol id="i-crown" viewBox="0 0 24 24"><path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 6.87a1 1 0 0 0 1.417.294l3.176-2.383a.5.5 0 0 1 .794.52l-1.7 9.36a1 1 0 0 1-.984.815H5.906a1 1 0 0 1-.984-.816l-1.7-9.36a.5.5 0 0 1 .794-.518L7.193 7.16A1 1 0 0 0 8.61 6.867z"/><path d="M5 21h14"/></symbol>
   <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></symbol>
@@ -565,11 +563,6 @@ function createShell(store, sw) {
   });
   const errorBox = el('p', { class: 'alert', role: 'alert' });
 
-  const vipButton = el(
-    'button',
-    { class: 'icon-btn', type: 'button', 'data-testid': 'vip-open', 'aria-label': t('vip.open') },
-    [symbolIcon('i-crown', 'icon own-icon'), symbolIcon('i-x', 'icon x-icon')],
-  );
   const settingsButton = el(
     'button',
     { class: 'icon-btn', type: 'button', 'data-testid': 'settings-open', 'aria-label': t('settings.open') },
@@ -600,7 +593,6 @@ function createShell(store, sw) {
     el('div', { class: 'brand-group' }, [wordmark, statusSep, status]),
   ]);
   const topActions = el('div', { class: 'top-actions', id: 'topActions' }, [
-    vipButton,
     settingsButton,
     themeButton,
     panelButton,
@@ -737,22 +729,13 @@ function createShell(store, sw) {
     listScroll,
   ]);
 
-  // ---- panel: settings / vip ----
+  // ---- panel: settings ----
   const settingsView = createSettingsView(store, sw);
-  const vipView = createVipView();
   const settingsHost = el('div', { class: 'panel-view settings-pane', id: 'settingsView', hidden: true }, [
     settingsView.node,
   ]);
-  const vipHost = el('div', { class: 'panel-view vip-pane', id: 'vipView', hidden: true }, [
-    vipView.node,
-  ]);
 
   const libraryKicker = el('p', { class: 'eyebrow', id: 'libraryKicker' });
-  const vipKicker = el(
-    'p',
-    { class: 'eyebrow vip-kicker', id: 'vipKicker', hidden: true },
-    [symbolIcon('i-crown'), el('span', { text: t('panel.vipKicker') })],
-  );
   const panelTitle = el('h2', { id: 'panelTitle' });
 
   const panel = el(
@@ -761,11 +744,10 @@ function createShell(store, sw) {
     [
       el('div', { class: 'panel-inner' }, [
         el('div', { class: 'panel-head' }, [
-          el('div', {}, [libraryKicker, vipKicker, panelTitle]),
+          el('div', {}, [libraryKicker, panelTitle]),
         ]),
         libraryView,
         settingsHost,
-        vipHost,
       ]),
     ],
   );
@@ -821,23 +803,19 @@ function createShell(store, sw) {
     repeatButton,
     repeatUse,
     topActions,
-    vipButton,
     settingsButton,
     themeButton,
     panelButton,
     panel,
     libraryView,
     settingsHost,
-    vipHost,
     settingsView,
-    vipView,
     searchInput,
     searchClear,
     tabButtons,
     trackList,
     listScroll,
     libraryKicker,
-    vipKicker,
     panelTitle,
     updateBanner,
     toast,
@@ -845,16 +823,15 @@ function createShell(store, sw) {
   };
 }
 
-const PANEL_VIEWS = ['vip', 'settings', 'library'];
+const PANEL_VIEWS = ['settings', 'library'];
 
 const PANEL_OPEN_KEYS = {
-  vip: 'vip.open',
   settings: 'settings.open',
   library: 'aria.library',
 };
 
 /**
- * Icon and aria state for the three top-bar toggles, derived only from the
+ * Icon and aria state for the two top-bar toggles, derived only from the
  * panel state. The active view owns the ✕; everything else shows its own glyph.
  * Labels stay i18n keys so the caller decides when to translate.
  */
@@ -871,7 +848,7 @@ export function derivePanelState({ panelView, panelOpen }) {
   return keys;
 }
 
-/** Next panel state after clicking one of the three toggles. */
+/** Next panel state after clicking one of the two toggles. */
 export function panelAfterToggle({ panelView, panelOpen }, view, mobile) {
   // Every key is its own switch: clicking the active one closes the panel
   // instead of handing the slot to the library. Same on phones and desktop.
@@ -1341,25 +1318,18 @@ export function mountUi(root, store, sw) {
     ui.panel.setAttribute('aria-hidden', String(!visible));
     ui.libraryView.hidden = panelView !== 'library';
     ui.settingsHost.hidden = panelView !== 'settings';
-    ui.vipHost.hidden = panelView !== 'vip';
 
     ui.libraryKicker.hidden = panelView !== 'library';
-    ui.vipKicker.hidden = panelView !== 'vip';
 
     ui.panelTitle.textContent =
-      panelView === 'library'
-        ? t('panel.libraryTitle')
-        : panelView === 'settings'
-          ? t('panel.settingsTitle')
-          : t('panel.vipTitle');
+      panelView === 'library' ? t('panel.libraryTitle') : t('panel.settingsTitle');
     ui.panel.setAttribute(
       'aria-label',
-      panelView === 'library' ? t('aria.library') : panelView === 'settings' ? t('settings.open') : t('vip.open'),
+      panelView === 'library' ? t('aria.library') : t('settings.open'),
     );
 
     const keys = derivePanelState({ panelView, panelOpen });
     for (const [button, entry] of [
-      [ui.vipButton, keys.vip],
       [ui.settingsButton, keys.settings],
       [ui.panelButton, keys.library],
     ]) {
@@ -1392,7 +1362,6 @@ export function mountUi(root, store, sw) {
     ui.shuffleButton.addEventListener('click', () => store.toggleShuffle());
     ui.repeatButton.addEventListener('click', () => store.cycleRepeat());
     ui.settingsButton.addEventListener('click', () => togglePanel('settings'));
-    ui.vipButton.addEventListener('click', () => togglePanel('vip'));
     ui.panelButton.addEventListener('click', () => togglePanel('library'));
     ui.themeButton.addEventListener('click', () => {
       const active = currentTheme();
@@ -2156,11 +2125,7 @@ export function mountUi(root, store, sw) {
     const count = state.tracks.length || state.queue.tracks.length;
     setText(ui.libraryKicker, t('panel.libraryKicker', { count }));
     ui.panelTitle.textContent =
-      panelView === 'library'
-        ? t('panel.libraryTitle')
-        : panelView === 'settings'
-          ? t('panel.settingsTitle')
-          : t('panel.vipTitle');
+      panelView === 'library' ? t('panel.libraryTitle') : t('panel.settingsTitle');
   }
 
   function pulseSwap() {
@@ -2203,7 +2168,6 @@ export function mountUi(root, store, sw) {
     renderPanelMeta(state);
     renderLibrary(state);
     ui.settingsView.render(state);
-    ui.vipView.render(state);
     applyPanel();
 
     if (state.pendingView) {
@@ -2715,7 +2679,6 @@ export function mountUi(root, store, sw) {
   applyPanel();
   render(store.state);
   if (panelView === 'settings') store.setView('settings');
-  else if (panelView === 'vip') store.setView('vip');
 
   window.addEventListener('beforeinstallprompt', () => {
     installPromptSeen = true;

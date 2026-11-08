@@ -24,30 +24,28 @@ test.describe('desktop header toggles', () => {
     await page.goto('/');
 
     const settingsButton = page.locator('[data-testid="settings-open"]');
-    const vipButton = page.locator('[data-testid="vip-open"]');
     const panelButton = page.locator('[data-testid="panel-open"]');
 
     await settingsButton.click();
     await expect(settingsButton.locator('.x-icon')).toBeVisible();
     await expect(settingsButton.locator('.own-icon')).toBeHidden();
     await expect(settingsButton).toHaveAttribute('aria-expanded', 'true');
-    await expect(vipButton.locator('.x-icon')).toBeHidden();
     await expect(panelButton.locator('.x-icon')).toBeHidden();
     await expect(page.locator('#panel')).toBeVisible();
 
-    await vipButton.click();
-    await expect(vipButton.locator('.x-icon')).toBeVisible();
+    await panelButton.click();
+    await expect(panelButton.locator('.x-icon')).toBeVisible();
     await expect(settingsButton.locator('.x-icon')).toBeHidden();
     await expect(settingsButton.locator('.own-icon')).toBeVisible();
-    await expect(vipButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(panelButton).toHaveAttribute('aria-expanded', 'true');
     await expect(settingsButton).toHaveAttribute('aria-expanded', 'false');
     expect(await visibleXCount(page)).toBe(1);
 
     // Clicking the active key closes the panel; it must not hand the slot to
-    // the library view.
-    await vipButton.click();
-    await expect(vipButton.locator('.x-icon')).toBeHidden();
-    await expect(vipButton).toHaveAttribute('aria-expanded', 'false');
+    // the other view.
+    await panelButton.click();
+    await expect(panelButton.locator('.x-icon')).toBeHidden();
+    await expect(panelButton).toHaveAttribute('aria-expanded', 'false');
     await expectPanelClosed(page);
     expect(await visibleXCount(page)).toBe(0);
   });
@@ -96,7 +94,6 @@ test.describe('mobile header toggles', () => {
     await page.goto('/');
 
     const settingsButton = page.locator('[data-testid="settings-open"]');
-    const vipButton = page.locator('[data-testid="vip-open"]');
 
     await settingsButton.click();
     await expect(settingsButton.locator('.x-icon')).toBeVisible();
@@ -106,14 +103,7 @@ test.describe('mobile header toggles', () => {
       .toBe(true);
     expect(await visibleXCount(page)).toBe(1);
 
-    await vipButton.click();
-    await expect(vipButton.locator('.x-icon')).toBeVisible();
-    await expect(settingsButton.locator('.x-icon')).toBeHidden();
-    await expect(vipButton).toHaveAttribute('aria-expanded', 'true');
-    await expect(settingsButton).toHaveAttribute('aria-expanded', 'false');
-    expect(await visibleXCount(page)).toBe(1);
-
-    await vipButton.click();
+    await settingsButton.click();
     await expect
       .poll(() => page.evaluate(() => document.body.classList.contains('overlay-open')))
       .toBe(false);
@@ -121,7 +111,7 @@ test.describe('mobile header toggles', () => {
       .poll(() => page.evaluate(() => document.querySelector('.app').classList.contains('is-overlay')))
       .toBe(false);
     await expect(page.locator('#panel')).toBeVisible();
-    await expect(vipButton.locator('.x-icon')).toBeHidden();
+    await expect(settingsButton.locator('.x-icon')).toBeHidden();
     await expect(settingsButton).toHaveAttribute('aria-expanded', 'false');
     expect(await visibleXCount(page)).toBe(0);
   });

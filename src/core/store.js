@@ -78,7 +78,7 @@ import { load as loadPrefs, save as savePrefs } from './playerPrefs.js';
 import { t } from '../i18n/index.js';
 import { yieldToMain } from './timing.js';
 
-const VIEWS = new Set(['folders', 'queue', 'search', 'settings', 'vip']);
+const VIEWS = new Set(['folders', 'queue', 'search', 'settings']);
 const MEDIA_SYNC_INTERVAL = 1000;
 const QUEUE_ROUND_KEY = 'localtune.queueRound';
 const REPLAYGAIN_HEAD_BYTES = 1 << 19;

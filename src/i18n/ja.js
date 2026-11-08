@@ -37,14 +37,6 @@ export default {
 
   'tabs.folders': 'フォルダ',
   'tabs.queue': 'キュー',
-  'vip.open': 'VIP',
-  'vip.subtitle': 'より良いダウンロードを開発中',
-  'vip.downtify.temporary': '今は Downtify を使いましょう。',
-  'vip.downtify.about':
-    'LocalTune は手持ちの音声ファイルを再生するだけで、ダウンロードや取り込みは行いません。',
-  'vip.downtify.independent': 'Downtify は独立したプロジェクトで、LocalTune の一部ではありません。',
-  'vip.downtify.github': 'GitHub で Downtify を開く',
-  'vip.downtify.docs': 'Downtify のドキュメント',
 
   'folders.subfolders': 'サブフォルダー',
   'folders.tracks': '曲',
@@ -310,9 +302,7 @@ export default {
 
   'panel.libraryTitle': 'あなたのレコード。',
   'panel.settingsTitle': '設定。',
-  'panel.vipTitle': 'VIP。',
   'panel.libraryKicker': 'あなたの音楽 / {count} 曲',
-  'panel.vipKicker': 'VIP / 開発中',
   'panel.close': 'パネルを閉じる',
   'theme.switch': 'テーマカラーを変更、現在 {name}',
   'aria.tonearm': 'トーンアーム：{state}。タップで{action}、ドラッグでシーク',

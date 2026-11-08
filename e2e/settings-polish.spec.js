@@ -127,7 +127,7 @@ test('languages flow into a left-aligned grid without row separators', async ({ 
   }
 });
 
-// The settings/VIP panes paint the library list's bar — same width, radius and
+// The settings pane paints the library list's bar — same width, radius and
 // colour, flush with the right edge — on a reserved gutter, so switching panes
 // never shifts the content.
 test('the settings pane paints the library bar on a reserved gutter', async ({ page }) => {
@@ -167,22 +167,6 @@ test('the settings pane paints the library bar on a reserved gutter', async ({ p
   // The gutter reserves exactly the bar, not a wider inset.
   expect(bars.settings.reserved).toBe(4);
 
-  // Both panes reserve the same bar width, so the content box is the same size
-  // in either one and switching cannot shift it.
-  const visiblePane = () =>
-    page.evaluate(() => {
-      const pane = document.querySelector('.settings-pane:not([hidden]), .vip-pane:not([hidden])');
-      return { clientWidth: pane.clientWidth, reserved: pane.offsetWidth - pane.clientWidth };
-    });
-
-  const settings = await visiblePane();
-  await page.locator('[data-testid="vip-open"]').click();
-  await expect(page.locator('#vipView')).toBeVisible();
-  await page.waitForTimeout(600); // panel width transition
-
-  const vip = await visiblePane();
-  expect(vip.reserved).toBe(4);
-  expect(vip.clientWidth).toBe(settings.clientWidth);
 });
 
 // The panel's horizontal gutter lives on the content, not on .panel-inner, so

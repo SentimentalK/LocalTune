@@ -172,12 +172,12 @@ for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
     await openDemo(page);
     const result = await page.evaluate(inkAgainstChrome);
-    // 3 icon buttons on a phone (the menu toggle is hidden), 4 on desktop,
+    // 2 icon buttons on a phone (the menu toggle is hidden), 3 on desktop,
     // plus the tab strip and the search field.
-    expect(result.groups.icons).toBeGreaterThanOrEqual(3);
+    expect(result.groups.icons).toBeGreaterThanOrEqual(2);
     expect(result.groups.tabs).toBe(1);
     expect(result.groups.search).toBe(1);
-    expect(result.chrome).toBeGreaterThanOrEqual(5);
+    expect(result.chrome).toBeGreaterThanOrEqual(4);
     expect(result.boxes).toBeGreaterThan(0);
     expect(result.overlaps).toEqual([]);
     expect(result.closest).toBeGreaterThanOrEqual(2);

@@ -35,14 +35,6 @@ export default {
 
   'tabs.folders': 'Папки',
   'tabs.queue': 'Очередь',
-  'vip.open': 'VIP',
-  'vip.subtitle': 'Улучшенные загрузки в разработке',
-  'vip.downtify.temporary': 'Пока используйте Downtify.',
-  'vip.downtify.about':
-    'LocalTune только воспроизводит аудиофайлы, которые у вас уже есть. Он не скачивает и не захватывает музыку.',
-  'vip.downtify.independent': 'Downtify — независимый проект, не часть LocalTune.',
-  'vip.downtify.github': 'Открыть Downtify на GitHub',
-  'vip.downtify.docs': 'Документация Downtify',
 
   'folders.subfolders': 'Папки',
   'folders.tracks': 'Треки',
@@ -297,9 +289,7 @@ export default {
 
   'panel.libraryTitle': 'Ваши пластинки.',
   'panel.settingsTitle': 'Настройки.',
-  'panel.vipTitle': 'VIP.',
   'panel.libraryKicker': 'ВАША МУЗЫКА / {count} ТРЕКОВ',
-  'panel.vipKicker': 'VIP / В РАЗРАБОТКЕ',
   'panel.close': 'Закрыть панель',
   'theme.switch': 'Сменить цветовую тему, сейчас {name}',
   'aria.tonearm': 'Тонарм: {state}. Нажмите для {action}, тяните для перемотки',

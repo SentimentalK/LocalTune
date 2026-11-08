@@ -37,7 +37,7 @@ test('settings view covers library, storage, language and about', async ({ page 
   // Build version is the 10-char source hash injected by the build.
   await expect(page.locator('[data-testid="about-version"]')).toHaveText(/^[0-9a-f]{10}$/);
 
-  // Playlist resolving inputs moved out of the about card into VIP.
+  // Playlist resolving inputs are no longer in the about card.
   const aboutCard = page.locator('[data-testid="settings-section-about"]');
   await expect(aboutCard.locator('[data-testid="setting-youtube-key"]')).toHaveCount(0);
   await expect(aboutCard.locator('[data-testid="setting-proxy-url"]')).toHaveCount(0);

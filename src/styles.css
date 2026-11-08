@@ -842,8 +842,6 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
   line-height: 1.4;
   text-transform: uppercase;
 }
-.vip-kicker { display: flex; align-items: center; gap: 6px; }
-.vip-kicker .icon { width: 12px; height: 12px; }
 .panel-head h2 {
   margin: 8px 0 0;
   font-family: var(--serif);
@@ -854,7 +852,7 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
 }
 .panel-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .library-view { display: flex; flex-direction: column; }
-.settings-pane, .vip-pane {
+.settings-pane {
   overflow-y: auto;
   padding-bottom: 20px;
   /* Reserve the bar's width so switching panes never shifts the content. */
@@ -865,7 +863,6 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
    reaches the screen edge and the text keeps its old inset. */
 .panel-head,
 .settings-pane,
-.vip-pane,
 .track-list {
   padding-right: var(--panel-gutter-r);
 }
@@ -873,17 +870,15 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
 .tabs {
   margin-right: var(--panel-gutter-r);
 }
-/* The library list and the settings/VIP panes share one bar: 4px, flush with
+/* The library list and the settings pane share one bar: 4px, flush with
    the viewport's right edge, accent at 30%. Width, radius and colour live in
    this single block so the two surfaces cannot drift apart. */
 .list-scroll::-webkit-scrollbar,
-.settings-pane::-webkit-scrollbar,
-.vip-pane::-webkit-scrollbar {
+.settings-pane::-webkit-scrollbar {
   width: 4px;
 }
 .list-scroll::-webkit-scrollbar-thumb,
-.settings-pane::-webkit-scrollbar-thumb,
-.vip-pane::-webkit-scrollbar-thumb {
+.settings-pane::-webkit-scrollbar-thumb {
   border-radius: 4px;
   background: color-mix(in srgb, var(--accent) 30%, transparent);
 }
@@ -1613,24 +1608,6 @@ a.source-subtitle.is-beta:focus-visible { text-decoration: underline; }
 .settings-github:hover,
 .settings-github:focus-visible { color: var(--accent); }
 .settings-github .icon { width: 16px; height: 16px; }
-/* The shell owns the kicker and the "VIP" title, so the view opens on the
-   statement; the card sits below it at the same surface/radius as Settings. */
-.vip-view { display: flex; flex-direction: column; gap: 20px; }
-.vip-lead { display: flex; flex-direction: column; gap: 10px; }
-.vip-lead h2 {
-  font-family: var(--serif);
-  font-size: clamp(22px, 2vw, 26px);
-  font-weight: 400;
-  line-height: 1.22;
-  letter-spacing: -0.05em;
-  text-wrap: balance;
-}
-.vip-note { font-size: 12px; line-height: 1.6; }
-.vip-card { display: flex; flex-direction: column; gap: 10px; }
-.vip-card h3 { font-family: var(--serif); font-size: 19px; font-weight: 400; letter-spacing: -0.04em; }
-.vip-card p { color: var(--dim); font-size: 11.5px; line-height: 1.65; }
-.vip-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 3px; }
-
 /* ── dialogs ───────────────────────────────────────────────── */
 
 .modal {
@@ -1797,8 +1774,7 @@ a.source-subtitle.is-beta:focus-visible { text-decoration: underline; }
   }
   .app.is-overlay .panel-head { padding-top: 4px; margin-bottom: 18px; }
   .app.is-overlay .panel-view { flex: 1; min-height: 0; }
-  .app.is-overlay .settings-pane,
-  .app.is-overlay .vip-pane { overflow-y: auto; }
+  .app.is-overlay .settings-pane { overflow-y: auto; }
   .app.is-overlay .library-view { display: none !important; }
   .toast { bottom: max(18px, env(safe-area-inset-bottom)); }
 }
