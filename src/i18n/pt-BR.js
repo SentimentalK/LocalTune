@@ -317,6 +317,7 @@ export default {
   'chalk.play': 'Toque para tocar',
   'chalk.seekPlace': 'Coloque aqui',
   'chalk.seekMove': 'e mova',
+  'chalk.scratch': 'Raspa',
 
   'error.db.writeStats': 'Falha ao gravar as estatísticas de reprodução',
 

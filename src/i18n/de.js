@@ -320,6 +320,7 @@ export default {
   'chalk.play': 'Tippen zum Abspielen',
   'chalk.seekPlace': 'Hierher setzen',
   'chalk.seekMove': 'und bewegen',
+  'chalk.scratch': 'Kratze',
 
   'error.db.writeStats': 'Schreiben der Wiedergabestatistik fehlgeschlagen',
 

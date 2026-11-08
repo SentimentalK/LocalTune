@@ -329,6 +329,7 @@ export default {
   'chalk.play': 'タップで再生',
   'chalk.seekPlace': 'ここに',
   'chalk.seekMove': '合わせて動かす',
+  'chalk.scratch': '擦る',
 
   'error.db.writeStats': '再生統計の書き込みに失敗しました',
 

@@ -316,6 +316,7 @@ export default {
   'chalk.play': 'Нажать · играть',
   'chalk.seekPlace': 'Поставьте сюда',
   'chalk.seekMove': 'и двигайте',
+  'chalk.scratch': 'скретч',
 
   'error.db.writeStats': 'Не удалось записать статистику воспроизведения',
 

@@ -316,6 +316,7 @@ export default {
   'chalk.play': '탭하여 재생',
   'chalk.seekPlace': '여기에 맞춰',
   'chalk.seekMove': '이동',
+  'chalk.scratch': '긁기',
 
   'error.db.writeStats': '재생 통계 쓰기 실패',
 
