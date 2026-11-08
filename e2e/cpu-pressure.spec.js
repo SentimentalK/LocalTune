@@ -68,6 +68,48 @@ test('an audio stall alone enters low power', async ({ page }) => {
   await expect(page.locator('html')).toHaveClass(/is-low-power/, { timeout: 5_000 });
 });
 
+test('low power keeps the disc spinning at half speed', async ({ page }) => {
+  await startPlayback(page);
+  await page.evaluate(() => document.documentElement.classList.add('is-low-power'));
+  await expect(page.locator('html')).toHaveClass(/is-low-power/);
+  await expect(page.locator('.deck')).toHaveClass(/is-playing/);
+
+  const style = await page.evaluate(() => {
+    const cover = getComputedStyle(document.querySelector('#cover'));
+    return {
+      animationName: cover.animationName,
+      animationDuration: cover.animationDuration,
+      animationPlayState: cover.animationPlayState,
+    };
+  });
+  expect(style.animationName).toBe('spin');
+  expect(Number.parseFloat(style.animationDuration)).toBeCloseTo(26, 1);
+  expect(style.animationPlayState).toBe('running');
+});
+
+test('a paused cover is forced back to running while playing', async ({ page }) => {
+  const warnings = [];
+  page.on('console', (message) => {
+    if (message.type() === 'warning') warnings.push(message.text());
+  });
+  await startPlayback(page);
+  await page.addStyleTag({ content: '#cover { animation-play-state: paused !important; }' });
+
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.querySelector('#cover')).animationPlayState))
+    .toBe('running');
+  expect(warnings.some((text) => text.includes('disc spin was paused while playing'))).toBe(true);
+
+  await page.locator('.arm-head-hit').click();
+  await expect(page.locator('.deck')).not.toHaveClass(/is-playing/);
+  const paused = await page.evaluate(() => ({
+    inline: document.querySelector('#cover').style.getPropertyValue('animation-play-state'),
+    computed: getComputedStyle(document.querySelector('#cover')).animationPlayState,
+  }));
+  expect(paused.inline).toBe('');
+  expect(paused.computed).toBe('paused');
+});
+
 test('a hidden document stops the arm frame loop until it is visible again', async ({ page }) => {
   await page.addInitScript(() => {
     window.__raf = 0;
