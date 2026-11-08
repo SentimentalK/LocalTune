@@ -67,6 +67,7 @@ function measuredAngle(svg, event) {
  *   onSeekPreview?: (seconds: number, delta: number) => void,
  *   onScrubEnd?: () => void,
  *   onRestore?: (seconds: number) => void,
+ *   onPress?: () => void,
  * }} options
  */
 export function bindTonearm({
@@ -84,6 +85,7 @@ export function bindTonearm({
   onSeekPreview,
   onScrubEnd,
   onRestore,
+  onPress,
 }) {
   let drag = null;
   let dragging = false;
@@ -141,6 +143,7 @@ export function bindTonearm({
     };
     svg.classList.add('grabbing');
     listenDrag(true);
+    onPress?.();
   };
 
   const move = (event) => {
@@ -199,13 +202,13 @@ export function bindTonearm({
     listenDrag(false);
     svg.classList.remove('grabbing', 'is-seek');
     deck?.classList.remove('is-arm-seek');
+    // Tap or drag, the gesture is over: let the hint re-evaluate.
+    onScrubEnd?.();
 
     if (!active.moved) {
       onToggle();
       return;
     }
-
-    onScrubEnd?.();
 
     if (cancelled) {
       // Put the needle back and restore whatever the deck was doing.

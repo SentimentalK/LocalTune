@@ -87,8 +87,8 @@ function wavePath({ from, to, y, amplitude = 2.2, turns = 3.5, seed = 3 }) {
  * The chalk captions are a first-run hint: they exist while the queue still
  * holds demo tracks, and they give the stage back while music plays.
  */
-export function shouldShowChalk({ hasDemo, playing }) {
-  return Boolean(hasDemo) && !playing;
+export function shouldShowChalk({ hasDemo, playing, gesture = false }) {
+  return Boolean(hasDemo) && !playing && !gesture;
 }
 
 /**

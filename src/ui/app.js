@@ -917,6 +917,33 @@ export function mountUi(root, store, sw) {
   let platterAngle = 0;
   let armFollowAngle = null;
   let warnedPlatterStall = false;
+  // A deck gesture (platter scrub or arm drag) hides the chalk hint even when
+  // the audio happens to be paused, and keeps it hidden for a beat after the
+  // release so a resuming play event cannot flash it back on.
+  let gestureActive = false;
+  let chalkSyncTimer = 0;
+
+  function isGestureActive() {
+    return gestureActive || Boolean(activeArm?.isDragging() || activePlatter?.isScrubbing());
+  }
+
+  function syncChalk() {
+    const state = store.state;
+    ui.chalk.setVisible(
+      shouldShowChalk({
+        hasDemo: state.queue.tracks.some(isDemoTrack),
+        playing: Boolean(state.current.playing),
+        gesture: isGestureActive(),
+      }),
+    );
+  }
+
+  function beginGesture() {
+    gestureActive = true;
+    clearTimeout(chalkSyncTimer);
+    chalkSyncTimer = 0;
+    syncChalk();
+  }
 
   /**
    * The only switch for the platter keyframes. A scrub temporarily pauses them
@@ -1489,6 +1516,7 @@ export function mountUi(root, store, sw) {
       shouldShowChalk({
         hasDemo: state.queue.tracks.some(isDemoTrack),
         playing,
+        gesture: isGestureActive(),
       }),
     );
 
@@ -2372,6 +2400,19 @@ export function mountUi(root, store, sw) {
     clearSeekPreview();
     armFollowAngle = null;
     setHidden(ui.scrubHud, true);
+    // The gesture is over, but keep the flag for a beat: a release that starts
+    // playback must not let a render in between flash the hint back on.
+    clearTimeout(chalkSyncTimer);
+    chalkSyncTimer = setTimeout(() => {
+      chalkSyncTimer = 0;
+      gestureActive = false;
+      syncChalk();
+    }, 80);
+  }
+
+  function platterPress() {
+    beginGesture();
+    scratchPress();
   }
 
   /**
@@ -2451,6 +2492,7 @@ export function mountUi(root, store, sw) {
       onScrubEnd: hideScrubHud,
       onPause: pausePlayback,
       onResume: startPlayback,
+      onPress: beginGesture,
     });
   }
 
@@ -2466,7 +2508,7 @@ export function mountUi(root, store, sw) {
       onPreview: queueSeekPreview,
       onCommit: commitScrub,
       onRestore: restoreScrub,
-      onPress: scratchPress,
+      onPress: platterPress,
       onScrubStart: beginScrubVisual,
       onScratchMove: scratchMove,
       onScratchEnd: endScratch,
