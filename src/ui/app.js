@@ -17,7 +17,8 @@ import { openTagInfo } from './diagnostics.js';
 import { bindPlatterScrub, bindStageSwipe, bindTonearm, ARM_PARK, angleForProgress } from './tonearm.js';
 import { createLowPowerGate, LOW_POWER_WINDOW_MS } from './lowPower.js';
 import { mountChalkLayer, shouldShowChalk } from './chalkLayer.js';
-import { createScratchAudio } from './scratch.js';
+import { createScratchAudio } from './scratch/index.js';
+import { createByteSource } from './scratch/byte-source.js';
 import { isDemoTrack } from '../core/demo.js';
 import {
   THEMES,
@@ -906,11 +907,24 @@ export function mountUi(root, store, sw) {
   let renderedSignature = null;
   let ui = createShell(store, sw);
 
-  // Back-scratch sound: one engine per app mount, no context until a press.
-  // Reuses the player's Web Audio graph when levelling has built one.
-  const scratch = createScratchAudio({ getContext: () => store.player?.context ?? null });
-  // Prototype-only hook so the sound self-test can read the node/gain state.
-  window.__scratch = scratch;
+  // Reverse-scrub audio. One engine per app mount; nothing is allocated until
+  // the platter is grabbed. E (range-decoded window) is the default; D (seek
+  // stutter) is the fallback.
+  const scratch = createScratchAudio({
+    getContext: () => store.player?.context ?? null,
+    createByteSource: ({ audio, track }) => createByteSource({ audio, track, store }),
+  });
+  let scratchTrackId = store.state.current.track?.id ?? null;
+
+  /** Publish read-only engine state for the e2e deck assertions. */
+  function publishScratch() {
+    const state = scratch.state();
+    ui.deck.dataset.scratch = [
+      state.engine ?? '',
+      state.decode?.offset ?? 0,
+      state.decode?.cached ? 1 : 0,
+    ].join(',');
+  }
 
   // Platter wrapper angle carried between scrubs, and the arm angle while it
   // follows a large scrub. Both are reset when a gesture ends/re-mounts.
@@ -2181,6 +2195,14 @@ export function mountUi(root, store, sw) {
       return;
     }
 
+    const trackId = state.current.track?.id ?? null;
+    if (trackId !== scratchTrackId) {
+      scratchTrackId = trackId;
+      // One cached reverse window; a queue move drops it immediately.
+      scratch.trackChanged(trackId);
+      publishScratch();
+    }
+
     renderHeader(state);
     renderStage(state);
     guardCoverSpin(Boolean(state.current.track) && state.current.playing);
@@ -2262,17 +2284,18 @@ export function mountUi(root, store, sw) {
     if (store.state.current.playing) store.pause();
   }
 
-  // Forward scratch: an <audio> element cannot reverse, so a forward grab
-  // rides the real audio at a variable playbackRate; a backward grab is muted
-  // and voiced by the friction synth in ./scratch.js.
+  // Forward scratch rides the real audio at a variable playbackRate. A
+  // backward grab is handed to the scratch engines in ./scratch/: D rewinds
+  // the element in short bites, E plays a lazily decoded 4 s window reversed.
+  // Neither one mutes the song for good; the released needle resumes on seek.
   const SCRATCH_RATE_REF = 0.15; // deg/ms that maps to 1x
   const SCRATCH_RATE_MIN = 0.6;
   const SCRATCH_RATE_MAX = 2.5;
 
   function scratchPress() {
-    // The synth only exists while the hand is down (one noise source and one
-    // short-lived oscillator), so low power keeps it: only reduced motion may
-    // opt out, and even then the HUD still shows the target.
+    // The engines only exist while the hand is down, so low power keeps them:
+    // only reduced motion opts out of sound, and the HUD still shows the
+    // target. Cold start is handled separately in platterPress.
     if (prefersReducedMotion.matches) return;
     scratch.press();
   }
@@ -2286,16 +2309,28 @@ export function mountUi(root, store, sw) {
   function scratchMove({ direction, speed }) {
     const audio = store.audio;
     if (!audio) return;
-    if (direction < 0) {
-      // No reversed audio exists: silence the element, stop the transport and
-      // voice the backward friction instead.
-      audio.playbackRate = 1;
+    if (prefersReducedMotion.matches) {
+      // Accessibility: a reduced-motion grab stays silent. The tonearm still
+      // paints the rotation and the scrub HUD.
+      scratch.silence();
       audio.muted = true;
-      if (store.state.current.playing) store.pause();
-      if (!prefersReducedMotion.matches) scratch.friction(speed);
+      publishScratch();
+      return;
+    }
+    if (direction < 0) {
+      // The engines own the element: D keeps it playing and rewinds it, E
+      // pauses it and plays the reversed window instead.
+      audio.playbackRate = 1;
+      scratch.friction(speed, {
+        audio,
+        trackId: store.state.current.track?.id ?? null,
+        track: store.state.current.track ?? null,
+      });
+      publishScratch();
       return;
     }
     scratch.silence();
+    publishScratch();
     audio.muted = false;
     // A scratch should pitch-bend like tape, not time-stretch.
     audio.preservesPitch = false;
@@ -2307,6 +2342,10 @@ export function mountUi(root, store, sw) {
 
   function endScratch() {
     scratch.silence();
+    // Gesture end: release the decoded window as well. A direction flip
+    // inside the gesture keeps it for a wikki-style re-cut.
+    scratch.release();
+    publishScratch();
     const audio = store.audio;
     if (audio) {
       audio.muted = false;
@@ -2356,36 +2395,42 @@ export function mountUi(root, store, sw) {
     });
   }
 
-  // Cold start: nothing has been loaded into the element yet. A gesture opens
-  // the queue head, waits for metadata, lands the scrub target and plays there.
+  // Cold start: nothing has been loaded into the element yet. A release opens
+  // the queue head, waits for metadata, lands the scrub target and plays.
   let coldLoad = null;
   let coldTarget = 0;
 
-  function startFromColdGesture(seconds) {
-    coldTarget = seconds;
-    if (coldLoad) return;
+  function beginColdLoad() {
+    if (coldLoad) return coldLoad;
     const state = store.state;
     const tracks = state.queue.tracks;
     // Empty queue: the gesture is a silent no-op.
-    if (!tracks.length) return;
+    if (!tracks.length) return null;
     const currentId = state.current.track?.id;
     const id = tracks.some((track) => track.id === currentId) ? currentId : tracks[0].id;
-    coldLoad = (async () => {
-      await store.playQueue(tracks, id, 'gesture');
-      const audio = store.audio;
-      await waitForMetadata(audio);
-      const duration = Number(audio?.duration);
-      const target =
-        Number.isFinite(duration) && duration > 0
-          ? Math.min(Math.max(coldTarget, 0), duration)
-          : Math.max(coldTarget, 0);
-      run(store.seek(target));
-      syncArm();
-    })()
+    coldLoad = store
+      .playQueue(tracks, id, 'gesture')
+      .then(async () => {
+        const audio = store.audio;
+        await waitForMetadata(audio);
+        const duration = Number(audio?.duration);
+        const target =
+          Number.isFinite(duration) && duration > 0
+            ? Math.min(Math.max(coldTarget, 0), duration)
+            : Math.max(coldTarget, 0);
+        run(store.seek(target));
+        syncArm();
+      })
       .catch(() => {})
       .finally(() => {
         coldLoad = null;
       });
+    return coldLoad;
+  }
+
+  function startFromColdGesture(seconds) {
+    coldTarget = seconds;
+    beginColdLoad();
   }
 
   /** Seek committed by a gesture (or the keyboard): open the track if needed. */
@@ -2484,6 +2529,16 @@ export function mountUi(root, store, sw) {
   }
 
   function queueSeekPreview(seconds) {
+    if (coldLoad) {
+      // The loader lands the latest target once metadata arrives.
+      coldTarget = seconds;
+      return;
+    }
+    if (scratch.isReversing()) {
+      // D and E own the element (stutter / paused reversed source); a preview
+      // seek here would fight the engine. The release still commits.
+      return;
+    }
     previewTarget = seconds;
     if (previewFrame) return;
     const schedule = () => {

@@ -493,6 +493,18 @@ export class Store extends EventTarget {
     this.covers.release(id);
   }
 
+  /**
+   * The underlying File/Blob for a track, used by the scratch Range decoder.
+   * FSA/OPFS return metadata without reading audio; remote sources may fill
+   * their cache once and the caller reuses the blob for every slice.
+   */
+  async trackFile(track) {
+    if (!track || track.demoUrl) return null;
+    const adapter = this._adapterForTrack(track);
+    if (!adapter || typeof adapter.getFile !== 'function') return null;
+    return adapter.getFile(track.path);
+  }
+
   #bindPlayer() {
     const player = this.player;
     if (!player) return;
