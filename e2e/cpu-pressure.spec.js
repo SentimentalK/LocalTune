@@ -87,6 +87,31 @@ test('low power keeps the disc spinning at half speed', async ({ page }) => {
   expect(style.animationPlayState).toBe('running');
 });
 
+test('low power keeps the track-swap animation', async ({ page }) => {
+  await startPlayback(page);
+  await page.evaluate(() => document.documentElement.classList.add('is-low-power'));
+  await expect(page.locator('html')).toHaveClass(/is-low-power/);
+
+  // Dispatch and sample in the same task: `swapping` only lives for 460ms, and
+  // the animation is what this test is about, not the keyboard plumbing.
+  const sample = await page.evaluate(() => {
+    const deck = document.getElementById('deck');
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }),
+    );
+    const style = getComputedStyle(deck.querySelector('.disc-wrap'));
+    return {
+      swapping: deck.classList.contains('swapping'),
+      animationName: style.animationName,
+      animationDuration: style.animationDuration,
+    };
+  });
+
+  expect(sample.swapping).toBe(true);
+  expect(sample.animationName).toBe('disc-swap');
+  expect(Number.parseFloat(sample.animationDuration)).toBeCloseTo(0.3, 2);
+});
+
 test('a paused cover is forced back to running while playing', async ({ page }) => {
   const warnings = [];
   page.on('console', (message) => {

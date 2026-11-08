@@ -1888,8 +1888,12 @@ html.is-low-power .app.is-overlay .panel { backdrop-filter: none; }
    a battery optimisation look like a broken deck ("切歌也不恢复"). The only
    place that stops the record is `prefers-reduced-motion`. */
 html.is-low-power .disc-art { animation-duration: 26s; }
-html.is-low-power .deck.swapping .disc-wrap { animation: none; }
-html.is-low-power .toast:not([hidden]) { animation: none; }
+/* One-shot animations are not the CPU hog the filters are: killing them only
+   removed feedback. Track swaps keep `disc-swap` (0.44s → 0.3s) and the toast
+   keeps `toast-in` (0.22s → 0.15s); the toast's final transform comes from the
+   animation, so `animation: none` also left it 9px low. */
+html.is-low-power .deck.swapping .disc-wrap { animation-duration: 0.3s; }
+html.is-low-power .toast:not([hidden]) { animation-duration: 0.15s; }
 html.is-low-power .chalk-layer * { animation: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
