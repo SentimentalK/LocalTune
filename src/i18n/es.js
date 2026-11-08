@@ -35,6 +35,14 @@ export default {
 
   'tabs.folders': 'Carpetas',
   'tabs.queue': 'Cola',
+  'tabs.author': 'Artista destacado',
+  'author.loading': 'Cargando el artista destacado…',
+  'author.errorTitle': 'No se pudo cargar el artista destacado',
+  'author.errorText': 'Comprueba la conexión e inténtalo de nuevo.',
+  'author.retry': 'Reintentar',
+  'author.source': 'Temas de ',
+  'author.note': 'Son versiones IA: adictivas, pero pueden desaparecer algún día por derechos de autor. Guarda tu propia copia; por eso existe esta lista.',
+  'author.emptyTitle': 'Aún no hay temas destacados.',
 
   'folders.subfolders': 'Carpetas',
   'folders.tracks': 'Pistas',
@@ -54,9 +62,9 @@ export default {
   'empty.promptNote':
     'Instala la app y elige «Permitir en cada visita» en el aviso; después no hará falta pulsar nada.',
   'empty.chooseTitle': 'La biblioteca está vacía',
-  'empty.chooseText':
-    'En Ajustes, elige una carpeta para este dispositivo o para OneDrive. Se incluyen las subcarpetas.',
+  'empty.chooseText': 'Elige una carpeta local o una nube (OneDrive, Google Drive o Dropbox) en Ajustes. Las subcarpetas se leen también.',
   'empty.chooseAction': 'Abrir ajustes',
+  'empty.tryAuthor': 'Probar el artista destacado',
   'empty.noTracksTitle': 'Todavía no hay música en esta carpeta',
   'empty.noTracksText': 'Comprueba que la carpeta tenga archivos de audio y vuelve a analizar.',
   'empty.noTracksAction': 'Volver a analizar',

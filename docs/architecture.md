@@ -581,6 +581,9 @@ export function createSettingsView(store, sw) // → { node, render(state) }
 // src/ui/diagnostics.js
 export function openTagInfo(track, { loadReport }) // 标签信息弹层；loadReport: () => Promise<string>
 
+// src/author/playlist.js
+export const AUTHOR_TRACKS // 创作者精选清单；只在对应 tab 打开时 import()
+
 ```
 
 `sw` 是 `registerServiceWorker()` 的返回值（`{ applyUpdate, checkForUpdate }`），UI 只通过它触发更新，不直接碰 `navigator.serviceWorker`。
@@ -603,6 +606,8 @@ export function openTagInfo(track, { loadReport }) // 标签信息弹层；loadR
 - toast 固定在底部一条，`role="status"`，3 秒后消失。
 
 语言切换即时生效：`render(state)` 开头比较 `resolveLanguage(state.settings.language, browserLanguages())` 与 `getLocale()`，不同则 `setLocale()` + `applyDocumentLang()` + 用 `createShell` 重建整个壳（重新绑定进度条事件、`root.replaceChildren(ui.app)`、清空视图缓存后重渲染）。**不得用 `location.reload()` 切换语言**；`store` 的 `change` 监听只绑一次。
+
+创作者精选（`libraryTab === 'author'`，第三个 tab，`src/author/playlist.js`）不进入 `state.sources` 或曲库索引。清单只在切到该 tab 时 `import()`；`src/core/sources/author/source.js` 在首次播放时才读 `./author/<path>.mp3` 并写入共享 audio cache，头部与文件夹视图一致：标题用 `folders.tracks`（曲目）、不重复 tab 名、不显示曲目数，右侧 `author-play-all` / `author-shuffle`（复用 `store.playQueue(..., { fresh: true })` 与 `store.shufflePlay`）；列表底部先 `author.note`（AI 二创与版权提示）再 `author.source`；第一首播放成功后 `_warmAuthor` 顺序缓存其余曲目。SW 对 `/author/` 直接放行，playlist chunk 也不在 precache 里，所以只用 demo 的访客不会加载任何 创作者精选资源。空曲库的 empty state 提供 `empty-author` 按钮直接切到该 tab。
 
 UI 不得直接访问 IndexedDB、`<audio>`、File System Access 或 `navigator.mediaSession`；全部经 Store。
 

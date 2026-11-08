@@ -35,6 +35,14 @@ export default {
 
   'tabs.folders': '폴더',
   'tabs.queue': '대기열',
+  'tabs.author': '추천 아티스트',
+  'author.loading': '추천 아티스트를 불러오는 중…',
+  'author.errorTitle': '추천 아티스트를 불러오지 못했습니다',
+  'author.errorText': '연결을 확인한 뒤 다시 시도하세요.',
+  'author.retry': '다시 시도',
+  'author.source': '출처: ',
+  'author.note': 'AI 2차 창작입니다. 중독성 있지만 저작권 문제로 언제 내려갈지 모릅니다. 듣고 싶다면 직접 저장해 두세요——이 플레이리스트를 만든 이유이기도 합니다.',
+  'author.emptyTitle': '추천 아티스트가 아직 없습니다.',
 
   'folders.subfolders': '폴더',
   'folders.tracks': '곡',
@@ -54,8 +62,9 @@ export default {
   'empty.promptNote':
     '앱을 설치하고 권한 창에서 "모든 방문 시 허용"을 선택하면 이후에는 클릭이 필요 없습니다.',
   'empty.chooseTitle': '라이브러리가 비어 있습니다',
-  'empty.chooseText': '설정에서 이 기기 또는 OneDrive의 폴더를 선택하세요. 하위 폴더도 포함됩니다.',
+  'empty.chooseText': '설정에서 로컬 폴더 또는 클라우드 드라이브(OneDrive / Google Drive / Dropbox)를 선택하세요. 하위 폴더도 함께 읽습니다.',
   'empty.chooseAction': '설정 열기',
+  'empty.tryAuthor': '추천 아티스트 체험',
   'empty.noTracksTitle': '이 폴더에 아직 음악이 없습니다',
   'empty.noTracksText': '폴더에 오디오 파일이 있는지 확인한 후 다시 스캔하세요.',
   'empty.noTracksAction': '다시 스캔',

@@ -35,6 +35,14 @@ export default {
 
   'tabs.folders': 'Dossiers',
   'tabs.queue': 'File',
+  'tabs.author': 'Artiste à la une',
+  'author.loading': 'Chargement de l’artiste à la une…',
+  'author.errorTitle': 'Impossible de charger l’artiste à la une',
+  'author.errorText': 'Vérifiez la connexion et réessayez.',
+  'author.retry': 'Réessayer',
+  'author.source': 'Titres de ',
+  'author.note': 'Ce sont des reprises IA : addictives, mais elles peuvent disparaître un jour pour des raisons de droits. Gardez-en une copie — c’est pour ça que cette playlist existe.',
+  'author.emptyTitle': 'Aucun titre à la une pour l’instant.',
 
   'folders.subfolders': 'Dossiers',
   'folders.tracks': 'Pistes',
@@ -54,9 +62,9 @@ export default {
   'empty.promptNote':
     'Installez l’app et choisissez « Autoriser à chaque visite » dans la demande ; plus aucun clic ensuite.',
   'empty.chooseTitle': 'La bibliothèque est vide',
-  'empty.chooseText':
-    'Dans les réglages, choisissez un dossier pour cet appareil ou pour OneDrive. Les sous-dossiers sont inclus.',
+  'empty.chooseText': 'Choisissez un dossier local ou un cloud (OneDrive, Google Drive ou Dropbox) dans les réglages. Les sous-dossiers sont lus aussi.',
   'empty.chooseAction': 'Ouvrir les réglages',
+  'empty.tryAuthor': 'Essayer l’artiste à la une',
   'empty.noTracksTitle': 'Pas encore de musique dans ce dossier',
   'empty.noTracksText': 'Vérifiez que le dossier contient des fichiers audio, puis relancez l’analyse.',
   'empty.noTracksAction': 'Relancer l’analyse',

@@ -27,8 +27,8 @@ test('the vinyl shell has one transport surface and no button row', async ({ pag
   await expect(page.locator('.deck')).not.toHaveAttribute('data-rpm', /.*/);
 
   const tabs = page.locator('.tabs [role="tab"]');
-  await expect(tabs).toHaveCount(2);
-  await expect(tabs).toHaveText(['队列', '文件夹']);
+  await expect(tabs).toHaveCount(3);
+  await expect(tabs).toHaveText(['队列', '文件夹', '创作者精选']);
   await expect(page.locator('[data-testid="search-input"]')).toBeVisible();
 
   await expect(page.locator('[data-testid="lyrics-open"]')).toHaveCount(0);

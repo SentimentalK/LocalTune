@@ -6,6 +6,8 @@
  * Four library sources are supported: a local folder (File System Access or
  * `<input webkitdirectory>`), OneDrive, Google Drive and Dropbox. Each has its
  * own row in `state.sources`; tracks remember which adapter produced them.
+ * The author playlist is a fifth adapter (`source: 'author'`) but stays out of
+ * `state.sources` and the index; its manifest is imported lazily.
  */
 
 import {
@@ -32,6 +34,7 @@ import { defaultLocalMode } from './sources/opfs/mode.js';
 import { OneDriveSource } from './sources/onedrive/source.js';
 import { GdriveSource } from './sources/googledrive/source.js';
 import { DropboxSource } from './sources/dropbox/source.js';
+import { AuthorSource } from './sources/author/source.js';
 import { parseAuthResponse } from './sources/pkce.js';
 import { AudioCache, cacheKey } from './cache/audioCache.js';
 import { createCacheIndex } from './cache/index.js';
@@ -386,6 +389,7 @@ export class Store extends EventTarget {
     this.cache = new AudioCache({
       index: createCacheIndex(db),
     });
+    this.author = new AuthorSource({ cache: this.cache });
     const meta = {
       get: (key) => getMeta(db, key),
       set: (key, value) => setMeta(db, key, value),
@@ -826,6 +830,14 @@ export class Store extends EventTarget {
     if (!demoDismissed) {
       for (const [id, track] of DEMO_BY_ID) byId.set(id, track);
     }
+    if (playback?.queueIds?.some((id) => id.startsWith('author:'))) {
+      try {
+        const { AUTHOR_TRACKS } = await import('../author/playlist.js');
+        for (const track of AUTHOR_TRACKS) byId.set(track.id, track);
+      } catch {
+        // First visit offline: the author part of the saved queue is dropped.
+      }
+    }
     const restored =
       playback?.queueIds?.map((id) => byId.get(id)).filter(Boolean) ?? [];
     const queueTracks = restored.length ? restored : tracks;
@@ -947,6 +959,7 @@ export class Store extends EventTarget {
   }
 
   _adapterForTrack(track) {
+    if (track?.source === 'author') return this.author;
     if (track?.source === 'gdrive') return this.gdrive;
     if (track?.source === 'dropbox') return this.dropbox;
     if (track?.source === 'onedrive') return this.onedrive;
@@ -2588,6 +2601,19 @@ export class Store extends EventTarget {
    * Warm the prefetch slot with the track after the current one. Repeat-one
    * keeps the same track, so the current track is the next one there.
    */
+  /** After the first author track plays, cache the rest of the playlist. */
+  _warmAuthor(current) {
+    if (this._authorWarm) return;
+    const tracks = this.queue.tracks.filter((track) => track.source === 'author');
+    if (tracks.length < 2) return;
+    this._authorWarm = this.author
+      .warm(tracks, current?.id)
+      .catch(() => {})
+      .finally(() => {
+        this._authorWarm = null;
+      });
+  }
+
   async _primeNext() {
     if (!this.prefetcher) return;
     const { state } = advance(this.queue, { auto: true });
@@ -2697,6 +2723,7 @@ export class Store extends EventTarget {
       this._startPlaySession(track, this._state.current.position);
       void this._applyGainForTrack(track, blob);
       void this._primeNext();
+      if (track.source === 'author') this._warmAuthor(track);
       if (this._state.permissionIssue) this._state.permissionIssue = null;
       return true;
     } catch (error) {

@@ -38,6 +38,14 @@ export default {
 
   'tabs.folders': 'Folders',
   'tabs.queue': 'Queue',
+  'tabs.author': 'Featured Artist',
+  'author.loading': 'Loading Featured Artist…',
+  'author.errorTitle': 'Could not load Featured Artist',
+  'author.errorText': 'Check your connection and try again.',
+  'author.retry': 'Retry',
+  'author.source': 'Tracks from ',
+  'author.note': 'These are AI covers — addictive, but they may be taken down someday for copyright reasons. Save your own copy while you can; that\'s why this playlist exists.',
+  'author.emptyTitle': 'No featured tracks yet.',
 
   'folders.subfolders': 'Folders',
   'folders.tracks': 'Tracks',
@@ -57,9 +65,9 @@ export default {
   'empty.promptNote':
     'Install the app and pick “Allow on every visit” in the permission prompt; no further clicks after that.',
   'empty.chooseTitle': 'The library is empty',
-  'empty.chooseText':
-    'In Settings, pick a folder for this device or for OneDrive. Subfolders are included.',
+  'empty.chooseText': 'Pick a local folder or a cloud drive (OneDrive, Google Drive, or Dropbox) in Settings. Subfolders are read together.',
   'empty.chooseAction': 'Open settings',
+  'empty.tryAuthor': 'Try Featured Artist',
   'empty.noTracksTitle': 'No music in this folder yet',
   'empty.noTracksText': 'Make sure the folder contains audio files, then rescan.',
   'empty.noTracksAction': 'Rescan',

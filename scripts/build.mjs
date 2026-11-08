@@ -149,7 +149,11 @@ async function main() {
 
   // Lazy chunks are not referenced from index.html, so they are listed here:
   // every JS output goes into the precache list, not just the entry.
-  const chunks = js.outputs.filter((url) => url !== jsUrl);
+  // The author playlist is imported on demand; keep its chunk out of the
+  // precache so demo-only visitors never fetch it.
+  const chunks = js.outputs.filter(
+    (url) => url !== jsUrl && !/\/playlist-[^/]+\.js$/.test(url),
+  );
   const chunkSizes = await Promise.all(
     chunks.map(async (url) => [url, (await readFile(path.join(distDir, url))).length]),
   );
@@ -174,6 +178,8 @@ async function main() {
   await cp(path.join(srcDir, 'manifest.webmanifest'), path.join(distDir, 'manifest.webmanifest'));
   await cp(path.join(srcDir, 'icons'), path.join(distDir, 'icons'), { recursive: true });
   await cp(path.join(srcDir, 'demo'), path.join(distDir, 'demo'), { recursive: true });
+  await cp(path.join(srcDir, 'author', 'audio'), path.join(distDir, 'author'), { recursive: true });
+  await cp(path.join(srcDir, 'author', 'covers'), path.join(distDir, 'author', 'covers'), { recursive: true });
   await cp(path.join(srcDir, 'well-known'), path.join(distDir, '.well-known'), { recursive: true });
 
   const icons = (await readdir(path.join(srcDir, 'icons')))

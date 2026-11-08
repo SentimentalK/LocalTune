@@ -37,6 +37,14 @@ export default {
 
   'tabs.folders': 'フォルダ',
   'tabs.queue': 'キュー',
+  'tabs.author': '注目のアーティスト',
+  'author.loading': '注目のアーティストを読み込み中…',
+  'author.errorTitle': '注目のアーティストを読み込めません',
+  'author.errorText': '接続を確認して再試行してください。',
+  'author.retry': '再試行',
+  'author.source': '出典: ',
+  'author.note': 'AI の二次創作です。クセになるけれど、著作権の都合でいつ消えるか分かりません。聴きたいなら自分の手元に保存を——このプレイリストを作った理由でもあります。',
+  'author.emptyTitle': '注目のアーティストはまだありません。',
 
   'folders.subfolders': 'サブフォルダー',
   'folders.tracks': '曲',
@@ -56,9 +64,9 @@ export default {
   'empty.promptNote':
     'アプリとしてインストールし、許可のダイアログで「アクセスのたびに許可」を選ぶと、以後クリックは不要です。',
   'empty.chooseTitle': 'ライブラリは空です',
-  'empty.chooseText':
-    '設定で、この端末か OneDrive のフォルダーを選びます。サブフォルダーも読み込みます。',
+  'empty.chooseText': '設定でローカルフォルダまたはクラウドドライブ（OneDrive / Google Drive / Dropbox）を選んでください。サブフォルダーもまとめて読み込みます。',
   'empty.chooseAction': '設定を開く',
+  'empty.tryAuthor': '注目のアーティストを試す',
   'empty.noTracksTitle': 'このフォルダーにはまだ音楽がありません',
   'empty.noTracksText': 'フォルダーに音声ファイルがあることを確認して再スキャンしてください。',
   'empty.noTracksAction': '再スキャン',

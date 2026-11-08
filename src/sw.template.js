@@ -113,6 +113,10 @@ self.addEventListener('fetch', (event) => {
   // the browser can seek and the Cache API never sees a 206 response.
   if (url.pathname.includes('/demo/')) return;
 
+  // Author-playlist audio is fetched on demand and cached by the store; keep
+  // it out of the SW so demo-only visitors never pay for it.
+  if (url.pathname.includes('/author/')) return;
+
   // Hashed /assets/ and every other same-origin GET: cache-first.
   event.respondWith(cacheFirst(request));
 });

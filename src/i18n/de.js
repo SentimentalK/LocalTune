@@ -35,6 +35,14 @@ export default {
 
   'tabs.folders': 'Ordner',
   'tabs.queue': 'Warteschlange',
+  'tabs.author': 'Featured Artist',
+  'author.loading': 'Featured Artist wird geladen…',
+  'author.errorTitle': 'Featured Artist konnte nicht geladen werden',
+  'author.errorText': 'Prüfe die Verbindung und versuche es erneut.',
+  'author.retry': 'Erneut versuchen',
+  'author.source': 'Titel von ',
+  'author.note': 'Das sind AI-Covers: süchtig machend, aber sie können jederzeit aus Urheberrechtsgründen verschwinden. Sichere dir lieber eine eigene Kopie – dafür gibt es diese Playlist.',
+  'author.emptyTitle': 'Noch keine Featured-Artist-Titel.',
 
   'folders.subfolders': 'Ordner',
   'folders.tracks': 'Titel',
@@ -54,9 +62,9 @@ export default {
   'empty.promptNote':
     'Installiere die App und wähle im Dialog „Bei jedem Besuch erlauben“; danach sind keine Klicks nötig.',
   'empty.chooseTitle': 'Die Bibliothek ist leer',
-  'empty.chooseText':
-    'Wähle in den Einstellungen einen Ordner für dieses Gerät oder für OneDrive. Unterordner sind enthalten.',
+  'empty.chooseText': 'Wähle in den Einstellungen einen lokalen Ordner oder einen Cloud-Speicher (OneDrive, Google Drive oder Dropbox). Unterordner werden mitgelesen.',
   'empty.chooseAction': 'Einstellungen öffnen',
+  'empty.tryAuthor': 'Featured Artist testen',
   'empty.noTracksTitle': 'Noch keine Musik in diesem Ordner',
   'empty.noTracksText': 'Prüfe, ob der Ordner Audiodateien enthält, und scanne erneut.',
   'empty.noTracksAction': 'Erneut scannen',

@@ -35,6 +35,14 @@ export default {
 
   'tabs.folders': 'Pastas',
   'tabs.queue': 'Fila',
+  'tabs.author': 'Artista em destaque',
+  'author.loading': 'Carregando o artista em destaque…',
+  'author.errorTitle': 'Não foi possível carregar o artista em destaque',
+  'author.errorText': 'Verifique a conexão e tente novamente.',
+  'author.retry': 'Tentar novamente',
+  'author.source': 'Faixas de ',
+  'author.note': 'São covers de IA: viciantes, mas podem sair do ar um dia por direitos autorais. Guarde sua própria cópia — é por isso que esta playlist existe.',
+  'author.emptyTitle': 'Ainda não há faixas em destaque.',
 
   'folders.subfolders': 'Pastas',
   'folders.tracks': 'Faixas',
@@ -54,9 +62,9 @@ export default {
   'empty.promptNote':
     'Instale o app e escolha “Permitir em todas as visitas” no aviso; depois não será preciso clicar de novo.',
   'empty.chooseTitle': 'A biblioteca está vazia',
-  'empty.chooseText':
-    'Em Configurações, escolha uma pasta para este dispositivo ou para o OneDrive. As subpastas são incluídas.',
+  'empty.chooseText': 'Escolha uma pasta local ou um cloud (OneDrive, Google Drive ou Dropbox) nas configurações. As subpastas também são lidas.',
   'empty.chooseAction': 'Abrir configurações',
+  'empty.tryAuthor': 'Experimentar o artista em destaque',
   'empty.noTracksTitle': 'Ainda não há músicas nesta pasta',
   'empty.noTracksText': 'Confirme se a pasta tem arquivos de áudio e verifique de novo.',
   'empty.noTracksAction': 'Verificar de novo',

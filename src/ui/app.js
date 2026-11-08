@@ -45,6 +45,7 @@ import {
 const TABS = [
   { id: 'queue', labelKey: 'tabs.queue', icon: 'i-list' },
   { id: 'folders', labelKey: 'tabs.folders', icon: 'i-folder' },
+  { id: 'author', labelKey: 'tabs.author', icon: 'i-sparkles' },
 ];
 
 const REPEAT_LABEL_KEY = {
@@ -147,13 +148,14 @@ function emptyState({
   note,
 }) {
   const children = [el('h2', { text: title }), el('p', { text })];
+  const actions = [];
   if (actionLabel) {
-    children.push(
+    actions.push(
       el('button', { class: 'btn-pill', type: 'button', text: actionLabel, onclick: onAction }),
     );
   }
   if (secondaryLabel) {
-    children.push(
+    actions.push(
       el('button', {
         class: 'btn-pill ghost',
         type: 'button',
@@ -163,6 +165,7 @@ function emptyState({
       }),
     );
   }
+  if (actions.length) children.push(el('div', { class: 'empty-actions' }, actions));
   const notes = Array.isArray(note) ? note : note ? [note] : [];
   for (const line of notes) {
     if (line) children.push(el('p', { text: line }));
@@ -256,8 +259,8 @@ function trackRow(track, { now, onActivate, onMore, coverIds }) {
     { class: now ? 'track-item now' : 'track-item', 'data-testid': 'track-row', 'data-track-id': track.id },
     [hit],
   );
-  const more = moreButton(track, onMore);
-  row.append(more);
+  const more = onMore ? moreButton(track, onMore) : null;
+  if (more) row.append(more);
   bindRowMenu(row, track, more, onMore);
   return row;
 }
@@ -342,6 +345,7 @@ const SPRITE = `
 <svg class="sr-only" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
   <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 12h16M4 6h16M4 18h16"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></symbol>
   <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></symbol>
@@ -959,6 +963,10 @@ export function mountUi(root, store, sw) {
 
   let panelView = 'library';
   let panelOpen = false;
+  // Author playlist: the manifest is imported only when the tab opens, and
+  // audio is fetched on play. Demo-only visitors never load either.
+  let authorState = { status: 'idle', tracks: [], error: null };
+  let authorLoad = null;
   let panelTransitionArmed = false;
   let panelSignature = null;
   let swapTimer = 0;
@@ -1019,6 +1027,8 @@ export function mountUi(root, store, sw) {
     searchResult: null,
     tab: null,
     panelView: null,
+    authorStatus: null,
+    authorTracks: null,
   };
 
   function resetCache() {
@@ -1036,6 +1046,8 @@ export function mountUi(root, store, sw) {
     last.searchResult = null;
     last.tab = null;
     last.panelView = null;
+    last.authorStatus = null;
+    last.authorTracks = null;
     clearTimeout(searchTimer);
     searchTimer = 0;
     searchToken += 1;
@@ -1346,6 +1358,21 @@ export function mountUi(root, store, sw) {
     panelSignature = signature;
   }
 
+  /** Single entry point for the library tabs (click, empty-state CTA). */
+  function switchTab(tab) {
+    libraryTab = tab;
+    tabChosen = true;
+    saveLibraryTab(tab);
+    if (searchQuery) {
+      ui.searchInput.value = '';
+      searchQuery = '';
+      searchResult = null;
+    }
+    store.setView(tab);
+    render(store.state);
+    scheduleVirtual();
+  }
+
   function bindShellEvents() {
     bindVirtualSources();
     // The lists can only measure once the panel has its final width; the
@@ -1402,17 +1429,7 @@ export function mountUi(root, store, sw) {
 
     for (const button of ui.tabButtons) {
       button.addEventListener('click', () => {
-        libraryTab = button.dataset.tab;
-        tabChosen = true;
-        saveLibraryTab(libraryTab);
-        if (searchQuery) {
-          ui.searchInput.value = '';
-          searchQuery = '';
-          searchResult = null;
-        }
-        store.setView(libraryTab);
-        render(store.state);
-        scheduleVirtual();
+        switchTab(button.dataset.tab);
       });
     }
   }
@@ -1685,6 +1702,9 @@ export function mountUi(root, store, sw) {
         text: t('empty.chooseText'),
         actionLabel: t('empty.chooseAction'),
         onAction: () => show('settings'),
+        secondaryLabel: t('empty.tryAuthor'),
+        secondaryTestId: 'empty-author',
+        onSecondary: () => switchTab('author'),
       });
     }
 
@@ -2047,6 +2067,119 @@ export function mountUi(root, store, sw) {
     return true;
   }
 
+  /** Lazy author tab: loading, error, then the list with cached playback. */
+  function renderAuthor(state) {
+    buildingCoverIds = [];
+    if (authorState.status === 'idle') ensureAuthor();
+    if (authorState.status === 'idle' || authorState.status === 'loading') {
+      replaceTrackList([
+        el('div', { class: 'empty' }, [
+          el('p', { class: 'muted', 'data-testid': 'author-loading', text: t('author.loading') }),
+        ]),
+      ]);
+      return;
+    }
+    if (authorState.status === 'error') {
+      replaceTrackList([
+        emptyState({
+          title: t('author.errorTitle'),
+          text: t('author.errorText'),
+          actionLabel: t('author.retry'),
+          onAction: () => {
+            authorState = { status: 'idle', tracks: [], error: null };
+            render(store.state);
+          },
+        }),
+      ]);
+      return;
+    }
+
+    const tracks = authorState.tracks;
+    if (!tracks.length) {
+      replaceTrackList([
+        emptyState({ title: t('author.emptyTitle'), text: t('author.emptyText') }),
+      ]);
+      return;
+    }
+
+    const currentId = state.current.track?.id;
+    const head = el('div', { class: 'folder-head' }, [
+      el('span', { class: 'folder-name', text: t('folders.tracks') }),
+      el('div', { class: 'folder-actions' }, [
+        el('button', {
+          class: 'pill',
+          type: 'button',
+          'data-testid': 'author-play-all',
+          text: t('common.playAll'),
+          disabled: !tracks.length,
+          onclick: () => {
+            if (!tracks.length) return;
+            pulseSwap();
+            // Same rule as a folder: shuffle keeps the list order and opens
+            // at a random position.
+            const start = store.state.queue.shuffle
+              ? tracks[Math.floor(Math.random() * tracks.length)].id
+              : tracks[0].id;
+            run(store.playQueue(tracks, start, 'user', { fresh: true }));
+          },
+        }),
+        el('button', {
+          class: 'pill quiet',
+          type: 'button',
+          'data-testid': 'author-shuffle',
+          text: t('common.shufflePlay'),
+          disabled: !tracks.length,
+          onclick: () => {
+            if (!tracks.length) return;
+            pulseSwap();
+            run(store.shufflePlay(tracks));
+          },
+        }),
+      ]),
+    ]);
+    const list = el('div', { class: 'track-list' });
+    const note = el('p', { class: 'muted author-note', text: t('author.note') });
+    const source = el('p', { class: 'muted author-source' }, [
+      el('span', { text: t('author.source') }),
+      el('a', {
+        href: 'https://www.youtube.com/@feixinglianhua',
+        target: '_blank',
+        rel: 'noreferrer noopener',
+        'data-testid': 'author-source',
+        text: 'https://www.youtube.com/@feixinglianhua',
+      }),
+    ]);
+    replaceTrackList([head, list, note, source]);
+    for (const track of tracks) {
+      list.append(
+        trackRow(track, {
+          now: track.id === currentId,
+          coverIds: buildingCoverIds,
+          onActivate: () => {
+            pulseSwap();
+            run(store.playQueue(tracks, track.id));
+          },
+        }),
+      );
+    }
+  }
+
+  function ensureAuthor() {
+    if (authorState.status !== 'idle' || authorLoad) return;
+    authorState = { status: 'loading', tracks: [], error: null };
+    authorLoad = import('../author/playlist.js')
+      .then(({ AUTHOR_TRACKS }) => {
+        authorState = { status: 'ready', tracks: AUTHOR_TRACKS, error: null };
+      })
+      .catch(() => {
+        authorState = { status: 'error', tracks: [], error: 'load' };
+      })
+      .finally(() => {
+        authorLoad = null;
+        if (ui.app.isConnected) render(store.state);
+      });
+  }
+
   function renderLibrary(state) {
     if (!tabChosen && libraryTab === 'queue' && hasLibraryEntry(state)) {
       libraryTab = 'folders';
@@ -2068,6 +2201,8 @@ export function mountUi(root, store, sw) {
       permissions !== last.permissions ||
       installPromptSeen !== last.installable ||
       currentId !== last.currentId ||
+      (libraryTab === 'author' &&
+        (authorState.status !== last.authorStatus || authorState.tracks !== last.authorTracks)) ||
       query !== last.query ||
       searchResult !== last.searchResult ||
       folder.source !== last.folderSource ||
@@ -2092,6 +2227,8 @@ export function mountUi(root, store, sw) {
     last.permissions = permissions;
     last.installable = installPromptSeen;
     last.currentId = currentId;
+    last.authorStatus = authorState.status;
+    last.authorTracks = authorState.tracks;
     last.query = query;
     last.searchResult = searchResult;
     last.folderSource = folder.source;
@@ -2109,6 +2246,11 @@ export function mountUi(root, store, sw) {
 
     if (libraryTab === 'queue') {
       renderQueue(state);
+      return;
+    }
+
+    if (libraryTab === 'author') {
+      renderAuthor(state);
       return;
     }
 

@@ -1028,6 +1028,10 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.author-count { font-size: 10.5px; letter-spacing: 0.04em; }
+.author-note { margin: 14px 0 2px; font-size: 11px; line-height: 1.55; }
+.author-source { margin: 6px 0 4px; font-size: 11px; line-height: 1.5; }
+.author-source a { color: var(--accent); }
 .track-dur {
   flex: none;
   color: var(--muted);
@@ -1143,6 +1147,7 @@ html.is-low-power .chalk-layer.is-hidden { transition: none; }
   letter-spacing: -0.045em;
 }
 .empty p { margin: 0; line-height: 1.6; }
+.empty-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
 .source-icon svg { width: 18px; height: 18px; }
 .icon-action svg { width: 20px; height: 20px; }
